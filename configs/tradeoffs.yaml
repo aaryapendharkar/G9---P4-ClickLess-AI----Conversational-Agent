@@ -1,0 +1,70 @@
+# Trade-off weights (TA feedback). Every term is in MINUTES-EQUIVALENT so it can be shown to a driver:
+#   cost = drive_min + charge_min + detour_extra_weight*detour_min + stop_overhead_min*stops
+#          - sum_over_requested_prefs(amenity_value_min[pref] * best_match_score)
+#          - evidence_credit_min * evidence_coverage
+# Read as: "we treat a lunch spot you asked for as worth up to 15 extra minutes".
+# Owners: Hriday (model) + Ian (sensitivity analysis). Tune on DEV only, then freeze before test.
+default_profile: balanced
+
+profiles:
+  balanced:
+    drive_min_weight: 1.0
+    charge_min_weight: 1.0
+    detour_extra_weight: 0.5
+    stop_overhead_min: 5
+    evidence_credit_min: 0
+    amenity_value_min:
+      food: 15
+      coffee: 8
+      restroom: 10
+      restroom_wheelchair: 20
+      grocery: 8
+      lodging: 0
+      other: 3
+  fastest:
+    drive_min_weight: 1.0
+    charge_min_weight: 1.0
+    detour_extra_weight: 1.0
+    stop_overhead_min: 8
+    evidence_credit_min: 0
+    amenity_value_min:
+      food: 3
+      coffee: 2
+      restroom: 3
+      restroom_wheelchair: 15     # accessibility needs stay strongly weighted even when rushing
+      grocery: 2
+      lodging: 0
+      other: 0
+  comfort:
+    drive_min_weight: 1.0
+    charge_min_weight: 0.6        # waiting while eating hurts less
+    detour_extra_weight: 0.3
+    stop_overhead_min: 3
+    evidence_credit_min: 0
+    amenity_value_min:
+      food: 30
+      coffee: 15
+      restroom: 15
+      restroom_wheelchair: 30
+      grocery: 12
+      lodging: 0
+      other: 5
+
+# Config C ("weighted+evidence") adds this on top of the active profile.
+evidence:
+  evidence_credit_min: 5          # worth 5 min to pick a stop whose facts are fully sourced & fresh
+
+presentation:
+  max_alternatives: 3             # Recommended + up to 2 Pareto-optimal alternatives
+  min_time_diff_min: 5            # don't show an alternative that only differs by <5 min ...
+  min_satisfaction_diff: 0.25     # ... unless it changes which preferences are satisfied
+  satisfied_threshold: 0.5        # match score at which a preference counts as "met" in gains/losses
+  axes:                           # Pareto axes: (name, direction)
+    total_time_min: min
+    detour_min: min
+    charge_min: min
+    amenity_satisfaction: max
+  labels:
+    total_time_min: Fastest
+    amenity_satisfaction: Best amenities
+    detour_min: Least detour

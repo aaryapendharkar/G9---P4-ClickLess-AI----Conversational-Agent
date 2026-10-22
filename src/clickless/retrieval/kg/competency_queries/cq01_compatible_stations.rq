@@ -1,0 +1,14 @@
+# CQ1: Which stations have a port this vehicle can use (natively or with a documented adapter),
+#      and at what power?
+# Example query written by Manas; CQ2-CQ6 are Aarya's learning swap (see docs/TEAM_PLAN.md).
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT ?station ?connector ?power
+WHERE {
+  ?vehicle  cc:supports     ?connector .
+  ?station  cc:hasPort      ?port .
+  ?port     cc:hasConnector ?connector .
+  OPTIONAL { ?port cc:powerKw ?power }
+  VALUES ?vehicle { cc:vehicle_REPLACE_ME }
+}
+ORDER BY DESC(?power)

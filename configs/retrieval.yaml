@@ -1,0 +1,5 @@
+# Corridor retrieval + amenity linking (owner: Manas; amenity radius shared with Aarya's OSM linking).
+corridor_buffer_km: 8
+amenity_radius_m: 400            # proposal §II: Station NEAR Amenity within 400 m straight-line
+max_candidates: 60
+sbert_model: sentence-transformers/all-MiniLM-L6-v2   # pin the exact model for reproducibility

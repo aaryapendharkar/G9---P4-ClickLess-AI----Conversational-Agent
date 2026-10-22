@@ -1,0 +1,2 @@
+// ian: write 30 items, one JSON object per line (lines starting with // are ignored). Example:
+// {"id": "ian-001", "author": "ian", "category": "rural", "route_type": "rural", "text": "...", "gold_request": {"origin": "...", "destination": "...", "vehicle_id": "...", "start_soc_pct": 50}, "clarification_required": false}

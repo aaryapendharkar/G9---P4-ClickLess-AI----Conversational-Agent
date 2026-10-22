@@ -1,0 +1,26 @@
+# Configuration A -- classical baseline (proposal Table II).
+name: A
+description: Rules/spaCy extraction, TF-IDF matching, corridor retrieval, logistic-regression ranker, templates.
+components:
+  parser: rules              # rules | spacy | llm
+  matcher: tfidf             # tfidf | sbert
+  retriever: corridor        # corridor | corridor+kg
+  ranker: logreg             # logreg | weighted | weighted+evidence
+  selector: tradeoff         # trade-off alternatives (TA feedback) -- same in all configs
+  incomplete_request: reject # reject | clarify
+  explainer: template        # template | grounded_llm
+  provenance_labels: false
+data:
+  source: fixtures           # fixtures | snapshot
+  fixtures_dir: data/fixtures
+  snapshot_dir: data/snapshot
+routing:
+  mode: cache                # cache | osrm
+  osrm_base_url_env: OSRM_BASE_URL
+handoff:
+  max_waypoints: 9           # VERIFY against Google Maps URLs docs; differs by platform
+includes:
+  energy: configs/energy.yaml
+  tradeoffs: configs/tradeoffs.yaml
+  relaxation: configs/relaxation.yaml
+  retrieval: configs/retrieval.yaml

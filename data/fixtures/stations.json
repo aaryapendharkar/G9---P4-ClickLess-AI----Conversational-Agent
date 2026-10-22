@@ -1,0 +1,26 @@
+{
+  "_meta": {
+    "note": "SYNTHETIC fixture records for development and tests. Coordinates are approximate town locations along I-17; names, IDs, networks and ports are invented. Do NOT cite these as AFDC data.",
+    "default_provenance": {"source": "SYNTHETIC", "retrieved_at": "2026-10-22T00:00:00Z", "status": "static"}
+  },
+  "records": [
+    {"station_id": "FIX-ST-001", "name": "Fixture Plaza Anthem", "lat": 33.866, "lon": -112.140, "network": "FixtureNet", "status": "available",
+     "ports": [{"connector": "CCS1", "level": "dc_fast", "power_kw": 150, "count": 4}]},
+    {"station_id": "FIX-ST-002", "name": "Fixture Black Canyon Depot", "lat": 34.070, "lon": -112.148, "network": "FixtureNet", "status": "available",
+     "ports": [{"connector": "CCS1", "level": "dc_fast", "power_kw": 50, "count": 2},
+               {"connector": "CHADEMO", "level": "dc_fast", "power_kw": 50, "count": 1}]},
+    {"station_id": "FIX-ST-003", "name": "Fixture Cordes Junction Supercenter", "lat": 34.325, "lon": -112.116, "network": "FixtureFast", "status": "available",
+     "ports": [{"connector": "NACS", "level": "dc_fast", "power_kw": 250, "count": 8}]},
+    {"station_id": "FIX-ST-004", "name": "Fixture Camp Verde Hub", "lat": 34.566, "lon": -111.856, "network": "FixtureNet", "status": "available",
+     "ports": [{"connector": "CCS1", "level": "dc_fast", "power_kw": 50, "count": 2},
+               {"connector": "NACS", "level": "dc_fast", "power_kw": 250, "count": 4}]},
+    {"station_id": "FIX-ST-005", "name": "Fixture Camp Verde Library L2", "lat": 34.571, "lon": -111.851, "network": "FixtureLocal", "status": "available",
+     "ports": [{"connector": "J1772", "level": "l2", "power_kw": 7.2, "count": 2}]},
+    {"station_id": "FIX-ST-006", "name": "Fixture Sedona Detour Station", "lat": 34.862, "lon": -111.792, "network": "FixtureNet", "status": "available",
+     "ports": [{"connector": "CCS1", "level": "dc_fast", "power_kw": 150, "count": 2}]},
+    {"station_id": "FIX-ST-007", "name": "Fixture Munds Park (offline)", "lat": 34.941, "lon": -111.643, "network": "FixtureNet", "status": "temporarily_unavailable",
+     "ports": [{"connector": "CCS1", "level": "dc_fast", "power_kw": 150, "count": 2}]},
+    {"station_id": "FIX-ST-008", "name": "Fixture Private Fleet Yard", "lat": 34.200, "lon": -112.131, "network": "FixtureFleet", "status": "available", "access": "restricted",
+     "ports": [{"connector": "CCS1", "level": "dc_fast", "power_kw": 150, "count": 2}]}
+  ]
+}

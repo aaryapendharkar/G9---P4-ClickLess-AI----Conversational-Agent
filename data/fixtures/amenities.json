@@ -1,0 +1,16 @@
+{
+  "_meta": {
+    "note": "SYNTHETIC amenities placed near fixture stations. Not OSM data. Note the deliberate cases: missing wheelchair tag (unknown) must never count as accessible.",
+    "default_provenance": {"source": "SYNTHETIC", "retrieved_at": "2026-10-22T00:00:00Z", "status": "static"}
+  },
+  "records": [
+    {"amenity_id": "fix:a01", "name": "Fixture Coffee Bar", "category": "coffee", "lat": 33.867, "lon": -112.141, "wheelchair": "yes", "tags": {"amenity": "cafe"}},
+    {"amenity_id": "fix:a02", "name": "Canyon Fixture Diner", "category": "food", "lat": 34.071, "lon": -112.149, "wheelchair": "unknown", "tags": {"amenity": "restaurant", "cuisine": "american"}},
+    {"amenity_id": "fix:a03", "name": "Junction Fixture Burgers", "category": "food", "lat": 34.326, "lon": -112.117, "wheelchair": "unknown", "tags": {"amenity": "fast_food", "cuisine": "burger"}},
+    {"amenity_id": "fix:a04", "name": "Junction Fixture Restroom", "category": "restroom", "lat": 34.3255, "lon": -112.1155, "wheelchair": "unknown", "tags": {"amenity": "toilets"}},
+    {"amenity_id": "fix:a05", "name": "Verde Fixture Kitchen", "category": "food", "lat": 34.567, "lon": -111.857, "wheelchair": "yes", "opening_hours": "Mo-Su 10:00-21:00", "tags": {"amenity": "restaurant", "cuisine": "mexican"}},
+    {"amenity_id": "fix:a06", "name": "Verde Fixture Restroom", "category": "restroom", "lat": 34.5665, "lon": -111.8555, "wheelchair": "yes", "tags": {"amenity": "toilets", "wheelchair": "yes"}},
+    {"amenity_id": "fix:a07", "name": "Verde Fixture Grocery", "category": "grocery", "lat": 34.570, "lon": -111.852, "wheelchair": "limited", "tags": {"shop": "supermarket"}},
+    {"amenity_id": "fix:a08", "name": "Sedona Fixture Bistro", "category": "food", "lat": 34.863, "lon": -111.793, "wheelchair": "yes", "tags": {"amenity": "restaurant", "cuisine": "regional"}}
+  ]
+}

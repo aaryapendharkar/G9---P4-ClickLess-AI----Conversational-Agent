@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "note": "SYNTHETIC fictional vehicles for tests (one CCS-native, one NACS-native with a CCS adapter, one CHAdeMO-only). Real curated model-year variants go in data/curated/vehicles.csv with a source URL + access date per value.",
+    "default_provenance": {"source": "SYNTHETIC", "retrieved_at": "2026-10-22T00:00:00Z", "status": "static"}
+  },
+  "records": [
+    {"vehicle_id": "fixture-spark-lr-2025", "make": "FixtureMotors", "model": "Spark", "model_year": 2025, "variant": "Long Range",
+     "usable_kwh": 74.0, "efficiency_kwh_per_km": 0.19, "native_connectors": ["CCS1"], "adapters": [], "max_dc_kw": 230,
+     "aliases": ["spark lr", "spark long range", "fixturemotors spark", "spark"]},
+    {"vehicle_id": "fixture-comet-awd-2026", "make": "FixtureMotors", "model": "Comet", "model_year": 2026, "variant": "AWD",
+     "usable_kwh": 80.0, "efficiency_kwh_per_km": 0.17, "native_connectors": ["NACS"], "adapters": ["CCS1"], "max_dc_kw": 170,
+     "aliases": ["comet", "comet awd"]},
+    {"vehicle_id": "fixture-leafy-2020", "make": "FixtureAuto", "model": "Leafy", "model_year": 2020, "variant": null,
+     "usable_kwh": 38.0, "efficiency_kwh_per_km": 0.17, "native_connectors": ["CHADEMO", "J1772"], "adapters": [], "max_dc_kw": 50,
+     "aliases": ["leafy"]}
+  ]
+}

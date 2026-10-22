@@ -1,0 +1,31 @@
+# Configuration B -- modern language stack, same deterministic planner/verifier as A.
+name: B
+description: LLM extraction, Sentence-BERT matching, weighted ranking, templates.
+components:
+  parser: llm
+  matcher: sbert
+  retriever: corridor
+  ranker: weighted
+  selector: tradeoff
+  incomplete_request: reject
+  explainer: template
+  provenance_labels: false
+llm:
+  base_url_env: VOYAGER_BASE_URL
+  api_key_env: VOYAGER_API_KEY
+  model: CHANGE_ME           # fix one model + temperature 0 for all experiments
+  temperature: 0
+data:
+  source: fixtures
+  fixtures_dir: data/fixtures
+  snapshot_dir: data/snapshot
+routing:
+  mode: cache
+  osrm_base_url_env: OSRM_BASE_URL
+handoff:
+  max_waypoints: 9
+includes:
+  energy: configs/energy.yaml
+  tradeoffs: configs/tradeoffs.yaml
+  relaxation: configs/relaxation.yaml
+  retrieval: configs/retrieval.yaml

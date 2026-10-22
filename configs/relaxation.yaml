@@ -1,0 +1,16 @@
+# Relaxation priorities, frozen before test evaluation (proposal §I item 5).
+never_relax:
+  - connector_compatibility
+  - physical_reachability
+order:                         # relaxed first -> last
+  - field: amenities
+    step: drop_lowest_priority # drop nice_to_have before important
+    penalty_per_step: 1
+  - field: max_detour_min
+    step_min: 5
+    max_extra_min: 20
+    penalty_per_step: 3
+  - field: arrival_soc_pct_min
+    step_pct: 5
+    floor_pct: 10              # never below the energy reserve
+    penalty_per_step: 5

@@ -1,0 +1,22 @@
+{
+  "_meta": {"note": "SYNTHETIC cached route standing in for an OSRM response. Geometry is a coarse hand-drawn I-17 approximation; distance/duration are rounded illustrative values."},
+  "route_id": "fix-route-phx-flg",
+  "origin": {"lat": 33.4484, "lon": -112.0740},
+  "destination": {"lat": 35.1983, "lon": -111.6513},
+  "geometry": [
+    {"lat": 33.4484, "lon": -112.0740},
+    {"lat": 33.6000, "lon": -112.1100},
+    {"lat": 33.8660, "lon": -112.1430},
+    {"lat": 34.0700, "lon": -112.1440},
+    {"lat": 34.2000, "lon": -112.1300},
+    {"lat": 34.3250, "lon": -112.1130},
+    {"lat": 34.4500, "lon": -111.9500},
+    {"lat": 34.5650, "lon": -111.8600},
+    {"lat": 34.7500, "lon": -111.7400},
+    {"lat": 34.9400, "lon": -111.6450},
+    {"lat": 35.1983, "lon": -111.6513}
+  ],
+  "distance_km": 233.0,
+  "duration_min": 140.0,
+  "provenance": {"source": "SYNTHETIC", "retrieved_at": "2026-10-22T00:00:00Z", "status": "cached"}
+}

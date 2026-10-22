@@ -1,0 +1,33 @@
+# Configuration C -- hybrid: B + KG enrichment, clarification, provenance labels, grounded explanation.
+name: C
+description: LLM extraction + clarification, SBERT, corridor + KG, weighted + evidence ranking, grounded LLM explanation.
+components:
+  parser: llm
+  matcher: sbert
+  retriever: corridor+kg
+  ranker: weighted+evidence
+  selector: tradeoff
+  incomplete_request: clarify
+  explainer: grounded_llm
+  provenance_labels: true
+llm:
+  base_url_env: VOYAGER_BASE_URL
+  api_key_env: VOYAGER_API_KEY
+  model: CHANGE_ME
+  temperature: 0
+kg:
+  ontology: src/clickless/retrieval/kg/ontology.ttl
+data:
+  source: fixtures
+  fixtures_dir: data/fixtures
+  snapshot_dir: data/snapshot
+routing:
+  mode: cache
+  osrm_base_url_env: OSRM_BASE_URL
+handoff:
+  max_waypoints: 9
+includes:
+  energy: configs/energy.yaml
+  tradeoffs: configs/tradeoffs.yaml
+  relaxation: configs/relaxation.yaml
+  retrieval: configs/retrieval.yaml

@@ -1,0 +1,10 @@
+{
+  "_meta": {"note": "Approximate city-centre coordinates for the fixture gazetteer. Replace with a cached geocoder (data/geocode.py) for the real benchmark."},
+  "records": {
+    "phoenix": [33.4484, -112.0740],
+    "tempe": [33.4255, -111.9400],
+    "flagstaff": [35.1983, -111.6513],
+    "camp verde": [34.5636, -111.8543],
+    "sedona": [34.8697, -111.7610]
+  }
+}

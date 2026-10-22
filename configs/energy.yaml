@@ -1,0 +1,23 @@
+# Documented energy model (proposal §III-D). Read by BOTH the planner and the independent oracle.
+# Owners: Hriday + Ian. Any change after the test freeze must be an ADR and invalidates old results.
+reserve_soc_pct: 10              # E_reserve as % of usable capacity -- TEAM DECISION, confirm by Oct 25
+default_arrival_soc_pct: 20      # only when the user states no arrival requirement (not safety-critical)
+efficiency_penalty_robust: 0.15  # robust-feasibility sensitivity test (+15% consumption)
+charge_target_max_soc_pct: 100   # never plan a departure SoC above this
+charge_buffer_soc_pct: 2         # small buffer on top of what the next leg strictly needs
+
+# Charging-duration ESTIMATE (TA feedback). Deliberately simple and labelled as an estimate:
+# power = min(vehicle max DC, port power); above taper_start the power drops to a fraction of peak.
+charging_model:
+  taper_start_soc_pct: 80
+  taper_power_fraction: 0.4
+  session_overhead_min: 3        # parking, plug-in, handshake
+  ac_efficiency: 0.9             # L2 sessions lose ~10% to on-board charger losses
+  sensitivity: [0.75, 1.25]      # report rank stability when charge time is scaled by these factors
+  label: "estimate -- no vehicle-specific charging curve"
+
+# Placeholder detour model used only by the cached router until OSRM rerouting is wired in.
+placeholder_detour:
+  road_factor: 1.3               # straight-line km -> road km
+  offroute_speed_kmh: 40
+  fixed_min: 2
