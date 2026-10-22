@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clickless-charge"
+version = "0.1.0"
+description = "Provenance-aware conversational agent for EV charging planning (CSE 573, Group 9)"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.5",
+  "pyyaml>=6",
+  "requests>=2.31",
+  "numpy>=1.26",
+  "scikit-learn>=1.4",
+]
+
+[project.optional-dependencies]
+nlp = ["spacy>=3.7", "sentence-transformers>=2.6"]
+kg = ["rdflib>=7.0"]
+dev = ["pytest>=8", "ruff>=0.5", "scipy>=1.11"]
+
+[project.scripts]
+clickless = "clickless.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+markers = ["network: needs internet or API keys (skipped in CI)"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E731"]
