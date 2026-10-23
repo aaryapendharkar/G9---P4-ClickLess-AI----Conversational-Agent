@@ -15,12 +15,32 @@ def test_energy_model(store):
 
 
 def test_charge_time_monotonic(store, cfg_a):
-    v, m = store.vehicle("fixture-spark-lr-2025"), cfg_a["energy"]["charging_model"]
-    t = lambda p, a, b: estimate_charge_min(v, p, ChargerLevel.DC_FAST, a, b, m)  # noqa: E731
-    assert t(150, 20, 60) < t(150, 20, 80) < t(150, 20, 95)  # more energy, more time
-    assert t(50, 20, 60) > t(150, 20, 60)  # more power, less time
-    assert t(350, 20, 60) == t(230, 20, 60)  # capped at the vehicle's max DC power
-    assert t(150, 60, 60) == 0.0
+    vehicle = store.vehicle("fixture-spark-lr-2025")
+
+    charging_model = cfg_a["energy"]["charging_model"]
+
+    def charge_time(
+        power_kw: float,
+        start_soc_pct: float,
+        target_soc_pct: float,
+    ) -> float:
+        return estimate_charge_min(
+            vehicle,
+            power_kw,
+            ChargerLevel.DC_FAST,
+            start_soc_pct,
+            target_soc_pct,
+            charging_model,
+        )
+
+    assert (
+        charge_time(150, 20, 60) < charge_time(150, 20, 80) < charge_time(150, 20, 95)
+    )  # more energy, more time
+    assert charge_time(50, 20, 60) > charge_time(150, 20, 60)  # more power, less time
+    assert charge_time(350, 20, 60) == charge_time(
+        230, 20, 60
+    )  # capped at the vehicle's max DC power
+    assert charge_time(150, 60, 60) == 0.0
 
 
 def test_filter_reasons(pipe_a, demo_text):
@@ -43,24 +63,75 @@ def test_adapter_makes_station_compatible(store):
 
 
 def test_verifier_catches_tampered_itinerary(pipe_a, demo_text):
-    r = pipe_a.run(demo_text, "v1")
-    it = r.alternatives[0].itinerary
-    stop = it.stops[0].model_copy(update={"depart_soc_pct": it.stops[0].arrive_soc_pct})  # skip charging
-    bad = it.model_copy(update={"stops": [stop]})
-    v = pipe_a.store.vehicle(it.vehicle_id)
-    report = pipe_a.verifier.verify(bad, r.request, v)
-    assert not report.ok and report.violations[0].code == "arrival_soc"
+    result = pipe_a.run(demo_text, "v1")
+    itinerary = result.alternatives[0].itinerary
+
+    tampered_stop = itinerary.stops[0].model_copy(
+        update={
+            "depart_soc_pct": itinerary.stops[0].arrive_soc_pct,
+        }
+    )
+    tampered_itinerary = itinerary.model_copy(update={"stops": [tampered_stop]})
+
+    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
+    report = pipe_a.verifier.verify(
+        tampered_itinerary,
+        result.request,
+        vehicle,
+    )
+
+    assert not report.ok
+    assert report.violations[0].code == "arrival_soc"
 
 
-@pytest.mark.xfail(reason="TODO(Hriday): verifier power + detour checks")
 def test_verifier_checks_detour_limit(pipe_a, demo_text):
-    r = pipe_a.run(demo_text, "v2")
-    req = r.request.model_copy(update={"max_detour_min": 1})
-    v = pipe_a.store.vehicle(req.vehicle_id)
-    assert not pipe_a.verifier.verify(r.alternatives[0].itinerary, req, v).ok
+    result = pipe_a.run(demo_text, "v2")
+    request = result.request.model_copy(update={"max_detour_min": 1})
+    vehicle = pipe_a.store.vehicle(request.vehicle_id)
+    report = pipe_a.verifier.verify(
+        result.alternatives[0].itinerary,
+        request,
+        vehicle,
+    )
+
+    assert not report.ok
+    assert any(violation.code == "detour" for violation in report.violations)
 
 
 @pytest.mark.xfail(reason="TODO(Hriday): multi-stop planning")
 def test_low_battery_small_car_needs_two_stops(pipe_a):
-    r = pipe_a.run("from Phoenix to Flagstaff in my leafy with 60%", "v3")
-    assert r.status == "ok" and len(r.alternatives[0].itinerary.stops) >= 2
+    result = pipe_a.run("from Phoenix to Flagstaff in my leafy with 60%", "v3")
+    assert result.status == "ok" and len(result.alternatives[0].itinerary.stops) >= 2
+
+
+def test_verifier_checks_minimum_power(pipe_a, demo_text):
+    result = pipe_a.run(demo_text, "v-power")
+    itinerary = result.alternatives[0].itinerary
+
+    request = result.request.model_copy(update={"min_power_kw": 100})
+    vehicle = pipe_a.store.vehicle(request.vehicle_id)
+
+    report = pipe_a.verifier.verify(itinerary, request, vehicle)
+
+    assert not report.ok
+    assert any(violation.code == "power" for violation in report.violations)
+
+
+def test_verifier_rejects_unknown_station(pipe_a, demo_text):
+    result = pipe_a.run(demo_text, "v-unknown")
+    itinerary = result.alternatives[0].itinerary
+
+    unknown_stop = itinerary.stops[0].model_copy(
+        update={"station_id": "DOES-NOT-EXIST"}
+    )
+    tampered_itinerary = itinerary.model_copy(update={"stops": [unknown_stop]})
+
+    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
+    report = pipe_a.verifier.verify(
+        tampered_itinerary,
+        result.request,
+        vehicle,
+    )
+
+    assert not report.ok
+    assert any(violation.code == "unknown_station" for violation in report.violations)
