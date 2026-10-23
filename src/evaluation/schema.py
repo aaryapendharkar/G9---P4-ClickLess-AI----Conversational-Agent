@@ -37,6 +37,8 @@ class BenchmarkItem(BaseModel):
 
 def load_items(path: str | Path) -> list[BenchmarkItem]:
     path = Path(path)
+    if not path.exists():
+        return []  # e.g. the test split before the freeze
     files = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
     items = []
     for f in files:
