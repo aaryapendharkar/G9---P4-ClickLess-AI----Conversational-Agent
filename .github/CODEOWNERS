@@ -1,0 +1,29 @@
+# A PR needs approval from the owner of every path it touches.
+
+/src/clickless/contracts/      @GH_DEEPTI @GH_AARYA @GH_MANAS @GH_HRIDAY @GH_IAN
+/src/clickless/common/         @GH_HRIDAY @GH_IAN
+/src/clickless/pipeline.py     @GH_DEEPTI @GH_AARYA @GH_MANAS @GH_HRIDAY @GH_IAN
+
+/src/clickless/data/           @GH_AARYA
+/src/clickless/handoff/        @GH_AARYA
+/data/                         @GH_AARYA
+/src/clickless/nlu/            @GH_DEEPTI
+/src/clickless/explain/        @GH_DEEPTI
+/src/clickless/retrieval/      @GH_MANAS
+/src/clickless/planning/       @GH_HRIDAY
+/src/clickless/ranking/        @GH_HRIDAY
+/src/evaluation/               @GH_IAN
+/benchmark/                    @GH_IAN
+
+# Learning swaps: the owner reviews the learner's PR
+/src/clickless/data/validate.py                    @GH_AARYA @GH_IAN
+/src/clickless/explain/tradeoff_presenter.py       @GH_DEEPTI @GH_HRIDAY
+/src/clickless/retrieval/kg/competency_queries/    @GH_MANAS @GH_AARYA
+/src/evaluation/metrics/handoff.py                 @GH_IAN @GH_DEEPTI
+
+# Independence: the oracle is reviewed by Manas, never by the planner owner.
+/src/evaluation/oracle/        @GH_IAN @GH_MANAS
+
+/configs/energy.yaml           @GH_HRIDAY @GH_IAN
+/configs/tradeoffs.yaml        @GH_HRIDAY @GH_IAN
+/configs/relaxation.yaml       @GH_HRIDAY @GH_IAN
