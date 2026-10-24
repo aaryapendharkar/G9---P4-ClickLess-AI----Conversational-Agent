@@ -205,3 +205,98 @@ def test_verifier_rejects_unknown_station(pipe_a, demo_text):
 
     assert not report.ok
     assert any(violation.code == "unknown_station" for violation in report.violations)
+
+
+def test_verifier_rejects_unavailable_station(pipe_a, demo_text):
+    result = pipe_a.run(demo_text, "v-status")
+    itinerary = result.alternatives[0].itinerary
+
+    unavailable_stop = itinerary.stops[0].model_copy(
+        update={
+            "station_id": "FIX-ST-007",
+            "station_name": "Fixture Munds Park (offline)",
+        }
+    )
+    tampered_itinerary = itinerary.model_copy(update={"stops": [unavailable_stop]})
+
+    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
+    report = pipe_a.verifier.verify(
+        tampered_itinerary,
+        result.request,
+        vehicle,
+    )
+
+    assert not report.ok
+    assert any(violation.code == "status" for violation in report.violations)
+
+
+def test_verifier_rejects_restricted_station(pipe_a, demo_text):
+    result = pipe_a.run(demo_text, "v-access")
+    itinerary = result.alternatives[0].itinerary
+
+    restricted_stop = itinerary.stops[0].model_copy(
+        update={
+            "station_id": "FIX-ST-008",
+            "station_name": "Fixture Private Fleet Yard",
+        }
+    )
+    tampered_itinerary = itinerary.model_copy(update={"stops": [restricted_stop]})
+
+    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
+    report = pipe_a.verifier.verify(
+        tampered_itinerary,
+        result.request,
+        vehicle,
+    )
+
+    assert not report.ok
+    assert any(violation.code == "access" for violation in report.violations)
+
+
+@pytest.mark.parametrize("invalid_departure_soc_pct", [0, 130])
+def test_verifier_rejects_invalid_departure_soc(
+    pipe_a,
+    demo_text,
+    invalid_departure_soc_pct,
+):
+    result = pipe_a.run(demo_text, "v-departure")
+    itinerary = result.alternatives[0].itinerary
+
+    impossible_stop = itinerary.stops[0].model_copy(
+        update={"depart_soc_pct": invalid_departure_soc_pct}
+    )
+    tampered_itinerary = itinerary.model_copy(update={"stops": [impossible_stop]})
+
+    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
+    report = pipe_a.verifier.verify(
+        tampered_itinerary,
+        result.request,
+        vehicle,
+    )
+
+    assert not report.ok
+    assert any(
+        violation.code == "departure_soc" for violation in report.violations
+    )
+
+
+def test_verifier_rejects_broken_leg_continuity(pipe_a, demo_text):
+    result = pipe_a.run(demo_text, "v-continuity")
+    itinerary = result.alternatives[0].itinerary
+
+    disconnected_outbound_leg = itinerary.legs[1].model_copy(
+        update={"start_label": "A different charging station"}
+    )
+    tampered_itinerary = itinerary.model_copy(
+        update={"legs": [itinerary.legs[0], disconnected_outbound_leg]}
+    )
+
+    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
+    report = pipe_a.verifier.verify(
+        tampered_itinerary,
+        result.request,
+        vehicle,
+    )
+
+    assert not report.ok
+    assert any(violation.code == "continuity" for violation in report.violations)

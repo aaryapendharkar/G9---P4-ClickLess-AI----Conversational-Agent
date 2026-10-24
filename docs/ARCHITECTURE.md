@@ -58,7 +58,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 4. Numbers shown to the user come from contract fields, never recomputed in explanation code.
 5. All randomness seeded; LLM temperature 0; prompts versioned; data frozen by hash.
 
-## Implementation status (walking skeleton, Oct 22)
+## Implementation status (walking skeleton, Oct 24)
 
 | Component | Status |
 |---|---|
@@ -69,8 +69,8 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | cached router + detour | placeholder (straight-line detour) |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
-| planner | placeholder (direct + single stop) |
-| verifier | v0 (SoC chain, connector) |
+| planner | v1 generalized forward label-setting search (direct + multi-stop); richer time/SoC dominance remains TODO |
+| verifier | v1 (SoC chain, reserve/arrival, station existence/status/access, connector, power, detour, departure cap, continuity); authoritative route distance/detour recomputation remains TODO |
 | weighted cost, trade-off selector | v0 implemented |
 | logreg ranker | falls back to weighted cost until trained |
 | template explainer, trade-off presenter | placeholder wording |

@@ -39,7 +39,7 @@ from .request import (
 )
 from .route import LatLon, Route
 
-CONTRACTS_VERSION = "0.1.0"
+CONTRACTS_VERSION = "0.2.0"
 
 __all__ = [
     "CONTRACTS_VERSION", "SAFETY_CRITICAL_FIELDS",

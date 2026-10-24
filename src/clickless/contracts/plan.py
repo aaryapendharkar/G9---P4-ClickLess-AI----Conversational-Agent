@@ -83,7 +83,16 @@ class Alternative(BaseModel):
 
 
 ViolationCode = Literal[
-    "connector", "power", "detour", "arrival_soc", "reserve", "status", "unknown_station"
+    "connector",
+    "power",
+    "detour",
+    "arrival_soc",
+    "reserve",
+    "status",
+    "access",
+    "departure_soc",
+    "continuity",
+    "unknown_station",
 ]
 
 
