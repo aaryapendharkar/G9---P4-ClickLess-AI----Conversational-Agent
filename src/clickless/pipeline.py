@@ -22,7 +22,7 @@ from .nlu.llm_parser import LLMParser
 from .nlu.rules_parser import RulesParser
 from .nlu.spacy_parser import SpacyParser
 from .planning.filters import DefaultHardConstraintFilter
-from .planning.planner import GreedyPlanner
+from .planning.planner import ItineraryPlanner
 from .planning.relaxation import MinCostRelaxer
 from .planning.routing import CachedRouter, OSRMRouter, RouteNotCached
 from .planning.verifier import CompleteItineraryVerifier
@@ -51,7 +51,7 @@ class Pipeline:
         self.matcher = {"tfidf": lambda: TfidfMatcher(store),
                         "sbert": lambda: EmbeddingMatcher(store, r["sbert_model"])}[comp["matcher"]]()
         self.filter = DefaultHardConstraintFilter()
-        self.planner = GreedyPlanner(cfg["energy"])
+        self.planner = ItineraryPlanner(cfg["energy"])
         self.verifier = CompleteItineraryVerifier(store, cfg["energy"])
         self.relaxer = MinCostRelaxer(cfg["relaxation"])
         t = cfg["tradeoffs"]

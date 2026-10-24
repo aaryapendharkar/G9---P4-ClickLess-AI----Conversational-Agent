@@ -6,6 +6,42 @@ from clickless.planning.energy import energy_kwh, leg_feasible, soc_after
 from clickless.planning.filters import compatible_ports
 
 
+def _generate_unranked_itineraries(pipe_a, request_text: str, request_id: str):
+    """Run the planning inputs without ranking away valid alternatives."""
+
+    parse_result = pipe_a.parser.parse(request_text, request_id)
+    request = parse_result.request
+
+    vehicle = pipe_a.store.vehicle(request.vehicle_id)
+    route = pipe_a.router.route(
+        request.origin,
+        request.destination,
+    )
+
+    candidates = pipe_a.retriever.candidates(route, request)
+
+    for candidate in candidates:
+        candidate.detour_min_est = pipe_a.router.detour_min(
+            route,
+            candidate,
+        )
+
+    compatible_candidates, _filter_reasons = pipe_a.filter.apply(
+        candidates,
+        request,
+        vehicle,
+    )
+
+    itineraries = pipe_a.planner.plan(
+        request,
+        vehicle,
+        route,
+        compatible_candidates,
+    )
+
+    return itineraries
+
+
 def test_energy_model(store):
     v = store.vehicle("fixture-spark-lr-2025")  # 0.19 kWh/km, 74 kWh usable
     assert energy_kwh(100, v) == pytest.approx(19.0)
@@ -98,10 +134,44 @@ def test_verifier_checks_detour_limit(pipe_a, demo_text):
     assert any(violation.code == "detour" for violation in report.violations)
 
 
-@pytest.mark.xfail(reason="TODO(Hriday): multi-stop planning")
-def test_low_battery_small_car_needs_two_stops(pipe_a):
-    result = pipe_a.run("from Phoenix to Flagstaff in my leafy with 60%", "v3")
-    assert result.status == "ok" and len(result.alternatives[0].itinerary.stops) >= 2
+def test_low_battery_small_car_has_feasible_two_stop_option(pipe_a):
+    itineraries = _generate_unranked_itineraries(
+        pipe_a,
+        "from Phoenix to Flagstaff in my leafy with 60%",
+        "v3",
+    )
+
+    two_stop_itineraries = [
+        itinerary for itinerary in itineraries if len(itinerary.stops) == 2
+    ]
+
+    assert two_stop_itineraries
+
+    for itinerary in two_stop_itineraries:
+        stop_positions_km = [stop.along_route_km for stop in itinerary.stops]
+
+        assert stop_positions_km == sorted(stop_positions_km)
+
+
+def test_planner_search_is_not_capped_at_two_stops(pipe_a):
+    """A three-stop fixture path guards against restoring a two-loop cap."""
+
+    itineraries = _generate_unranked_itineraries(
+        pipe_a,
+        "from Phoenix to Flagstaff in my spark lr with 65%",
+        "v-multistop",
+    )
+
+    three_stop_itineraries = [
+        itinerary for itinerary in itineraries if len(itinerary.stops) == 3
+    ]
+
+    assert three_stop_itineraries
+
+    for itinerary in three_stop_itineraries:
+        stop_positions_km = [stop.along_route_km for stop in itinerary.stops]
+
+        assert stop_positions_km == sorted(stop_positions_km)
 
 
 def test_verifier_checks_minimum_power(pipe_a, demo_text):
