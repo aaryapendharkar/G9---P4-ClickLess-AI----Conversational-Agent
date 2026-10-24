@@ -153,6 +153,27 @@ def test_low_battery_small_car_has_feasible_two_stop_option(pipe_a):
         assert stop_positions_km == sorted(stop_positions_km)
 
 
+def test_planner_search_is_not_capped_at_two_stops(pipe_a):
+    """A three-stop fixture path guards against restoring a two-loop cap."""
+
+    itineraries = _generate_unranked_itineraries(
+        pipe_a,
+        "from Phoenix to Flagstaff in my spark lr with 65%",
+        "v-multistop",
+    )
+
+    three_stop_itineraries = [
+        itinerary for itinerary in itineraries if len(itinerary.stops) == 3
+    ]
+
+    assert three_stop_itineraries
+
+    for itinerary in three_stop_itineraries:
+        stop_positions_km = [stop.along_route_km for stop in itinerary.stops]
+
+        assert stop_positions_km == sorted(stop_positions_km)
+
+
 def test_verifier_checks_minimum_power(pipe_a, demo_text):
     result = pipe_a.run(demo_text, "v-power")
     itinerary = result.alternatives[0].itinerary
