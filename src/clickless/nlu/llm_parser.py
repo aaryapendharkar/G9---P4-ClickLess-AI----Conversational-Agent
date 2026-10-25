@@ -9,16 +9,30 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from pathlib import Path
 from typing import Any
 
-from ..contracts import AmenityCategory, AmenityPreference, ParseResult, TripRequest
+from ..config import repo_path
+from ..contracts import AmenityCategory, AmenityPreference, Connector, ParseResult, TripRequest
 from .priority_phrases import detect_priority_keys, detect_profile, detect_weight_overrides
 from .rules_parser import RulesParser
 from .voyager_client import chat
 
 _LOG = logging.getLogger(__name__)
+_PROMPT_PATH = Path(__file__).with_name("prompts") / "extract_v1.txt"
+_ALLOWED_FIELDS = {
+    "origin", "destination", "vehicle", "start_soc_pct", "arrival_soc_pct_min",
+    "max_detour_min", "min_power_kw", "amenities", "connectors",
+}
+_ALLOWED_AMENITY_FIELDS = {"category", "phrase", "wheelchair_required", "important"}
+_NUMERIC_RANGES = {
+    "start_soc_pct": (0.0, 100.0),
+    "arrival_soc_pct_min": (0.0, 100.0),
+    "max_detour_min": (0.0, math.inf),
+    "min_power_kw": (0.0, math.inf),
+}
 
 _EXTRACTION_SCHEMA = {
     "type": "object",
@@ -49,6 +63,49 @@ def _json_object(raw_response: str) -> dict[str, Any]:
     return parsed_response
 
 
+def _validate_extraction(extracted: dict[str, Any]) -> None:
+    """Reject malformed model output before it can enter the shared request contract."""
+    unknown_fields = set(extracted) - _ALLOWED_FIELDS
+    if unknown_fields:
+        raise ValueError(f"unsupported extraction fields: {sorted(unknown_fields)}")
+
+    for field_name, (minimum, maximum) in _NUMERIC_RANGES.items():
+        value = extracted.get(field_name)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise ValueError(f"{field_name} must be a finite number or null")
+        if not minimum <= value <= maximum:
+            raise ValueError(f"{field_name} is outside its allowed range")
+
+    for field_name in ("origin", "destination", "vehicle"):
+        value = extracted.get(field_name)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{field_name} must be a string or null")
+
+    connectors = extracted.get("connectors", [])
+    if not isinstance(connectors, list) or any(not isinstance(value, str) for value in connectors):
+        raise ValueError("connectors must be a list of strings")
+    for connector in connectors:
+        try:
+            Connector(connector.upper())
+        except ValueError as error:
+            raise ValueError(f"unsupported connector: {connector}") from error
+
+    amenities = extracted.get("amenities", [])
+    if not isinstance(amenities, list):
+        raise ValueError("amenities must be a list")
+    valid_categories = {category.value for category in AmenityCategory}
+    for amenity in amenities:
+        if not isinstance(amenity, dict) or set(amenity) - _ALLOWED_AMENITY_FIELDS:
+            raise ValueError("amenity has an unsupported shape")
+        if amenity.get("category", "other") not in valid_categories:
+            raise ValueError(f"unsupported amenity category: {amenity.get('category')}")
+        for boolean_field in ("wheelchair_required", "important"):
+            if boolean_field in amenity and not isinstance(amenity[boolean_field], bool):
+                raise ValueError(f"amenity {boolean_field} must be boolean")
+
+
 class LLMParser:
     name = "llm"
 
@@ -61,11 +118,13 @@ class LLMParser:
             f"Your previous response failed validation: {repair_error}. Return corrected JSON only."
             if repair_error else ""
         )
-        system_message = (
-            "Extract a charging-trip request. Return JSON only matching this schema: "
-            f"{json.dumps(_EXTRACTION_SCHEMA, separators=(',', ':'))}. "
-            "Do not infer origin, destination, vehicle, or battery values. Use null when absent. "
-            "Use the driver's words for amenity phrases."
+        try:
+            prompt_template = _PROMPT_PATH.read_text()
+        except OSError:
+            _LOG.warning("Versioned extraction prompt is unavailable: %s", _PROMPT_PATH)
+            prompt_template = "Return JSON only matching this schema: {schema}. Use null when absent."
+        system_message = prompt_template.replace(
+            "{schema}", json.dumps(_EXTRACTION_SCHEMA, separators=(",", ":"))
         )
         user_message = f"Request: {text}\n{repair_instruction}".strip()
         return [{"role": "system", "content": system_message}, {"role": "user", "content": user_message}]
@@ -82,7 +141,7 @@ class LLMParser:
         )
 
     def _log_raw(self, request_id: str, raw_response: str) -> None:
-        log_directory = Path("results/llm_logs")
+        log_directory = repo_path("results/llm_logs")
         try:
             log_directory.mkdir(parents=True, exist_ok=True)
             (log_directory / f"{request_id}.json").write_text(
@@ -97,6 +156,7 @@ class LLMParser:
         return deterministic_result.model_copy(update={"parser": self.name})
 
     def _ground(self, extracted: dict[str, Any], text: str, request_id: str) -> ParseResult:
+        _validate_extraction(extracted)
         origin_text = extracted.get("origin")
         destination_text = extracted.get("destination")
         vehicle_text = extracted.get("vehicle")
@@ -113,13 +173,11 @@ class LLMParser:
             arrival_soc_pct_min=extracted.get("arrival_soc_pct_min"),
             max_detour_min=extracted.get("max_detour_min"),
             min_power_kw=extracted.get("min_power_kw"),
+            connectors_override=[Connector(value.upper()) for value in extracted.get("connectors", [])] or None,
             tradeoff_profile=detect_profile(text),
             weight_overrides=detect_weight_overrides(text),
         )
-        if isinstance(vehicle_text, str) and vehicle_text.strip():
-            matching_vehicles = self.store.find_vehicles(vehicle_text)
-        else:
-            matching_vehicles = []
+        matching_vehicles = self.store.find_vehicles(vehicle_text) if isinstance(vehicle_text, str) else []
 
         ambiguous: dict[str, list[str]] = {}
         if len(matching_vehicles) == 1:
@@ -128,18 +186,11 @@ class LLMParser:
             ambiguous["vehicle_id"] = [vehicle.vehicle_id for vehicle in matching_vehicles]
 
         for amenity_data in extracted.get("amenities", []):
-            if not isinstance(amenity_data, dict):
-                continue
-            category_value = str(amenity_data.get("category", "other")).lower()
-            try:
-                category = AmenityCategory(category_value)
-            except ValueError:
-                category = AmenityCategory.OTHER
-            phrase = str(amenity_data.get("phrase", category_value))
+            category = AmenityCategory(amenity_data.get("category", "other"))
             request.amenities.append(
                 AmenityPreference(
                     category=category,
-                    phrase=phrase,
+                    phrase=str(amenity_data.get("phrase", category.value)),
                     wheelchair_required=bool(amenity_data.get("wheelchair_required", False)),
                     priority=("important" if bool(amenity_data.get("important", False)) else "nice_to_have"),
                 )
@@ -149,8 +200,7 @@ class LLMParser:
         for preference in request.amenities:
             if preference.key in priority_keys or preference.category.value in priority_keys:
                 preference.priority = "important"
-        missing_fields = request.missing_safety_critical()
-        missing_fields = [field for field in missing_fields if field not in ambiguous]
+        missing_fields = [field for field in request.missing_safety_critical() if field not in ambiguous]
         return ParseResult(
             request=request,
             missing_fields=missing_fields,
