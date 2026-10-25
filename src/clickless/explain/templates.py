@@ -1,7 +1,7 @@
 """Template explanations for Configurations A and B. Owner: Deepti.
 
-PLACEHOLDER wording. TODO(Deepti): final wording, units, rounding, data-status labels when
-provenance_labels is on, and why stations were skipped (filter reasons) when asked.
+All displayed route, charging, cost, and trade-off values come from the verified plan result or
+its linked datastore records. The template does not recompute planning decisions.
 """
 
 from __future__ import annotations
@@ -52,8 +52,12 @@ class TemplateExplainer:
             f"~{it.total_time_min:.0f} min total ({it.total_detour_min:.0f} min of detour)."
         )
         lines.append(render_cost_breakdown(rec.cost))
+        skipped_stations = [note.removeprefix("skipped ") for note in result.notes if note.startswith("skipped ")]
+        if skipped_stations:
+            lines.append("Not used: " + "; ".join(skipped_stations) + ".")
         if len(result.alternatives) > 1:
             lines.append("Other options:")
-            lines += ["  " + render_alternative(a) for a in result.alternatives[1:]]
+            lines += ["  " + render_alternative(alternative) for alternative in result.alternatives[1:]]
+            lines.append("Say 'prioritize food' or choose an option to change the ranking.")
         lines.append("Open this route in Google Maps? (approval required)")
         return "\n".join(lines), []

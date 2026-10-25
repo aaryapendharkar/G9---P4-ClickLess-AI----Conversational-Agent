@@ -27,13 +27,25 @@ def render_cost_breakdown(cost: PlanCost) -> str:
 
 
 def render_alternative(alt: Alternative) -> str:
-    d = alt.deltas
-    parts = [f"{d.get('total_time_min', 0):+.0f} min total",
-             f"{d.get('detour_min', 0):+.0f} min detour",
-             f"{d.get('charge_min', 0):+.0f} min charging"]
+    """Describe only meaningful contract deltas; never recalculate a plan value."""
+    deltas = alt.deltas
+    delta_labels = (
+        ("total_time_min", "total time"),
+        ("detour_min", "detour"),
+        ("charge_min", "charging"),
+    )
+    differences = [
+        f"{deltas[key]:+.0f} min {label}"
+        for key, label in delta_labels
+        if key in deltas and abs(deltas[key]) >= 1
+    ]
+    details: list[str] = []
+    if differences:
+        details.append(", ".join(differences))
     if alt.gains:
-        parts.append("adds " + ", ".join(alt.gains))
+        details.append("adds " + ", ".join(alt.gains))
     if alt.losses:
-        parts.append("loses " + ", ".join(alt.losses))
-    stops = ", ".join(s.station_name for s in alt.itinerary.stops) or "no charging stop"
-    return f"{alt.label} ({stops}): " + "; ".join(parts) + "."
+        details.append("loses " + ", ".join(alt.losses))
+    stops = ", ".join(stop.station_name for stop in alt.itinerary.stops) or "no charging stop"
+    description = "; ".join(details) if details else "no material difference recorded"
+    return f"{alt.label}: stop at {stops}; {description}."

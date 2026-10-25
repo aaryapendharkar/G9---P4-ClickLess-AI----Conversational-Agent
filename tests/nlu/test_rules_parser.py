@@ -33,19 +33,15 @@ def test_clarifier_asks_for_battery(parser):
     assert TemplateClarifier().question_for(pr).field == "start_soc_pct"
 
 
-# ---- spec for Deepti: harder phrasings the placeholder does not handle yet ----
-@pytest.mark.xfail(reason="TODO(Deepti): origin/destination after a leading clause")
 def test_leading_clause(parser):
     r = parser.parse("I'm in a hurry: Phoenix to Flagstaff in my Spark LR, 65% battery", "t5").request
     assert r.origin.text == "Phoenix"
 
 
-@pytest.mark.xfail(reason="TODO(Deepti): 'percent' spelled out")
 def test_percent_word(parser):
     assert parser.parse("from Phoenix to Flagstaff in my comet, 70 percent charge", "t6").request.start_soc_pct == 70
 
 
-@pytest.mark.xfail(reason="TODO(Deepti): 'half a tank' style answers must be clarified, not guessed")
 def test_vague_battery_is_ambiguous(parser):
     pr: ParseResult = parser.parse("from Phoenix to Flagstaff in my comet, about half full", "t7")
     assert "start_soc_pct" in pr.ambiguous_fields
