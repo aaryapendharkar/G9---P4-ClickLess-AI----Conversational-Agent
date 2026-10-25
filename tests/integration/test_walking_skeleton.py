@@ -1,7 +1,5 @@
 """End-to-end Config A on fixtures. If this breaks on main, the integration captain fixes it first."""
 
-import pytest
-
 from clickless.config import load_config
 from clickless.pipeline import build_pipeline
 
@@ -46,7 +44,6 @@ def test_direct_trip_needs_no_stop(pipe_a):
     assert r.status == "ok" and r.alternatives[0].itinerary.stops == []
 
 
-@pytest.mark.xfail(raises=NotImplementedError, reason="Config C components not built yet (Deepti/Manas)")
 def test_config_c_clarifies_incomplete_request():
     pipe_c = build_pipeline(load_config("C"))
     r = pipe_c.run("Phoenix to Flagstaff in my spark", request_id="it-7")
