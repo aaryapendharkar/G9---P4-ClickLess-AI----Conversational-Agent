@@ -67,6 +67,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category equality) |
 | cached router + detour | placeholder (straight-line detour) |
+| runtime OSRM client | strict HTTP client + single-station waypoint detour implemented; cache/fallback integration pending |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
 | planner | v1 generalized forward label-setting search (direct + multi-stop); richer time/SoC dominance remains TODO |
@@ -76,7 +77,9 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | template explainer, trade-off presenter | placeholder wording |
 | Maps URL + approval gate | v0 (no segmentation) |
 | harness | runs; most metrics stubbed |
-| LLM parser, SBERT, KG build/enrich, grounded explainer, OSRM, AFDC/OSM/vehicle ingestion, relaxation, oracle, splits, statistics | stubs (`NotImplementedError`) |
+| LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM/vehicle ingestion, relaxation, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Configuration A's verifier measurements are deterministic estimates, not live road reroutes.
-Cached or runtime OSRM waypoint measurements remain future routing work.
+The runtime OSRM client can fetch direct and single-station waypoint routes, but all committed
+configurations still use cached routing. Runtime response caching, explicit geometric fallback
+provenance, and verifier integration remain future work.
