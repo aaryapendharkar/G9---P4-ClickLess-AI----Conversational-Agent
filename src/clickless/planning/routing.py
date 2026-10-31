@@ -86,7 +86,9 @@ class CachedRouter:
     def detour_min(self, route: Route, candidate: Candidate) -> float:
         """PLACEHOLDER: out-and-back along a straight line at low speed.
 
-        TODO(Hriday): OSRM reroute through the station; detour = rerouted duration - base duration.
+        Keep this deterministic estimate for Configuration A and as the future
+        fallback measurement. OSRMRouter performs the real waypoint reroute;
+        a later routing-policy layer will choose and label the measurement used.
         """
         c = self.detour_cfg
         road_km = 2 * candidate.offroute_km * c["road_factor"]

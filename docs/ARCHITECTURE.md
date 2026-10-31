@@ -83,3 +83,15 @@ Configuration A's verifier measurements are deterministic estimates, not live ro
 The runtime OSRM client can fetch direct and single-station waypoint routes, but all committed
 configurations still use cached routing. Runtime response caching, explicit geometric fallback
 provenance, and verifier integration remain future work.
+
+Follow-up routing milestones (not part of the strict OSRM client):
+
+- cache successful OSRM responses for deterministic reuse;
+- add a routing-policy layer that tries cached OSRM, then live OSRM, then the
+  geometric fallback only for eligible temporary failures;
+- preserve the selected measurement source and warning instead of silently
+  returning an unlabelled fallback number;
+- connect the selected route measurements to planning and independent
+  verification; and
+- add tests for cache hits, cache misses, fallback eligibility, provenance,
+  and verifier agreement.
