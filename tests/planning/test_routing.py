@@ -10,10 +10,12 @@ from unittest.mock import Mock
 import pytest
 import requests
 
+from clickless.config import repo_path
 from clickless.contracts import Candidate, DataStatus, Place
 from clickless.pipeline import _build_router
 from clickless.planning.routing import (
     CachedRouter,
+    CachingOSRMRouter,
     OSRMRouteError,
     OSRMRouter,
 )
@@ -235,8 +237,7 @@ def test_osrm_router_calculates_detour_from_station_route(store):
 
     station_route_url = mock_http_session.get.call_args_list[1].args[0]
     expected_station_coordinate = (
-        f"{camp_verde_station.lon:.6f},"
-        f"{camp_verde_station.lat:.6f}"
+        f"{camp_verde_station.lon:.6f}," f"{camp_verde_station.lat:.6f}"
     )
 
     assert expected_station_coordinate in station_route_url
@@ -429,16 +430,47 @@ def test_build_router_uses_cached_router_for_cache_mode(
     assert isinstance(router, CachedRouter)
 
 
-def test_build_router_reads_osrm_url_from_environment(
+def test_build_router_uses_default_osrm_cache_directory(
     store,
     cfg_a,
     monkeypatch,
 ):
-    """OSRM mode resolves the environment-variable name from configuration."""
+    """OSRM mode should default to the repository's ignored cache directory."""
 
     test_config = deepcopy(cfg_a)
     test_config["routing"]["mode"] = "osrm"
     test_config["routing"]["osrm_base_url_env"] = "CLICKLESS_TEST_OSRM_URL"
+    test_config["routing"].pop(
+        "osrm_cache_dir",
+        None,
+    )
+
+    monkeypatch.setenv(
+        "CLICKLESS_TEST_OSRM_URL",
+        "https://router.project-osrm.org",
+    )
+
+    router = _build_router(
+        test_config,
+        store,
+    )
+
+    assert isinstance(router, CachingOSRMRouter)
+    assert router.route_cache.cache_directory == repo_path("data/cache/osrm")
+
+
+def test_build_router_constructs_cache_first_osrm_router(
+    store,
+    cfg_a,
+    monkeypatch,
+    tmp_path,
+):
+    """OSRM mode should check a local cache before using the live client."""
+
+    test_config = deepcopy(cfg_a)
+    test_config["routing"]["mode"] = "osrm"
+    test_config["routing"]["osrm_base_url_env"] = "CLICKLESS_TEST_OSRM_URL"
+    test_config["routing"]["osrm_cache_dir"] = str(tmp_path / "osrm")
 
     monkeypatch.setenv(
         "CLICKLESS_TEST_OSRM_URL",
@@ -450,11 +482,16 @@ def test_build_router_reads_osrm_url_from_environment(
         store,
     )
 
-    assert isinstance(router, OSRMRouter)
+    assert isinstance(router, CachingOSRMRouter)
+    assert isinstance(router.live_router, OSRMRouter)
 
-    # OSRMRouter removes the trailing slash so later URL construction does not
+    # OSRMRouter removes the trailing slash so URL construction does not
     # accidentally produce a double slash.
-    assert router.base_url == "https://router.project-osrm.org"
+    assert router.live_router.base_url == "https://router.project-osrm.org"
+
+    # Tests use an isolated temporary cache rather than writing into the
+    # repository's ignored runtime-data directory.
+    assert router.route_cache.cache_directory == tmp_path / "osrm"
 
 
 def test_build_router_rejects_missing_osrm_environment_variable(
