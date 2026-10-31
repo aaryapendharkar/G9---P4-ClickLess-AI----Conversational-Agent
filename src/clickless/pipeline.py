@@ -7,6 +7,7 @@ need to import another module's internals.
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from typing import Any
@@ -35,6 +36,52 @@ from .retrieval.kg.enrich import KGEnricher
 from .retrieval.tfidf_matcher import TfidfMatcher
 
 
+def _build_router(
+    config: dict[str, Any],
+    store: DataStore,
+) -> CachedRouter | OSRMRouter:
+    """Build the routing implementation selected by project configuration.
+
+    The configuration stores the name of an environment variable rather than
+    embedding a deployment-specific OSRM URL in source control.
+    """
+
+    routing_config = config["routing"]
+    routing_mode = routing_config["mode"]
+
+    if routing_mode == "cache":
+        return CachedRouter(
+            store,
+            config["energy"],
+        )
+
+    if routing_mode == "osrm":
+        base_url_environment_variable = routing_config.get("osrm_base_url_env")
+
+        if not base_url_environment_variable:
+            raise ValueError(
+                "OSRM routing requires the "
+                "'routing.osrm_base_url_env' configuration field"
+            )
+
+        osrm_base_url = os.environ.get(base_url_environment_variable)
+
+        if not osrm_base_url:
+            raise ValueError(
+                f"OSRM routing requires environment variable "
+                f"{base_url_environment_variable!r}"
+            )
+
+        return OSRMRouter(
+            base_url=osrm_base_url,
+        )
+
+    raise ValueError(
+        f"unsupported routing mode {routing_mode!r}; "
+        "expected 'cache' or 'osrm'"
+    )
+
+
 class Pipeline:
     def __init__(self, cfg: dict[str, Any], store: DataStore) -> None:
         comp = cfg["components"]
@@ -43,8 +90,10 @@ class Pipeline:
         self.parser = {"rules": lambda: RulesParser(store), "spacy": lambda: SpacyParser(store),
                        "llm": lambda: LLMParser(store, cfg.get("llm", {}))}[comp["parser"]]()
         self.clarifier = TemplateClarifier() if comp["incomplete_request"] == "clarify" else None
-        self.router = (CachedRouter(store, cfg["energy"]) if cfg["routing"]["mode"] == "cache"
-                       else OSRMRouter(base_url=cfg["routing"].get("osrm_base_url", "")))
+        self.router = _build_router(
+            cfg,
+            store,
+        )
         r = cfg["retrieval"]
         self.retriever = CorridorRetriever(store, r["corridor_buffer_km"], r["amenity_radius_m"], r["max_candidates"])
         self.enricher = KGEnricher(store, cfg.get("kg", {})) if comp["retriever"] == "corridor+kg" else None
