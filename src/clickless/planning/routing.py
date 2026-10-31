@@ -1,9 +1,11 @@
-"""Routing: cached fixture routes and runtime OSRM routes. Owner: Hriday.
+"""Cached fixture routing and cache-first runtime OSRM routing.
 
-CachedRouter keeps Configuration A deterministic by using committed route
-fixtures and a geometric detour estimate. OSRMRouter is a strict HTTP client:
-it returns OSRM measurements or raises OSRMRouteError. Caching and explicit
-geometric fallback policy are separate follow-up milestones.
+CachedRouter keeps Configuration A deterministic using committed fixtures and
+a geometric detour estimate. OSRMRouter strictly fetches and validates live
+road routes. CachingOSRMRouter checks OSRMRouteCache before using the live
+client. Explicit geometric fallback policy remains a separate milestone.
+
+Owner: Hriday.
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ from ..contracts import (
     Route,
 )
 from ..data import DataStore
+from .route_cache import OSRMRouteCache
 
 
 class RouteNotCached(LookupError):
@@ -96,10 +99,11 @@ class CachedRouter:
 
 
 class OSRMRouter:
-    """Fetch routes from an OSRM HTTP service.
+    """Fetch and validate routes from an OSRM HTTP service.
 
-    Runtime response caching is intentionally handled in a later milestone.
-    Tests inject a mock HTTP session so the normal suite remains offline.
+    Caching is deliberately handled by CachingOSRMRouter so this client remains
+    responsible only for live HTTP requests and OSRM response validation. Tests
+    inject a mock HTTP session so the normal suite remains offline.
     """
 
     def __init__(
@@ -131,14 +135,14 @@ class OSRMRouter:
         origin_coordinates = _coordinates_for_place(origin)
         destination_coordinates = _coordinates_for_place(destination)
 
-        return self._fetch_route_through(
+        return self.route_through(
             [
                 origin_coordinates,
                 destination_coordinates,
             ]
         )
 
-    def _fetch_route_through(
+    def route_through(
         self,
         route_points: Sequence[LatLon],
     ) -> Route:
@@ -263,7 +267,7 @@ class OSRMRouter:
             lon=candidate.station.lon,
         )
 
-        route_via_station = self._fetch_route_through(
+        route_via_station = self.route_through(
             [
                 route.origin,
                 station_coordinates,
@@ -277,3 +281,88 @@ class OSRMRouter:
         # equal durations differ by a tiny negative value. A detour cannot
         # logically remove time, so keep the public result non-negative.
         return max(0.0, measured_detour_min)
+
+
+class CachingOSRMRouter:
+    """Reuse cached OSRM measurements before requesting live measurements.
+
+    This wrapper coordinates storage and live routing without weakening the
+    strict behavior of OSRMRouter. A cache miss calls OSRM; an OSRM failure is
+    still raised to the caller and does not silently select geometric fallback.
+    """
+
+    def __init__(
+        self,
+        live_router: OSRMRouter,
+        route_cache: OSRMRouteCache,
+    ) -> None:
+        self.live_router = live_router
+        self.route_cache = route_cache
+
+    def _get_route_through(
+        self,
+        route_points: Sequence[LatLon],
+    ) -> Route:
+        """Return a cached route or fetch and save a live OSRM route."""
+
+        cached_route = self.route_cache.load(route_points)
+
+        if cached_route is not None:
+            return cached_route
+
+        # OSRMRouter remains the only component responsible for HTTP requests
+        # and validating the response returned by the OSRM service.
+        live_route = self.live_router.route_through(route_points)
+        self.route_cache.save(
+            route_points,
+            live_route,
+        )
+
+        return live_route
+
+    def route(
+        self,
+        origin: Place,
+        destination: Place,
+    ) -> Route:
+        """Return the direct route, preferring a cached OSRM measurement."""
+
+        origin_coordinates = _coordinates_for_place(origin)
+        destination_coordinates = _coordinates_for_place(destination)
+
+        return self._get_route_through(
+            [
+                origin_coordinates,
+                destination_coordinates,
+            ]
+        )
+
+    def detour_min(
+        self,
+        route: Route,
+        candidate: Candidate,
+    ) -> float:
+        """Return added time for a cached or live route through one station."""
+
+        station_coordinates = LatLon(
+            lat=candidate.station.lat,
+            lon=candidate.station.lon,
+        )
+
+        route_via_station = self._get_route_through(
+            [
+                route.origin,
+                station_coordinates,
+                route.destination,
+            ]
+        )
+
+        measured_detour_min = (
+            route_via_station.duration_min
+            - route.duration_min
+        )
+
+        return max(
+            0.0,
+            measured_detour_min,
+        )

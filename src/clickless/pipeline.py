@@ -12,6 +12,7 @@ import time
 import uuid
 from typing import Any
 
+from .config import repo_path
 from .contracts import PlanResult, Route, TripRequest
 from .data import DataStore
 from .explain.grounded import GroundedLLMExplainer
@@ -25,7 +26,13 @@ from .nlu.spacy_parser import SpacyParser
 from .planning.filters import DefaultHardConstraintFilter
 from .planning.planner import ItineraryPlanner
 from .planning.relaxation import MinCostRelaxer
-from .planning.routing import CachedRouter, OSRMRouter, RouteNotCached
+from .planning.route_cache import OSRMRouteCache
+from .planning.routing import (
+    CachedRouter,
+    CachingOSRMRouter,
+    OSRMRouter,
+    RouteNotCached,
+)
 from .planning.verifier import CompleteItineraryVerifier
 from .ranking.logreg_ranker import LogRegRanker
 from .ranking.tradeoffs import TradeoffSelector
@@ -39,11 +46,12 @@ from .retrieval.tfidf_matcher import TfidfMatcher
 def _build_router(
     config: dict[str, Any],
     store: DataStore,
-) -> CachedRouter | OSRMRouter:
+) -> CachedRouter | CachingOSRMRouter:
     """Build the routing implementation selected by project configuration.
 
-    The configuration stores the name of an environment variable rather than
-    embedding a deployment-specific OSRM URL in source control.
+    Cached mode uses deterministic route fixtures. OSRM mode wraps the strict
+    live client with local cache-first routing. The configuration stores an
+    environment-variable name instead of embedding an OSRM URL in source code.
     """
 
     routing_config = config["routing"]
@@ -56,7 +64,9 @@ def _build_router(
         )
 
     if routing_mode == "osrm":
-        base_url_environment_variable = routing_config.get("osrm_base_url_env")
+        base_url_environment_variable = routing_config.get(
+            "osrm_base_url_env"
+        )
 
         if not base_url_environment_variable:
             raise ValueError(
@@ -64,16 +74,34 @@ def _build_router(
                 "'routing.osrm_base_url_env' configuration field"
             )
 
-        osrm_base_url = os.environ.get(base_url_environment_variable)
+        osrm_base_url = os.environ.get(
+            base_url_environment_variable
+        )
 
         if not osrm_base_url:
             raise ValueError(
-                f"OSRM routing requires environment variable "
+                "OSRM routing requires environment variable "
                 f"{base_url_environment_variable!r}"
             )
 
-        return OSRMRouter(
+        live_osrm_router = OSRMRouter(
             base_url=osrm_base_url,
+        )
+
+        # Cache files are generated runtime data and are excluded by
+        # .gitignore. Tests may override this location with a temporary
+        # directory so they never write runtime data into the repository.
+        cache_directory_setting = routing_config.get(
+            "osrm_cache_dir",
+            "data/cache/osrm",
+        )
+        cache_directory = repo_path(
+            cache_directory_setting
+        )
+
+        return CachingOSRMRouter(
+            live_router=live_osrm_router,
+            route_cache=OSRMRouteCache(cache_directory),
         )
 
     raise ValueError(

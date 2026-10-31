@@ -67,7 +67,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category equality) |
 | cached router + detour | placeholder (straight-line detour) |
-| runtime OSRM client | strict HTTP client + single-station waypoint detour implemented; cache/fallback integration pending |
+| runtime OSRM routing | strict HTTP client, deterministic local response cache, cache-first wrapper, and single-station waypoint detour implemented; fallback/verifier integration pending |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
 | planner | v1 generalized forward label-setting search (direct + multi-stop); richer time/SoC dominance remains TODO |
@@ -79,19 +79,25 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | harness | runs; most metrics stubbed |
 | LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM/vehicle ingestion, relaxation, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
-Configuration A's verifier measurements are deterministic estimates, not live road reroutes.
-The runtime OSRM client can fetch direct and single-station waypoint routes, but all committed
-configurations still use cached routing. Runtime response caching, explicit geometric fallback
-provenance, and verifier integration remain future work.
+Configuration A's verifier measurements remain deterministic geometric estimates,
+not live road reroutes. All committed A/B/C configurations still select fixture
+routing, so tests and demos remain offline and repeatable.
 
-Follow-up routing milestones (not part of the strict OSRM client):
+OSRM mode now uses a cache-first wrapper. A request is identified by its ordered
+coordinates and routing options. A cache hit returns a validated route labelled
+`cached`; a miss calls the strict OSRM client, stores the validated runtime route,
+and returns it. Cache files are generated under `data/cache/` and are excluded
+from version control.
 
-- cache successful OSRM responses for deterministic reuse;
-- add a routing-policy layer that tries cached OSRM, then live OSRM, then the
-  geometric fallback only for eligible temporary failures;
-- preserve the selected measurement source and warning instead of silently
-  returning an unlabelled fallback number;
-- connect the selected route measurements to planning and independent
-  verification; and
-- add tests for cache hits, cache misses, fallback eligibility, provenance,
-  and verifier agreement.
+Remaining routing milestones:
+
+- add an explicit routing-policy layer that permits geometric fallback only for
+  eligible temporary OSRM failures;
+- distinguish temporary service failures from `NoRoute`, invalid input,
+  malformed responses, and configuration errors;
+- preserve the selected measurement source and a user-visible warning when
+  fallback is used;
+- connect selected OSRM measurements to planning and independent verification;
+  and
+- add tests for fallback eligibility, provenance, warnings, and verifier
+  agreement.
