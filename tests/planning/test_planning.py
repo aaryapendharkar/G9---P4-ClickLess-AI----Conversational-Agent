@@ -42,6 +42,27 @@ def _generate_unranked_itineraries(pipe_a, request_text: str, request_id: str):
     return itineraries
 
 
+def _verify_itinerary(pipe_a, itinerary, request):
+    """Supply the verifier with authoritative vehicle and route inputs.
+
+    Individual tests can focus on the field they tamper with instead of
+    repeating the setup required by the verifier contract.
+    """
+
+    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
+    route = pipe_a.router.route(
+        request.origin,
+        request.destination,
+    )
+
+    return pipe_a.verifier.verify(
+        itinerary,
+        request,
+        vehicle,
+        route,
+    )
+
+
 def test_energy_model(store):
     v = store.vehicle("fixture-spark-lr-2025")  # 0.19 kWh/km, 74 kWh usable
     assert energy_kwh(100, v) == pytest.approx(19.0)
@@ -109,11 +130,10 @@ def test_verifier_catches_tampered_itinerary(pipe_a, demo_text):
     )
     tampered_itinerary = itinerary.model_copy(update={"stops": [tampered_stop]})
 
-    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
-    report = pipe_a.verifier.verify(
+    report = _verify_itinerary(
+        pipe_a,
         tampered_itinerary,
         result.request,
-        vehicle,
     )
 
     assert not report.ok
@@ -123,11 +143,10 @@ def test_verifier_catches_tampered_itinerary(pipe_a, demo_text):
 def test_verifier_checks_detour_limit(pipe_a, demo_text):
     result = pipe_a.run(demo_text, "v2")
     request = result.request.model_copy(update={"max_detour_min": 1})
-    vehicle = pipe_a.store.vehicle(request.vehicle_id)
-    report = pipe_a.verifier.verify(
+    report = _verify_itinerary(
+        pipe_a,
         result.alternatives[0].itinerary,
         request,
-        vehicle,
     )
 
     assert not report.ok
@@ -179,9 +198,7 @@ def test_verifier_checks_minimum_power(pipe_a, demo_text):
     itinerary = result.alternatives[0].itinerary
 
     request = result.request.model_copy(update={"min_power_kw": 100})
-    vehicle = pipe_a.store.vehicle(request.vehicle_id)
-
-    report = pipe_a.verifier.verify(itinerary, request, vehicle)
+    report = _verify_itinerary(pipe_a, itinerary, request)
 
     assert not report.ok
     assert any(violation.code == "power" for violation in report.violations)
@@ -196,11 +213,10 @@ def test_verifier_rejects_unknown_station(pipe_a, demo_text):
     )
     tampered_itinerary = itinerary.model_copy(update={"stops": [unknown_stop]})
 
-    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
-    report = pipe_a.verifier.verify(
+    report = _verify_itinerary(
+        pipe_a,
         tampered_itinerary,
         result.request,
-        vehicle,
     )
 
     assert not report.ok
@@ -219,11 +235,10 @@ def test_verifier_rejects_unavailable_station(pipe_a, demo_text):
     )
     tampered_itinerary = itinerary.model_copy(update={"stops": [unavailable_stop]})
 
-    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
-    report = pipe_a.verifier.verify(
+    report = _verify_itinerary(
+        pipe_a,
         tampered_itinerary,
         result.request,
-        vehicle,
     )
 
     assert not report.ok
@@ -242,11 +257,10 @@ def test_verifier_rejects_restricted_station(pipe_a, demo_text):
     )
     tampered_itinerary = itinerary.model_copy(update={"stops": [restricted_stop]})
 
-    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
-    report = pipe_a.verifier.verify(
+    report = _verify_itinerary(
+        pipe_a,
         tampered_itinerary,
         result.request,
-        vehicle,
     )
 
     assert not report.ok
@@ -267,11 +281,10 @@ def test_verifier_rejects_invalid_departure_soc(
     )
     tampered_itinerary = itinerary.model_copy(update={"stops": [impossible_stop]})
 
-    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
-    report = pipe_a.verifier.verify(
+    report = _verify_itinerary(
+        pipe_a,
         tampered_itinerary,
         result.request,
-        vehicle,
     )
 
     assert not report.ok
@@ -291,12 +304,74 @@ def test_verifier_rejects_broken_leg_continuity(pipe_a, demo_text):
         update={"legs": [itinerary.legs[0], disconnected_outbound_leg]}
     )
 
-    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
-    report = pipe_a.verifier.verify(
+    report = _verify_itinerary(
+        pipe_a,
         tampered_itinerary,
         result.request,
-        vehicle,
     )
 
     assert not report.ok
     assert any(violation.code == "continuity" for violation in report.violations)
+
+
+def test_verifier_rejects_tampered_leg_distance(pipe_a, demo_text):
+    """Energy checks must not trust a shorter distance claimed by the planner."""
+
+    result = pipe_a.run(demo_text, "v-route-distance")
+    itinerary = result.alternatives[0].itinerary
+
+    falsified_first_leg = itinerary.legs[0].model_copy(
+        update={"distance_km": 1.0}
+    )
+    falsified_itinerary = itinerary.model_copy(
+        update={
+            "legs": [
+                falsified_first_leg,
+                *itinerary.legs[1:],
+            ]
+        }
+    )
+
+    report = _verify_itinerary(
+        pipe_a,
+        falsified_itinerary,
+        result.request,
+    )
+
+    assert not report.ok
+    assert any(
+        violation.code == "route_distance"
+        for violation in report.violations
+    )
+
+
+def test_verifier_rejects_tampered_detour(pipe_a, demo_text):
+    """Detour checks must use the route estimate, not planner-provided totals."""
+
+    result = pipe_a.run(demo_text, "v-route-detour")
+    itinerary = result.alternatives[0].itinerary
+
+    falsified_first_stop = itinerary.stops[0].model_copy(
+        update={"detour_min": 0.0}
+    )
+    falsified_itinerary = itinerary.model_copy(
+        update={
+            "stops": [
+                falsified_first_stop,
+                *itinerary.stops[1:],
+            ],
+            "total_detour_min": 0.0,
+        }
+    )
+
+    report = _verify_itinerary(
+        pipe_a,
+        falsified_itinerary,
+        result.request,
+    )
+
+    assert not report.ok
+    assert any(
+        violation.code == "detour"
+        for violation in report.violations
+    )

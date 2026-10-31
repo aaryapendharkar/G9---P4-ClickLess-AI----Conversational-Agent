@@ -114,7 +114,11 @@ class Pipeline:
         kept, rejected = self.filter.apply(cands, req, vehicle)
         result.notes += [f"skipped {c.station.station_id}: {why}" for c, why in rejected]
         itineraries = self.planner.plan(req, vehicle, route, kept)
-        verified = [it for it in itineraries if self.verifier.verify(it, req, vehicle).ok]
+        verified = [
+            itinerary
+            for itinerary in itineraries
+            if self.verifier.verify(itinerary, req, vehicle, route).ok
+        ]
         lap("plan+verify")
 
         if not verified:
@@ -129,7 +133,12 @@ class Pipeline:
         if getattr(self.ranker, "fallback_used", False):
             result.notes.append("logreg ranker not trained yet -- fell back to weighted cost")
         result.alternatives = self.selector.select(ranked, req)
-        result.verification = self.verifier.verify(result.alternatives[0].itinerary, req, vehicle)
+        result.verification = self.verifier.verify(
+            result.alternatives[0].itinerary,
+            req,
+            vehicle,
+            route,
+        )
         lap("rank")
         return self._finish(result)
 

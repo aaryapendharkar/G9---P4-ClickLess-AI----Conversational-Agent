@@ -59,7 +59,11 @@ class Planner(Protocol):  # Hriday
 
 class Verifier(Protocol):  # Hriday -- must recheck from scratch, not trust the planner
     def verify(
-        self, itinerary: Itinerary, request: TripRequest, vehicle: Vehicle
+        self,
+        itinerary: Itinerary,
+        request: TripRequest,
+        vehicle: Vehicle,
+        route: Route,
     ) -> VerificationReport: ...
 
 

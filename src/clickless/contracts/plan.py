@@ -93,6 +93,7 @@ ViolationCode = Literal[
     "departure_soc",
     "continuity",
     "unknown_station",
+    "route_distance",
 ]
 
 
