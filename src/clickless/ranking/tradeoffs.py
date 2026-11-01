@@ -1,13 +1,10 @@
-"""Trade-off alternatives: what the driver is shown (TA feedback). Owner: Hriday.
+"""Select meaningful Pareto-optimal trade-off alternatives.
 
-1. Pareto front over (total time, detour, charge time, amenity satisfaction).
-2. "Recommended" = lowest minutes-equivalent cost under the active profile.
-3. Up to 2 more alternatives, each the best plan on one axis (e.g. Fastest, Best amenities),
-   only if it is on the Pareto front, is a different itinerary, and differs meaningfully
-   (>= min_time_diff_min minutes or >= min_satisfaction_diff in satisfaction).
-4. Deltas vs Recommended + gained/lost preferences -- the presenter turns these into sentences.
-v0 implemented; TODO(Hriday): tie-breaking rules, "Least detour" when time differences are tiny,
-property tests (an alternative never dominated by Recommended).
+The first ranked itinerary remains Recommended. Up to two additional plans may
+be selected when each one is Pareto-optimal, improves a named presentation
+axis, and differs meaningfully from Recommended.
+
+Owner: Hriday.
 """
 
 from __future__ import annotations
@@ -18,61 +15,257 @@ from ..contracts import Alternative, Itinerary, PlanCost, TripRequest
 from .cost import best_match_per_preference
 
 
-def axis_values(it: Itinerary, cost: PlanCost) -> dict[str, float]:
+def axis_values(
+    itinerary: Itinerary,
+    cost: PlanCost,
+) -> dict[str, float]:
+    """Return the comparable values used by Pareto selection."""
+
     return {
-        "total_time_min": it.total_time_min,
-        "detour_min": it.total_detour_min,
-        "charge_min": it.total_charge_min,
+        "total_time_min": itinerary.total_time_min,
+        "detour_min": itinerary.total_detour_min,
+        "charge_min": itinerary.total_charge_min,
         "amenity_satisfaction": cost.amenity_satisfaction,
-        "stops": float(len(it.stops)),
-        "arrival_soc_pct": it.arrival_soc_pct,
+        "stops": float(len(itinerary.stops)),
+        "arrival_soc_pct": itinerary.arrival_soc_pct,
     }
 
 
-def dominates(a: dict[str, float], b: dict[str, float], axes: dict[str, str]) -> bool:
-    better_or_equal = all((a[k] <= b[k]) if d == "min" else (a[k] >= b[k]) for k, d in axes.items())
-    strictly = any((a[k] < b[k]) if d == "min" else (a[k] > b[k]) for k, d in axes.items())
-    return better_or_equal and strictly
+def dominates(
+    first_values: dict[str, float],
+    second_values: dict[str, float],
+    axes: dict[str, str],
+) -> bool:
+    """Return whether the first plan Pareto-dominates the second plan.
+
+    Dominance means the first plan is no worse on every configured axis and is
+    strictly better on at least one axis.
+    """
+
+    first_is_no_worse = all(
+        (
+            first_values[axis] <= second_values[axis]
+            if direction == "min"
+            else first_values[axis] >= second_values[axis]
+        )
+        for axis, direction in axes.items()
+    )
+
+    first_is_strictly_better = any(
+        (
+            first_values[axis] < second_values[axis]
+            if direction == "min"
+            else first_values[axis] > second_values[axis]
+        )
+        for axis, direction in axes.items()
+    )
+
+    return first_is_no_worse and first_is_strictly_better
 
 
-def pareto_front(ranked: list[tuple[Itinerary, PlanCost]], axes: dict[str, str]) -> list[tuple[Itinerary, PlanCost]]:
-    vals = [axis_values(it, c) for it, c in ranked]
-    return [ranked[i] for i in range(len(ranked))
-            if not any(dominates(vals[j], vals[i], axes) for j in range(len(ranked)) if j != i)]
+def pareto_front(
+    ranked_plans: list[tuple[Itinerary, PlanCost]],
+    axes: dict[str, str],
+) -> list[tuple[Itinerary, PlanCost]]:
+    """Return plans that are not dominated by another available plan."""
+
+    values_by_plan = [axis_values(itinerary, cost) for itinerary, cost in ranked_plans]
+
+    pareto_plans: list[tuple[Itinerary, PlanCost]] = []
+
+    for plan_index, ranked_plan in enumerate(ranked_plans):
+        plan_is_dominated = any(
+            other_index != plan_index
+            and dominates(
+                values_by_plan[other_index],
+                values_by_plan[plan_index],
+                axes,
+            )
+            for other_index in range(len(ranked_plans))
+        )
+
+        if not plan_is_dominated:
+            pareto_plans.append(ranked_plan)
+
+    return pareto_plans
 
 
 class TradeoffSelector:
+    """Select Recommended plus meaningful axis-specific alternatives."""
+
     def __init__(self, tradeoffs_cfg: dict[str, Any]) -> None:
-        self.p = tradeoffs_cfg["presentation"]
+        self.presentation_config = tradeoffs_cfg["presentation"]
 
-    def select(self, ranked: list[tuple[Itinerary, PlanCost]], request: TripRequest) -> list[Alternative]:
-        if not ranked:
+    def select(
+        self,
+        ranked_plans: list[tuple[Itinerary, PlanCost]],
+        request: TripRequest,
+    ) -> list[Alternative]:
+        """Return the recommendation and up to two useful alternatives."""
+
+        if not ranked_plans:
             return []
-        axes = self.p["axes"]
-        rec_it, rec_cost = ranked[0]
-        rec_vals = axis_values(rec_it, rec_cost)
-        rec_met = self._met(rec_it, request)
-        alts = [Alternative(label="Recommended", itinerary=rec_it, cost=rec_cost)]
-        front = pareto_front(ranked, axes)
-        for axis, label in self.p["labels"].items():
-            if len(alts) >= self.p["max_alternatives"]:
-                break
-            sign = 1 if axes[axis] == "min" else -1
-            best_it, best_cost = min(front, key=lambda x: (sign * axis_values(*x)[axis], x[1].total_min))
-            if any(a.itinerary.itinerary_id == best_it.itinerary_id for a in alts):
-                continue
-            vals = axis_values(best_it, best_cost)
-            time_diff = abs(vals["total_time_min"] - rec_vals["total_time_min"])
-            sat_diff = abs(vals["amenity_satisfaction"] - rec_vals["amenity_satisfaction"])
-            if time_diff < self.p["min_time_diff_min"] and sat_diff < self.p["min_satisfaction_diff"]:
-                continue
-            met = self._met(best_it, request)
-            alts.append(Alternative(
-                label=label, itinerary=best_it, cost=best_cost,
-                deltas={k: round(vals[k] - rec_vals[k], 2) for k in vals},
-                gains=sorted(met - rec_met), losses=sorted(rec_met - met)))
-        return alts
 
-    def _met(self, it: Itinerary, request: TripRequest) -> set[str]:
-        thr = self.p["satisfied_threshold"]
-        return {k for k, s in best_match_per_preference(it, request).items() if s >= thr}
+        axes = self.presentation_config["axes"]
+        recommended_itinerary, recommended_cost = ranked_plans[0]
+        recommended_values = axis_values(
+            recommended_itinerary,
+            recommended_cost,
+        )
+        recommended_preferences = self._met_preferences(
+            recommended_itinerary,
+            request,
+        )
+
+        alternatives = [
+            Alternative(
+                label="Recommended",
+                itinerary=recommended_itinerary,
+                cost=recommended_cost,
+            )
+        ]
+        selected_itinerary_ids = {recommended_itinerary.itinerary_id}
+
+        nondominated_plans = pareto_front(
+            ranked_plans,
+            axes,
+        )
+
+        for axis, label in self.presentation_config["labels"].items():
+            if len(alternatives) >= self.presentation_config["max_alternatives"]:
+                break
+
+            axis_candidates = [
+                (itinerary, cost)
+                for itinerary, cost in nondominated_plans
+                if itinerary.itinerary_id not in selected_itinerary_ids
+                and not dominates(
+                    recommended_values,
+                    axis_values(itinerary, cost),
+                    axes,
+                )
+                and self._improves_axis(
+                    axis,
+                    axis_values(itinerary, cost),
+                    recommended_values,
+                    axes[axis],
+                )
+            ]
+
+            if not axis_candidates:
+                continue
+
+            best_itinerary, best_cost = min(
+                axis_candidates,
+                key=lambda plan: self._axis_selection_key(
+                    plan,
+                    axis,
+                    axes[axis],
+                ),
+            )
+            best_values = axis_values(
+                best_itinerary,
+                best_cost,
+            )
+
+            if not self._is_meaningfully_different(
+                axis,
+                best_values,
+                recommended_values,
+            ):
+                continue
+
+            met_preferences = self._met_preferences(
+                best_itinerary,
+                request,
+            )
+
+            alternatives.append(
+                Alternative(
+                    label=label,
+                    itinerary=best_itinerary,
+                    cost=best_cost,
+                    deltas={
+                        value_name: round(
+                            value - recommended_values[value_name],
+                            2,
+                        )
+                        for value_name, value in best_values.items()
+                    },
+                    gains=sorted(met_preferences - recommended_preferences),
+                    losses=sorted(recommended_preferences - met_preferences),
+                )
+            )
+            selected_itinerary_ids.add(best_itinerary.itinerary_id)
+
+        return alternatives
+
+    def _axis_selection_key(
+        self,
+        plan: tuple[Itinerary, PlanCost],
+        axis: str,
+        direction: str,
+    ) -> tuple[float, float, str]:
+        """Return deterministic priorities for one presentation axis."""
+
+        itinerary, cost = plan
+        value = axis_values(itinerary, cost)[axis]
+
+        # Python's min() selects the smallest key. Maximized axes therefore use
+        # a negative value so that larger satisfaction sorts first.
+        preferred_axis_value = value if direction == "min" else -value
+
+        return (
+            preferred_axis_value,
+            cost.total_min,
+            itinerary.itinerary_id,
+        )
+
+    def _improves_axis(
+        self,
+        axis: str,
+        candidate_values: dict[str, float],
+        recommended_values: dict[str, float],
+        direction: str,
+    ) -> bool:
+        """Return whether the candidate is actually better on this axis."""
+
+        if direction == "min":
+            return candidate_values[axis] < recommended_values[axis]
+
+        return candidate_values[axis] > recommended_values[axis]
+
+    def _is_meaningfully_different(
+        self,
+        axis: str,
+        candidate_values: dict[str, float],
+        recommended_values: dict[str, float],
+    ) -> bool:
+        """Reject changes too small to justify another driver-facing option."""
+
+        difference = abs(candidate_values[axis] - recommended_values[axis])
+
+        if axis == "amenity_satisfaction":
+            return difference >= self.presentation_config["min_satisfaction_diff"]
+
+        # Time, charging and detour axes are all measured in minutes, so they
+        # share the configured minimum meaningful minute difference.
+        return difference >= self.presentation_config["min_time_diff_min"]
+
+    def _met_preferences(
+        self,
+        itinerary: Itinerary,
+        request: TripRequest,
+    ) -> set[str]:
+        """Return requested preferences satisfied above the configured score."""
+
+        satisfaction_threshold = self.presentation_config["satisfied_threshold"]
+
+        return {
+            preference_key
+            for preference_key, score in best_match_per_preference(
+                itinerary,
+                request,
+            ).items()
+            if score >= satisfaction_threshold
+        }
