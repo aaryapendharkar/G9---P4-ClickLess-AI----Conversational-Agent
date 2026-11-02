@@ -90,15 +90,17 @@ coordinates and routing options. A cache hit returns a validated route labelled
 and returns it. Cache files are generated under `data/cache/` and are excluded
 from version control.
 
+OSRM failures are now classified before routing policy handles them. Timeouts,
+connection failures, and HTTP 5xx responses are temporary and eligible for
+geometric fallback. `NoRoute`, invalid input, non-retryable HTTP responses,
+malformed responses, and configuration errors are not fallback-eligible.
+
 Remaining routing milestones:
 
-- add an explicit routing-policy layer that permits geometric fallback only for
-  eligible temporary OSRM failures;
-- distinguish temporary service failures from `NoRoute`, invalid input,
-  malformed responses, and configuration errors;
+- add an explicit routing-policy layer that invokes geometric fallback only for
+  errors classified as temporary;
 - preserve the selected measurement source and a user-visible warning when
   fallback is used;
 - connect selected OSRM measurements to planning and independent verification;
   and
-- add tests for fallback eligibility, provenance, warnings, and verifier
-  agreement.
+- add tests for fallback provenance, warnings, and verifier agreement.

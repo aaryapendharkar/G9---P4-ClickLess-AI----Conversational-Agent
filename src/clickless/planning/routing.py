@@ -36,7 +36,30 @@ class RouteNotCached(LookupError):
 
 
 class OSRMRouteError(RuntimeError):
-    """Raised when OSRM cannot return a valid route."""
+    """Base class for failures produced while requesting an OSRM route."""
+
+
+class OSRMTemporaryError(OSRMRouteError):
+    """A temporary OSRM failure for which geometric fallback is permitted."""
+
+
+class OSRMNoRouteError(OSRMRouteError):
+    """OSRM successfully responded but found no driveable route."""
+
+
+class OSRMResponseError(OSRMRouteError):
+    """OSRM returned an HTTP or response payload that cannot be used safely."""
+
+
+def is_geometric_fallback_allowed(error: Exception) -> bool:
+    """Return whether routing policy may use the geometric estimate.
+
+    Only explicitly temporary service failures are eligible. Invalid input,
+    configuration errors, NoRoute results and malformed responses must remain
+    visible instead of being disguised as estimated road measurements.
+    """
+
+    return isinstance(error, OSRMTemporaryError)
 
 
 def _slug(text: str) -> str:
@@ -79,7 +102,10 @@ class CachedRouter:
         self.detour_cfg = energy_cfg["placeholder_detour"]
 
     def route(self, origin: Place, destination: Place) -> Route:
-        path = self.store.routes_dir / f"{_slug(origin.text)}__{_slug(destination.text)}.json"
+        path = (
+            self.store.routes_dir
+            / f"{_slug(origin.text)}__{_slug(destination.text)}.json"
+        )
         if not path.exists():
             raise RouteNotCached(f"no cached route at {path}")
         payload = json.loads(path.read_text())
@@ -174,9 +200,28 @@ class OSRMRouter:
             )
             response.raise_for_status()
         except requests.Timeout as error:
-            raise OSRMRouteError(
-                f"OSRM request timed out after "
-                f"{self.timeout_seconds:.1f} seconds"
+            raise OSRMTemporaryError(
+                "OSRM request timed out after " f"{self.timeout_seconds:.1f} seconds"
+            ) from error
+        except requests.ConnectionError as error:
+            raise OSRMTemporaryError(f"OSRM connection failed: {error}") from error
+        except requests.HTTPError as error:
+            status_code = getattr(
+                error.response,
+                "status_code",
+                None,
+            )
+
+            if status_code is not None and 500 <= status_code < 600:
+                raise OSRMTemporaryError(
+                    f"OSRM temporarily failed with HTTP {status_code}"
+                ) from error
+
+            status_description = (
+                str(status_code) if status_code is not None else "unknown"
+            )
+            raise OSRMResponseError(
+                "OSRM request failed with non-retryable HTTP " f"{status_description}"
             ) from error
         except requests.RequestException as error:
             raise OSRMRouteError(f"OSRM request failed: {error}") from error
@@ -184,7 +229,7 @@ class OSRMRouter:
         try:
             response_payload = response.json()
         except ValueError as error:
-            raise OSRMRouteError(
+            raise OSRMResponseError(
                 "OSRM returned a response that was not valid JSON"
             ) from error
 
@@ -197,16 +242,19 @@ class OSRMRouter:
                 "message",
                 "OSRM did not provide an error message",
             )
-
-            raise OSRMRouteError(
-                f"OSRM route failed with {error_code}: "
-                f"{error_message}"
+            failure_message = (
+                f"OSRM route failed with {error_code}: " f"{error_message}"
             )
+
+            if error_code == "NoRoute":
+                raise OSRMNoRouteError(failure_message)
+
+            raise OSRMResponseError(failure_message)
 
         returned_routes = response_payload.get("routes", [])
 
         if not returned_routes:
-            raise OSRMRouteError("OSRM returned success but included no routes")
+            raise OSRMResponseError("OSRM returned success but included no routes")
 
         selected_route = returned_routes[0]
         geometry_payload = selected_route.get("geometry", {})
@@ -216,7 +264,19 @@ class OSRMRouter:
         )
 
         if len(geometry_coordinates) < 2:
-            raise OSRMRouteError("OSRM route geometry must contain at least two points")
+            raise OSRMResponseError(
+                "OSRM route geometry must contain at least two points"
+            )
+
+        try:
+            # OSRM reports distance in metres and duration in seconds.
+            # ClickLess contracts use kilometres and minutes.
+            distance_km = float(selected_route["distance"]) / 1000.0
+            duration_min = float(selected_route["duration"]) / 60.0
+        except (KeyError, TypeError, ValueError) as error:
+            raise OSRMResponseError(
+                "OSRM route must contain numeric distance and duration"
+            ) from error
 
         # GeoJSON coordinates are [longitude, latitude]. Our LatLon contract
         # stores explicitly named latitude and longitude values.
@@ -238,10 +298,8 @@ class OSRMRouter:
             destination=destination_coordinates,
             via=waypoint_coordinates,
             geometry=route_geometry,
-            # OSRM reports meters and seconds. Project contracts use kilometres
-            # and minutes so downstream calculations use consistent units.
-            distance_km=selected_route["distance"] / 1000.0,
-            duration_min=selected_route["duration"] / 60.0,
+            distance_km=distance_km,
+            duration_min=duration_min,
             provenance=Provenance(
                 source="OSRM",
                 source_url=response.url,
@@ -357,10 +415,7 @@ class CachingOSRMRouter:
             ]
         )
 
-        measured_detour_min = (
-            route_via_station.duration_min
-            - route.duration_min
-        )
+        measured_detour_min = route_via_station.duration_min - route.duration_min
 
         return max(
             0.0,
