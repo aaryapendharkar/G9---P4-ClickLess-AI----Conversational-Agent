@@ -27,7 +27,11 @@ from .planning.filters import DefaultHardConstraintFilter
 from .planning.planner import ItineraryPlanner
 from .planning.relaxation import MinCostRelaxer
 from .planning.route_cache import OSRMRouteCache
-from .planning.route_measurement import OSRMRouteMeasurer
+from .planning.route_measurement import (
+    GeometricRouteMeasurer,
+    OSRMRouteMeasurer,
+    TemporaryFailureFallbackMeasurer,
+)
 from .planning.routing import (
     CachedRouter,
     CachingOSRMRouter,
@@ -137,7 +141,10 @@ class Pipeline:
         self.filter = DefaultHardConstraintFilter()
         self.planner = ItineraryPlanner(cfg["energy"])
         route_measurer = (
-            OSRMRouteMeasurer(self.router)
+            TemporaryFailureFallbackMeasurer(
+                primary_measurer=OSRMRouteMeasurer(self.router),
+                fallback_measurer=GeometricRouteMeasurer(cfg["energy"]),
+            )
             if isinstance(self.router, CachingOSRMRouter)
             else None
         )
@@ -339,12 +346,26 @@ class Pipeline:
                 "logreg ranker not trained yet -- fell back to weighted cost"
             )
 
+        # Reverify the selected recommendation so the returned report and any
+        # measurement warning describe the plan the driver will actually see.
         result.verification = self.verifier.verify(
             result.alternatives[0].itinerary,
             req,
             vehicle,
             route,
         )
+
+        route_measurement_warning = getattr(
+            self.verifier.route_measurer,
+            "warning",
+            None,
+        )
+
+        if (
+            route_measurement_warning
+            and route_measurement_warning not in result.notes
+        ):
+            result.notes.append(route_measurement_warning)
 
         return self._finish(result)
 

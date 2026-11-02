@@ -1,13 +1,15 @@
 """Test how pipeline routing mode selects verifier measurements."""
 
 from copy import deepcopy
+from unittest.mock import Mock
 
 from clickless.pipeline import build_pipeline
 from clickless.planning.route_measurement import (
     GeometricRouteMeasurer,
     OSRMRouteMeasurer,
+    TemporaryFailureFallbackMeasurer,
 )
-from clickless.planning.routing import CachingOSRMRouter
+from clickless.planning.routing import CachingOSRMRouter, OSRMTemporaryError
 
 
 def test_cached_fixture_mode_keeps_geometric_verifier_measurements(pipe_a):
@@ -47,6 +49,61 @@ def test_osrm_mode_injects_cache_first_verifier_measurements(
     assert isinstance(pipeline.router, CachingOSRMRouter)
     assert isinstance(
         pipeline.verifier.route_measurer,
+        TemporaryFailureFallbackMeasurer,
+    )
+    assert isinstance(
+        pipeline.verifier.route_measurer.primary_measurer,
         OSRMRouteMeasurer,
     )
-    assert pipeline.verifier.route_measurer.route_provider is pipeline.router
+    assert (
+        pipeline.verifier.route_measurer.primary_measurer.route_provider
+        is pipeline.router
+    )
+    assert isinstance(
+        pipeline.verifier.route_measurer.fallback_measurer,
+        GeometricRouteMeasurer,
+    )
+
+
+def test_final_verification_adds_geometric_fallback_warning(
+    pipe_a,
+    cfg_a,
+    demo_text,
+):
+    """The returned plan must disclose estimated verifier measurements."""
+
+    unavailable_osrm_measurer = Mock()
+    unavailable_osrm_measurer.measure.side_effect = OSRMTemporaryError(
+        "test OSRM outage"
+    )
+    fallback_policy = TemporaryFailureFallbackMeasurer(
+        primary_measurer=unavailable_osrm_measurer,
+        fallback_measurer=GeometricRouteMeasurer(cfg_a["energy"]),
+    )
+    pipe_a.verifier.route_measurer = fallback_policy
+
+    result = pipe_a.run(
+        demo_text,
+        request_id="fallback-warning-test",
+    )
+
+    assert result.status == "ok"
+    assert result.verification is not None
+    assert result.verification.ok
+    assert fallback_policy.warning is not None
+    assert result.notes.count(fallback_policy.warning) == 1
+
+
+def test_successful_final_verification_adds_no_fallback_warning(
+    pipe_a,
+    demo_text,
+):
+    """Normal deterministic verification must not report an OSRM outage."""
+
+    result = pipe_a.run(
+        demo_text,
+        request_id="no-fallback-warning-test",
+    )
+
+    assert result.status == "ok"
+    assert not any("OSRM measurement unavailable" in note for note in result.notes)
