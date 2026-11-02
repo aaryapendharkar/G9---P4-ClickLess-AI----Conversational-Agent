@@ -12,9 +12,12 @@ more driving, charging, or detour time. Equivalent labels use the stop sequence
 as a deterministic tie-breaker. Complete itineraries are still simulated and
 verified after the search.
 
-TODO(Hriday):
-  * charge-target policy: "just enough" vs "top up while eating" (comfort profile)
-  * robust feasibility run with efficiency_penalty_robust
+Normal planning uses the documented nominal efficiency. ``plan_robust`` is a
+separate sensitivity run using ``efficiency_penalty_robust``; it never silently
+changes the driver's recommendation.
+
+TODO(Hriday): charge-target policy: "just enough" vs "top up while eating"
+for the comfort profile.
 """
 
 from __future__ import annotations
@@ -103,6 +106,59 @@ class ItineraryPlanner:
     ) -> list[Itinerary]:
         """Return every representative stop sequence that passes simulation."""
 
+        return self._plan_with_efficiency_penalty(
+            request,
+            vehicle,
+            route,
+            candidates,
+            efficiency_penalty=0.0,
+        )
+
+    def plan_robust(
+        self,
+        request: TripRequest,
+        vehicle: Vehicle,
+        route: Route,
+        candidates: list[Candidate],
+    ) -> list[Itinerary]:
+        """Plan with the frozen robust energy-consumption penalty.
+
+        This is a sensitivity run used to measure how many nominally feasible
+        plans remain feasible when the vehicle consumes more energy than
+        expected. It does not replace or modify the driver's normal plan.
+        """
+
+        efficiency_penalty = float(
+            self.energy_config["efficiency_penalty_robust"]
+        )
+
+        if efficiency_penalty < 0:
+            raise ValueError(
+                "efficiency_penalty_robust must not be negative"
+            )
+
+        return self._plan_with_efficiency_penalty(
+            request,
+            vehicle,
+            route,
+            candidates,
+            efficiency_penalty=efficiency_penalty,
+        )
+
+    def _plan_with_efficiency_penalty(
+        self,
+        request: TripRequest,
+        vehicle: Vehicle,
+        route: Route,
+        candidates: list[Candidate],
+        efficiency_penalty: float,
+    ) -> list[Itinerary]:
+        """Plan using one explicit energy-consumption penalty.
+
+        Ordinary planning passes zero. The robust entry point passes the frozen
+        sensitivity value without changing normal recommendations.
+        """
+
         ordered_candidates = sorted(
             candidates, key=lambda candidate: candidate.along_route_km
         )
@@ -111,11 +167,18 @@ class ItineraryPlanner:
             vehicle,
             route,
             ordered_candidates,
+            efficiency_penalty,
         )
         feasible_itineraries: list[Itinerary] = []
 
         for stop_sequence in stop_sequences:
-            itinerary = self._simulate(request, vehicle, route, stop_sequence)
+            itinerary = self._simulate(
+                request,
+                vehicle,
+                route,
+                stop_sequence,
+                efficiency_penalty,
+            )
 
             if itinerary is not None:
                 feasible_itineraries.append(itinerary)
@@ -128,6 +191,7 @@ class ItineraryPlanner:
         vehicle: Vehicle,
         route: Route,
         ordered_candidates: list[Candidate],
+        efficiency_penalty: float,
     ) -> list[list[Candidate]]:
         """Build representative forward sequences of any feasible stop count.
 
@@ -174,6 +238,7 @@ class ItineraryPlanner:
             first_leg_energy_kwh = energy_kwh(
                 first_leg_distance_km,
                 vehicle,
+                efficiency_penalty,
             )
             arrival_soc_pct = request.start_soc_pct - kwh_to_soc_pct(
                 first_leg_energy_kwh,
@@ -222,7 +287,10 @@ class ItineraryPlanner:
                     next_stop_point = candidate_points[next_stop_index]
 
                     if not self._station_can_reach(
-                        last_stop_point, next_stop_point, vehicle
+                        last_stop_point,
+                        next_stop_point,
+                        vehicle,
+                        efficiency_penalty,
                     ):
                         continue
 
@@ -241,6 +309,7 @@ class ItineraryPlanner:
                         next_leg_distance_km,
                         self.energy_config["reserve_soc_pct"],
                         vehicle,
+                        efficiency_penalty,
                     )
 
                     if (
@@ -278,6 +347,7 @@ class ItineraryPlanner:
                         energy_kwh(
                             next_leg_distance_km,
                             vehicle,
+                            efficiency_penalty,
                         ),
                         vehicle,
                     )
@@ -339,6 +409,7 @@ class ItineraryPlanner:
         vehicle: Vehicle,
         route: Route,
         stops: list[Candidate],
+        efficiency_penalty: float,
     ) -> Itinerary | None:
         """Simulate one ordered stop sequence, rejecting infeasible legs."""
 
@@ -363,7 +434,11 @@ class ItineraryPlanner:
                 end_point,
                 minutes_per_km,
             )
-            leg_energy_kwh = energy_kwh(leg_distance_km, vehicle)
+            leg_energy_kwh = energy_kwh(
+                leg_distance_km,
+                vehicle,
+                efficiency_penalty,
+            )
             arrival_soc_pct = current_soc_pct - kwh_to_soc_pct(leg_energy_kwh, vehicle)
             is_destination_leg = leg_index == len(route_points) - 2
             required_arrival_soc_pct = (
@@ -405,6 +480,7 @@ class ItineraryPlanner:
                 next_leg_distance_km,
                 next_arrival_target_soc_pct,
                 vehicle,
+                efficiency_penalty,
             )
 
             if (
@@ -567,12 +643,14 @@ class ItineraryPlanner:
         leg_distance_km: float,
         required_arrival_soc_pct: float,
         vehicle: Vehicle,
+        efficiency_penalty: float,
     ) -> float:
         """Return the departure charge needed for one subsequent leg."""
 
         leg_energy_kwh = energy_kwh(
             leg_distance_km,
             vehicle,
+            efficiency_penalty,
         )
         leg_soc_drop_pct = kwh_to_soc_pct(
             leg_energy_kwh,
@@ -591,10 +669,12 @@ class ItineraryPlanner:
         candidate_point: RoutePoint,
         starting_soc_pct: float,
         vehicle: Vehicle,
+        efficiency_penalty: float = 0.0,
     ) -> bool:
         leg_energy_kwh = energy_kwh(
             self._leg_distance_km(origin_point, candidate_point),
             vehicle,
+            efficiency_penalty,
         )
         arrival_soc_pct = starting_soc_pct - kwh_to_soc_pct(leg_energy_kwh, vehicle)
         return arrival_soc_pct >= self.energy_config["reserve_soc_pct"]
@@ -604,12 +684,14 @@ class ItineraryPlanner:
         start_point: RoutePoint,
         end_point: RoutePoint,
         vehicle: Vehicle,
+        efficiency_penalty: float,
     ) -> bool:
         """Check whether a fully available charging stop can reach the next."""
 
         leg_energy_kwh = energy_kwh(
             self._leg_distance_km(start_point, end_point),
             vehicle,
+            efficiency_penalty,
         )
         leg_soc_drop_pct = kwh_to_soc_pct(leg_energy_kwh, vehicle)
         required_departure_soc_pct = (

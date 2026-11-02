@@ -70,7 +70,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | runtime OSRM routing | strict HTTP client, deterministic local response cache, cache-first waypoint routing, and verifier measurement integration implemented; fallback/planner integration pending |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
-| planner | v2 generalized forward label-setting search (direct + multi-stop) with Pareto pruning over arrival SoC, drive time, charging time, detour, and satisfied preferences |
+| planner | v3 generalized forward label-setting search with Pareto pruning plus a separate +15% consumption robustness run that does not alter nominal recommendations |
 | verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; Config A uses geometry while OSRM mode uses cache-backed road measurements |
 | weighted cost, trade-off selector | v0 implemented |
 | logreg ranker | falls back to weighted cost until trained |
@@ -83,6 +83,12 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification
 responsibility so each behavior has a focused place to evolve.
+
+Robust feasibility is evaluated through `ItineraryPlanner.plan_robust`. It
+reuses the normal stop search and simulation with the frozen
+`efficiency_penalty_robust` value. This sensitivity run may remove marginal
+plans or require more stops, but ordinary pipeline planning continues to use
+the nominal energy model.
 
 Configuration A's verifier measurements remain deterministic geometric estimates,
 not live road reroutes. All committed A/B/C configurations still select fixture
