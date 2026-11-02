@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 nlp = ["spacy>=3.7", "sentence-transformers>=2.6"]
 kg = ["rdflib>=7.0"]
-dev = ["pytest>=8", "ruff>=0.5", "scipy>=1.11"]
+dev = ["pytest>=8", "ruff>=0.5", "scipy>=1.11", "hypothesis>=6"]
 
 [project.scripts]
 clickless = "clickless.cli:main"

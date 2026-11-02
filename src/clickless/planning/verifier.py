@@ -6,8 +6,8 @@ reserve and destination charge, station existence/status/access, connector and r
 departure charge limits, and the requested detour limit.
 
 Configuration A keeps deterministic geometric measurements. Runtime OSRM mode
-injects cache-backed waypoint measurements. TODO(Hriday): add property-based
-boundary tests when Hypothesis becomes a development dependency.
+injects cache-backed waypoint measurements. Deterministic property-based tests
+exercise distance tolerance, departure ceilings, and arrival-charge boundaries.
 """
 
 from __future__ import annotations
