@@ -1,21 +1,19 @@
 """Independent route measurements used by itinerary verification.
 
-Configuration A uses a cached base route and synthetic station records. This
-module recomputes station positions, leg distances, and detours from those
-authoritative inputs instead of trusting values copied into an itinerary.
-
-The calculations are still estimates. Live OSRM waypoint routing will replace
-this approximation in a later milestone.
+Configuration A recomputes estimates from cached geometry and authoritative
+station records. Runtime OSRM mode measures consecutive legs and stop detours
+through the cache-first waypoint router. Neither strategy trusts numerical
+values copied into a planner-produced itinerary.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from ..common.geo import nearest_on_polyline, polyline_length_km
-from ..contracts import Route, Station
+from ..contracts import LatLon, Route, Station
 
 
 @dataclass(frozen=True)
@@ -55,6 +53,185 @@ class ItineraryRouteMeasurement:
         """Return the total estimated detour across all charging stops."""
 
         return sum(self.stop_detour_min)
+
+
+class ItineraryRouteMeasurer(Protocol):
+    """Strategy used by the verifier to measure an itinerary's route.
+
+    The verifier depends on this small behavior instead of a particular
+    geometric or OSRM implementation. That keeps verification control flow
+    independent while allowing the configured routing source to change.
+    """
+
+    def measure(
+        self,
+        route: Route,
+        stations: Sequence[Station],
+    ) -> ItineraryRouteMeasurement: ...
+
+
+class WaypointRouteProvider(Protocol):
+    """Routing source that can measure an ordered list of road points."""
+
+    def route_through(
+        self,
+        route_points: Sequence[LatLon],
+    ) -> Route: ...
+
+
+class GeometricRouteMeasurer:
+    """Deterministic Configuration A measurement strategy."""
+
+    def __init__(self, energy_config: dict[str, Any]) -> None:
+        self.energy_config = energy_config
+
+    def measure(
+        self,
+        route: Route,
+        stations: Sequence[Station],
+    ) -> ItineraryRouteMeasurement:
+        """Measure from cached geometry and authoritative station records."""
+
+        return measure_itinerary_route(
+            route,
+            stations,
+            self.energy_config,
+        )
+
+
+class OSRMRouteMeasurer:
+    """Measure itinerary legs and stop detours using routed road distances.
+
+    The supplied route provider is expected to be cache-first. In normal
+    pipeline use this will be ``CachingOSRMRouter``, so repeated verification
+    can reuse saved OSRM responses without making another network request.
+    """
+
+    def __init__(
+        self,
+        route_provider: WaypointRouteProvider,
+    ) -> None:
+        self.route_provider = route_provider
+
+    def measure(
+        self,
+        route: Route,
+        stations: Sequence[Station],
+    ) -> ItineraryRouteMeasurement:
+        """Measure every declared leg and each station's individual detour."""
+
+        station_route_points = [
+            LatLon(
+                lat=station.lat,
+                lon=station.lon,
+            )
+            for station in stations
+        ]
+        itinerary_route_points = [
+            route.origin,
+            *station_route_points,
+            route.destination,
+        ]
+
+        # Request each consecutive leg separately because the current Route
+        # contract stores only a route's total distance, not OSRM's per-leg
+        # breakdown. Each request still passes through the route cache.
+        measured_leg_routes = [
+            self.route_provider.route_through(
+                [
+                    itinerary_route_points[point_index],
+                    itinerary_route_points[point_index + 1],
+                ]
+            )
+            for point_index in range(len(itinerary_route_points) - 1)
+        ]
+
+        point_labels = [
+            "route origin",
+            *(station.name for station in stations),
+            "route destination",
+        ]
+        measured_legs = tuple(
+            MeasuredLeg(
+                start_label=point_labels[leg_index],
+                end_label=point_labels[leg_index + 1],
+                distance_km=measured_route.distance_km,
+            )
+            for leg_index, measured_route in enumerate(measured_leg_routes)
+        )
+
+        # Planner detours are defined per station: compare the direct route with
+        # a route through that one station. Use the same definition here so the
+        # verifier compares independently sourced but semantically equal values.
+        measured_stop_detours = tuple(
+            self._measure_stop_detour(
+                route,
+                station_route_point,
+            )
+            for station_route_point in station_route_points
+        )
+
+        # The verifier currently consumes leg distances and stop detours.
+        # Points are retained for a complete, inspectable measurement record.
+        cumulative_distance_km = 0.0
+        measured_points: list[MeasuredRoutePoint] = [
+            MeasuredRoutePoint(
+                label="route origin",
+                station_id=None,
+                along_road_km=0.0,
+                offroute_road_km=0.0,
+                detour_min=0.0,
+            )
+        ]
+
+        for station_index, station in enumerate(stations):
+            cumulative_distance_km += measured_legs[station_index].distance_km
+            measured_points.append(
+                MeasuredRoutePoint(
+                    label=station.name,
+                    station_id=station.station_id,
+                    along_road_km=cumulative_distance_km,
+                    offroute_road_km=0.0,
+                    detour_min=measured_stop_detours[station_index],
+                )
+            )
+
+        cumulative_distance_km += measured_legs[-1].distance_km
+        measured_points.append(
+            MeasuredRoutePoint(
+                label="route destination",
+                station_id=None,
+                along_road_km=cumulative_distance_km,
+                offroute_road_km=0.0,
+                detour_min=0.0,
+            )
+        )
+
+        return ItineraryRouteMeasurement(
+            points=tuple(measured_points),
+            legs=measured_legs,
+            stop_detour_min=measured_stop_detours,
+        )
+
+    def _measure_stop_detour(
+        self,
+        direct_route: Route,
+        station_route_point: LatLon,
+    ) -> float:
+        """Return added minutes for routing through one charging station."""
+
+        route_via_station = self.route_provider.route_through(
+            [
+                direct_route.origin,
+                station_route_point,
+                direct_route.destination,
+            ]
+        )
+
+        return max(
+            0.0,
+            route_via_station.duration_min - direct_route.duration_min,
+        )
 
 
 def measure_itinerary_route(
@@ -163,16 +340,13 @@ def _measure_leg(
 
     if on_route_distance_km < 0:
         raise ValueError(
-            f"{end_point.label!r} appears before "
-            f"{start_point.label!r} on the route"
+            f"{end_point.label!r} appears before " f"{start_point.label!r} on the route"
         )
 
     # If a leg starts or ends at a station, include the appropriate connection
     # between that station and the main route.
     total_leg_distance_km = (
-        on_route_distance_km
-        + start_point.offroute_road_km
-        + end_point.offroute_road_km
+        on_route_distance_km + start_point.offroute_road_km + end_point.offroute_road_km
     )
 
     return MeasuredLeg(

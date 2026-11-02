@@ -5,9 +5,9 @@ station constraints from the authoritative data store. It checks structure and c
 reserve and destination charge, station existence/status/access, connector and requested power,
 departure charge limits, and the requested detour limit.
 
-TODO(Hriday): replace Configuration A's geometric route estimates with
-cached OSRM waypoint measurements. Add property-based boundary tests when
-Hypothesis becomes a development dependency.
+Configuration A keeps deterministic geometric measurements. Runtime OSRM mode
+injects cache-backed waypoint measurements. TODO(Hriday): add property-based
+boundary tests when Hypothesis becomes a development dependency.
 """
 
 from __future__ import annotations
@@ -28,8 +28,9 @@ from ..data import DataStore
 from .energy import energy_kwh, kwh_to_soc_pct
 from .filters import compatible_ports
 from .route_measurement import (
+    GeometricRouteMeasurer,
     ItineraryRouteMeasurement,
-    measure_itinerary_route,
+    ItineraryRouteMeasurer,
 )
 
 # Floating-point calculations can produce values such as 19.999999% when the
@@ -48,9 +49,20 @@ _UNUSABLE_STATION_STATUSES = {
 
 
 class CompleteItineraryVerifier:
-    def __init__(self, store: DataStore, energy_config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        store: DataStore,
+        energy_config: dict[str, Any],
+        route_measurer: ItineraryRouteMeasurer | None = None,
+    ) -> None:
         self.store = store
         self.energy_config = energy_config
+        # Configuration A keeps the existing deterministic estimator. Runtime
+        # OSRM configurations can inject a cache-backed strategy without
+        # changing verifier logic or trusting values produced by the planner.
+        self.route_measurer = route_measurer or GeometricRouteMeasurer(
+            energy_config
+        )
 
     def verify(
         self,
@@ -114,10 +126,9 @@ class CompleteItineraryVerifier:
             ]
 
             try:
-                route_measurement = measure_itinerary_route(
+                route_measurement = self.route_measurer.measure(
                     route,
                     known_stations,
-                    self.energy_config,
                 )
             except ValueError as error:
                 # A ValueError means the station sequence cannot form a valid

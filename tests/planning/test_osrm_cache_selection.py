@@ -143,6 +143,50 @@ def test_cache_hit_does_not_call_live_router(tmp_path: Path):
     live_osrm_router.route_through.assert_not_called()
 
 
+def test_public_waypoint_route_reuses_cached_measurement(
+    tmp_path: Path,
+    store,
+):
+    """Verifier-style waypoint requests can use the cache without live OSRM."""
+
+    direct_route = _direct_runtime_route()
+    camp_verde_station = store.station("FIX-ST-004")
+    station_coordinates = LatLon(
+        lat=camp_verde_station.lat,
+        lon=camp_verde_station.lon,
+    )
+    route_points = [
+        direct_route.origin,
+        station_coordinates,
+        direct_route.destination,
+    ]
+    cached_waypoint_route = direct_route.model_copy(
+        update={
+            "route_id": "osrm-cached-waypoint-route",
+            "via": [station_coordinates],
+            "geometry": route_points,
+            "distance_km": 241.0,
+            "duration_min": 157.0,
+        }
+    )
+    route_cache = OSRMRouteCache(tmp_path / "osrm")
+    route_cache.save(
+        route_points,
+        cached_waypoint_route,
+    )
+    live_osrm_router = Mock(spec=OSRMRouter)
+    router = CachingOSRMRouter(
+        live_router=live_osrm_router,
+        route_cache=route_cache,
+    )
+
+    returned_route = router.route_through(route_points)
+
+    assert returned_route.route_id == cached_waypoint_route.route_id
+    assert returned_route.provenance.status == DataStatus.CACHED
+    live_osrm_router.route_through.assert_not_called()
+
+
 def test_detour_reuses_cached_waypoint_route(
     tmp_path: Path,
     store,
