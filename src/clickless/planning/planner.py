@@ -40,6 +40,7 @@ from .energy import energy_kwh, kwh_to_soc_pct
 from .filters import compatible_ports
 from .itinerary_simulation import satisfied_preferences, simulate_itinerary
 from .label_search import PlanningLabel, retain_nondominated_label
+from .route_measurement import GeometricRouteMeasurer, ItineraryRouteMeasurer
 from .route_points import (
     RoutePoint,
     candidate_route_point,
@@ -51,10 +52,18 @@ from .route_points import (
 
 
 class ItineraryPlanner:
-    """Search stop sequences and orchestrate final itinerary simulation."""
+    """Search stop sequences, then replay them with measured route legs."""
 
-    def __init__(self, energy_config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        energy_config: dict[str, Any],
+        route_measurer: ItineraryRouteMeasurer | None = None,
+    ) -> None:
         self.energy_config = energy_config
+        self.route_measurer = route_measurer or GeometricRouteMeasurer(
+            energy_config
+        )
+        self.measurement_warnings: list[str] = []
 
     def plan(
         self,
@@ -114,6 +123,7 @@ class ItineraryPlanner:
         sensitivity value without changing normal recommendations.
         """
 
+        self.measurement_warnings = []
         ordered_candidates = sorted(
             candidates, key=lambda candidate: candidate.along_route_km
         )
@@ -127,6 +137,24 @@ class ItineraryPlanner:
         feasible_itineraries: list[Itinerary] = []
 
         for stop_sequence in stop_sequences:
+            # Search uses inexpensive geometric estimates. Final simulation
+            # obtains the selected route source before accepting the sequence.
+            route_measurement = self.route_measurer.measure(
+                route,
+                [candidate.station for candidate in stop_sequence],
+            )
+            route_measurement_warning = getattr(
+                self.route_measurer,
+                "warning",
+                None,
+            )
+            # A later successful sequence must not hide an estimate used by an
+            # earlier sequence during the same planning attempt.
+            if (
+                route_measurement_warning
+                and route_measurement_warning not in self.measurement_warnings
+            ):
+                self.measurement_warnings.append(route_measurement_warning)
             itinerary = simulate_itinerary(
                 request,
                 vehicle,
@@ -134,6 +162,7 @@ class ItineraryPlanner:
                 stop_sequence,
                 self.energy_config,
                 efficiency_penalty,
+                route_measurement=route_measurement,
             )
 
             if itinerary is not None:

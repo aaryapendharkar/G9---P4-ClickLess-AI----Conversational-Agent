@@ -24,10 +24,9 @@ from .charging_policy import departure_soc_target
 from .charging_time import estimate_charge_min
 from .energy import energy_kwh, kwh_to_soc_pct
 from .filters import compatible_ports
+from .route_measurement import ItineraryRouteMeasurement, measure_itinerary_route
 from .route_points import (
     build_route_points,
-    leg_distance_km,
-    leg_drive_min,
     required_departure_soc_pct,
 )
 
@@ -74,8 +73,9 @@ def simulate_itinerary(
     stops: list[Candidate],
     energy_config: dict[str, Any],
     efficiency_penalty: float,
+    route_measurement: ItineraryRouteMeasurement | None = None,
 ) -> Itinerary | None:
-    """Simulate one ordered stop sequence, rejecting infeasible legs."""
+    """Build one itinerary from measured legs, rejecting infeasible energy."""
 
     reserve_soc_pct = energy_config["reserve_soc_pct"]
     minimum_arrival_soc_pct = max(
@@ -88,7 +88,25 @@ def simulate_itinerary(
         stops,
         energy_config,
     )
-    minutes_per_km = route.duration_min / route.distance_km
+    if route_measurement is None:
+        # Direct callers and cache-mode tests retain the deterministic
+        # geometric behavior. The pipeline injects its selected strategy.
+        route_measurement = measure_itinerary_route(
+            route,
+            [candidate.station for candidate in stops],
+            energy_config,
+        )
+
+    if len(route_measurement.legs) != len(route_points) - 1:
+        raise ValueError(
+            "route measurement must contain one leg between every itinerary point"
+        )
+
+    if len(route_measurement.stop_detour_min) != len(stops):
+        raise ValueError(
+            "route measurement must contain one detour for every charging stop"
+        )
+
     current_soc_pct = request.start_soc_pct
     legs: list[Leg] = []
     charging_stops: list[ChargingStop] = []
@@ -96,12 +114,9 @@ def simulate_itinerary(
     for leg_index in range(len(route_points) - 1):
         start_point = route_points[leg_index]
         end_point = route_points[leg_index + 1]
-        distance_km = leg_distance_km(start_point, end_point)
-        drive_min = leg_drive_min(
-            start_point,
-            end_point,
-            minutes_per_km,
-        )
+        measured_leg = route_measurement.legs[leg_index]
+        distance_km = measured_leg.distance_km
+        drive_min = measured_leg.duration_min
         required_energy_kwh = energy_kwh(
             distance_km,
             vehicle,
@@ -150,8 +165,9 @@ def simulate_itinerary(
             if match_score > 0
         }
 
-        next_point = route_points[leg_index + 2]
-        next_leg_distance_km = leg_distance_km(end_point, next_point)
+        next_leg_distance_km = route_measurement.legs[
+            leg_index + 1
+        ].distance_km
         next_arrival_target_soc_pct = (
             minimum_arrival_soc_pct
             if leg_index + 2 == len(route_points) - 1
@@ -202,7 +218,7 @@ def simulate_itinerary(
                 connector=selected_port.connector,
                 port_power_kw=selected_port.power_kw,
                 along_route_km=end_point.along_road_km,
-                detour_min=end_point.detour_min,
+                detour_min=route_measurement.stop_detour_min[leg_index],
                 arrive_soc_pct=current_soc_pct,
                 depart_soc_pct=departure_soc_pct,
                 charge_min_est=charge_time_min,

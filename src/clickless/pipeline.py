@@ -29,6 +29,7 @@ from .planning.relaxation import MinCostRelaxer
 from .planning.route_cache import OSRMRouteCache
 from .planning.route_measurement import (
     GeometricRouteMeasurer,
+    ItineraryRouteMeasurer,
     OSRMRouteMeasurer,
     TemporaryFailureFallbackMeasurer,
 )
@@ -109,6 +110,21 @@ def _build_router(
     )
 
 
+def _build_route_measurer(
+    router: CachedRouter | CachingOSRMRouter,
+    energy_config: dict[str, Any],
+) -> ItineraryRouteMeasurer:
+    """Build one strategy without sharing planner/verifier policy state."""
+
+    if isinstance(router, CachingOSRMRouter):
+        return TemporaryFailureFallbackMeasurer(
+            primary_measurer=OSRMRouteMeasurer(router),
+            fallback_measurer=GeometricRouteMeasurer(energy_config),
+        )
+
+    return GeometricRouteMeasurer(energy_config)
+
+
 class Pipeline:
     def __init__(self, cfg: dict[str, Any], store: DataStore) -> None:
         comp = cfg["components"]
@@ -151,19 +167,20 @@ class Pipeline:
             "sbert": lambda: EmbeddingMatcher(store, r["sbert_model"]),
         }[comp["matcher"]]()
         self.filter = DefaultHardConstraintFilter()
-        self.planner = ItineraryPlanner(cfg["energy"])
-        route_measurer = (
-            TemporaryFailureFallbackMeasurer(
-                primary_measurer=OSRMRouteMeasurer(self.router),
-                fallback_measurer=GeometricRouteMeasurer(cfg["energy"]),
-            )
-            if isinstance(self.router, CachingOSRMRouter)
-            else None
+        self.planner = ItineraryPlanner(
+            cfg["energy"],
+            route_measurer=_build_route_measurer(
+                self.router,
+                cfg["energy"],
+            ),
         )
         self.verifier = CompleteItineraryVerifier(
             store,
             cfg["energy"],
-            route_measurer=route_measurer,
+            route_measurer=_build_route_measurer(
+                self.router,
+                cfg["energy"],
+            ),
         )
         self.relaxer = MinCostRelaxer(cfg["relaxation"])
         t = cfg["tradeoffs"]
@@ -292,6 +309,7 @@ class Pipeline:
             route,
             compatible_candidates,
         )
+        planning_notes.extend(self.planner.measurement_warnings)
         verified_itineraries = [
             itinerary
             for itinerary in itineraries
