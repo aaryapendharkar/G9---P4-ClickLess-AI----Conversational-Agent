@@ -67,7 +67,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category equality) |
 | cached router + detour | placeholder (straight-line detour) |
-| runtime OSRM routing | strict HTTP client, deterministic local response cache, cache-first waypoint routing, and verifier measurement integration implemented; fallback/planner integration pending |
+| runtime OSRM routing | strict client, local cache, waypoint routing, verifier measurement, and temporary-failure fallback policy implemented; shared pipeline activation pending |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
 | planner | v4 forward label-setting search with Pareto pruning, separate +15% consumption robustness, and comfort meal-stop top-ups to the pre-taper threshold |
@@ -135,11 +135,17 @@ connection failures, and HTTP 5xx responses are temporary and eligible for
 geometric fallback. `NoRoute`, invalid input, non-retryable HTTP responses,
 malformed responses, and configuration errors are not fallback-eligible.
 
+`TemporaryFailureFallbackMeasurer` applies that rule without weakening the
+strict OSRM client. Successful measurements remain labelled `osrm`. Only an
+`OSRMTemporaryError` delegates to the deterministic geometric measurer, records
+`geometry_fallback` as the selected source, and creates an estimate warning.
+The source and warning are reset for every attempt so a recovered service does
+not retain stale fallback state. This policy is implemented and unit tested but
+is not yet selected or surfaced by the shared pipeline.
+
 Remaining routing milestones:
 
-- add an explicit routing-policy layer that invokes geometric fallback only for
-  errors classified as temporary;
-- preserve the selected measurement source and a user-visible warning when
-  fallback is used;
+- wire the fallback measurement policy into OSRM-mode verifier construction;
+- copy its estimate warning into the user-visible plan notes;
 - connect selected OSRM measurements to planning; and
-- add tests for fallback provenance, warnings, and verifier agreement.
+- add integration tests for warning propagation and planner/verifier agreement.

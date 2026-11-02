@@ -3,7 +3,8 @@
 CachedRouter keeps Configuration A deterministic using committed fixtures and
 a geometric detour estimate. OSRMRouter strictly fetches and validates live
 road routes. CachingOSRMRouter checks OSRMRouteCache before using the live
-client. Explicit geometric fallback policy remains a separate milestone.
+client. Route-measurement policy separately decides whether an explicitly
+temporary failure may use a labelled geometric estimate.
 
 Owner: Hriday.
 """
@@ -115,9 +116,9 @@ class CachedRouter:
     def detour_min(self, route: Route, candidate: Candidate) -> float:
         """PLACEHOLDER: out-and-back along a straight line at low speed.
 
-        Keep this deterministic estimate for Configuration A and as the future
+        Keep this deterministic estimate for Configuration A and as the
         fallback measurement. OSRMRouter performs the real waypoint reroute;
-        a later routing-policy layer will choose and label the measurement used.
+        the measurement-policy layer chooses and labels the source used.
         """
         c = self.detour_cfg
         road_km = 2 * candidate.offroute_km * c["road_factor"]

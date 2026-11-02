@@ -2,8 +2,9 @@
 
 Configuration A recomputes estimates from cached geometry and authoritative
 station records. Runtime OSRM mode measures consecutive legs and stop detours
-through the cache-first waypoint router. Neither strategy trusts numerical
-values copied into a planner-produced itinerary.
+through the cache-first waypoint router. A policy wrapper may use geometry only
+for explicitly temporary OSRM failures and records that source change for the
+caller. No strategy trusts values copied into a planner-produced itinerary.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing import Any, Protocol
 
 from ..common.geo import nearest_on_polyline, polyline_length_km
 from ..contracts import LatLon, Route, Station
+from .routing import OSRMTemporaryError
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,59 @@ class WaypointRouteProvider(Protocol):
         self,
         route_points: Sequence[LatLon],
     ) -> Route: ...
+
+
+class TemporaryFailureFallbackMeasurer:
+    """Use geometry only when OSRM fails for a temporary service reason.
+
+    The strict OSRM client remains responsible for detecting and reporting
+    routing failures. This policy decides whether one of those failures may
+    safely use the documented deterministic estimate.
+    """
+
+    def __init__(
+        self,
+        primary_measurer: ItineraryRouteMeasurer,
+        fallback_measurer: ItineraryRouteMeasurer,
+    ) -> None:
+        self.primary_measurer = primary_measurer
+        self.fallback_measurer = fallback_measurer
+        self.selected_source: str | None = None
+        self.warning: str | None = None
+
+    def measure(
+        self,
+        route: Route,
+        stations: Sequence[Station],
+    ) -> ItineraryRouteMeasurement:
+        """Return OSRM measurements or an explicitly labelled estimate."""
+
+        # State belongs to one measurement attempt. Clear the previous result
+        # so a recovered OSRM service does not retain an outdated warning.
+        self.selected_source = None
+        self.warning = None
+
+        try:
+            measurement = self.primary_measurer.measure(
+                route,
+                stations,
+            )
+        except OSRMTemporaryError as error:
+            # Only OSRMTemporaryError reaches this branch. NoRoute, malformed
+            # responses, invalid input and configuration errors remain visible.
+            fallback_measurement = self.fallback_measurer.measure(
+                route,
+                stations,
+            )
+            self.selected_source = "geometry_fallback"
+            self.warning = (
+                f"OSRM measurement unavailable ({error}); "
+                "using a deterministic geometric estimate."
+            )
+            return fallback_measurement
+
+        self.selected_source = "osrm"
+        return measurement
 
 
 class GeometricRouteMeasurer:
