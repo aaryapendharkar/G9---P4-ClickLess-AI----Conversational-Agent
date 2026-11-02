@@ -77,7 +77,8 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | template explainer, trade-off presenter | placeholder wording |
 | Maps URL + approval gate | v0 (no segmentation) |
 | harness | runs; most metrics stubbed |
-| LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM/vehicle ingestion, relaxation, oracle, splits, statistics | stubs (`NotImplementedError`) |
+| minimum-cost relaxation | core penalty-ordered search implemented and unit-tested; end-to-end pipeline solver integration pending |
+| LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM/vehicle ingestion, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Configuration A's verifier measurements remain deterministic geometric estimates,
 not live road reroutes. All committed A/B/C configurations still select fixture
