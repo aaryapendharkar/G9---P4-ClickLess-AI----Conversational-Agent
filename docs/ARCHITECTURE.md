@@ -70,7 +70,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | runtime OSRM routing | strict HTTP client, deterministic local response cache, cache-first wrapper, and single-station waypoint detour implemented; fallback/verifier integration pending |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
-| planner | v1 generalized forward label-setting search (direct + multi-stop); richer time/SoC dominance remains TODO |
+| planner | v2 generalized forward label-setting search (direct + multi-stop) with Pareto pruning over arrival SoC, drive time, charging time, detour, and satisfied preferences |
 | verifier | v2 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; Config A measurements use cached geometry + authoritative station coordinates |
 | weighted cost, trade-off selector | v0 implemented |
 | logreg ranker | falls back to weighted cost until trained |
@@ -79,6 +79,10 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | harness | runs; most metrics stubbed |
 | minimum-cost relaxation | core penalty-ordered search implemented and unit-tested; end-to-end pipeline solver integration pending |
 | LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM/vehicle ingestion, oracle, splits, statistics | stubs (`NotImplementedError`) |
+
+Planner readability follow-up: move label/frontier primitives into
+`planning/label_search.py` and split the combined planning tests by energy,
+filtering, search, and verification responsibility without changing behavior.
 
 Configuration A's verifier measurements remain deterministic geometric estimates,
 not live road reroutes. All committed A/B/C configurations still select fixture

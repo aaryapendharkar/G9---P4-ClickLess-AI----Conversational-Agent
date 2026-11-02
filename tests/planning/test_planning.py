@@ -4,6 +4,30 @@ from clickless.contracts import ChargerLevel
 from clickless.planning.charging_time import estimate_charge_min
 from clickless.planning.energy import energy_kwh, leg_feasible, soc_after
 from clickless.planning.filters import compatible_ports
+from clickless.planning.planner import (
+    PlanningLabel,
+    label_dominates,
+    retain_nondominated_label,
+)
+
+
+def _planning_label(
+    stop_indices: tuple[int, ...],
+    arrival_soc_pct: float,
+    drive_min: float,
+    charge_min: float,
+    detour_min: float,
+) -> PlanningLabel:
+    """Build a partial label for dominance-focused unit tests."""
+
+    return PlanningLabel(
+        stop_indices=stop_indices,
+        arrival_soc_pct=arrival_soc_pct,
+        total_drive_min=drive_min,
+        total_charge_min=charge_min,
+        total_detour_min=detour_min,
+        satisfied_preference_keys=frozenset({"food"}),
+    )
 
 
 def _generate_unranked_itineraries(pipe_a, request_text: str, request_id: str):
@@ -69,6 +93,197 @@ def test_energy_model(store):
     assert soc_after(50, 100, v) == pytest.approx(50 - 100 * 19 / 74)
     assert leg_feasible(50, 100, v, min_end_soc_pct=10)
     assert not leg_feasible(20, 100, v, min_end_soc_pct=10)
+
+
+def test_label_dominates_when_no_metric_is_worse():
+    """A uniformly better partial path makes the weaker path unnecessary."""
+
+    better_label = _planning_label(
+        stop_indices=(0, 2),
+        arrival_soc_pct=30.0,
+        drive_min=70.0,
+        charge_min=12.0,
+        detour_min=4.0,
+    )
+    weaker_label = _planning_label(
+        stop_indices=(1, 2),
+        arrival_soc_pct=25.0,
+        drive_min=75.0,
+        charge_min=14.0,
+        detour_min=6.0,
+    )
+
+    assert label_dominates(
+        better_label,
+        weaker_label,
+    )
+    assert not label_dominates(
+        weaker_label,
+        better_label,
+    )
+
+
+def test_label_does_not_dominate_when_metrics_trade_off():
+    """A faster label must remain if it arrives with less useful charge."""
+
+    faster_lower_charge_label = _planning_label(
+        stop_indices=(0, 2),
+        arrival_soc_pct=20.0,
+        drive_min=65.0,
+        charge_min=10.0,
+        detour_min=4.0,
+    )
+    slower_higher_charge_label = _planning_label(
+        stop_indices=(1, 2),
+        arrival_soc_pct=30.0,
+        drive_min=70.0,
+        charge_min=10.0,
+        detour_min=4.0,
+    )
+
+    assert not label_dominates(
+        faster_lower_charge_label,
+        slower_higher_charge_label,
+    )
+    assert not label_dominates(
+        slower_higher_charge_label,
+        faster_lower_charge_label,
+    )
+
+
+def test_equivalent_labels_do_not_dominate_each_other():
+    """Exact equality is not a strict Pareto improvement."""
+
+    first_label = _planning_label(
+        stop_indices=(0, 2),
+        arrival_soc_pct=25.0,
+        drive_min=70.0,
+        charge_min=12.0,
+        detour_min=4.0,
+    )
+    second_label = _planning_label(
+        stop_indices=(1, 2),
+        arrival_soc_pct=25.0,
+        drive_min=70.0,
+        charge_min=12.0,
+        detour_min=4.0,
+    )
+
+    assert not label_dominates(
+        first_label,
+        second_label,
+    )
+    assert not label_dominates(
+        second_label,
+        first_label,
+    )
+
+
+def test_frontier_discards_dominated_candidate():
+    """A weaker candidate does not change the retained frontier."""
+
+    retained_label = _planning_label(
+        stop_indices=(0, 2),
+        arrival_soc_pct=30.0,
+        drive_min=70.0,
+        charge_min=12.0,
+        detour_min=4.0,
+    )
+    dominated_candidate = _planning_label(
+        stop_indices=(1, 2),
+        arrival_soc_pct=25.0,
+        drive_min=75.0,
+        charge_min=14.0,
+        detour_min=6.0,
+    )
+
+    frontier = retain_nondominated_label(
+        [retained_label],
+        dominated_candidate,
+    )
+
+    assert frontier == [retained_label]
+
+
+def test_frontier_removes_label_dominated_by_candidate():
+    """A uniformly better candidate replaces the weaker retained label."""
+
+    weaker_label = _planning_label(
+        stop_indices=(1, 2),
+        arrival_soc_pct=25.0,
+        drive_min=75.0,
+        charge_min=14.0,
+        detour_min=6.0,
+    )
+    better_candidate = _planning_label(
+        stop_indices=(0, 2),
+        arrival_soc_pct=30.0,
+        drive_min=70.0,
+        charge_min=12.0,
+        detour_min=4.0,
+    )
+
+    frontier = retain_nondominated_label(
+        [weaker_label],
+        better_candidate,
+    )
+
+    assert frontier == [better_candidate]
+
+
+def test_frontier_preserves_real_metric_tradeoff():
+    """Neither faster driving nor higher arrival charge is always superior."""
+
+    faster_lower_charge_label = _planning_label(
+        stop_indices=(0, 2),
+        arrival_soc_pct=20.0,
+        drive_min=65.0,
+        charge_min=10.0,
+        detour_min=4.0,
+    )
+    slower_higher_charge_label = _planning_label(
+        stop_indices=(1, 2),
+        arrival_soc_pct=30.0,
+        drive_min=70.0,
+        charge_min=10.0,
+        detour_min=4.0,
+    )
+
+    frontier = retain_nondominated_label(
+        [faster_lower_charge_label],
+        slower_higher_charge_label,
+    )
+
+    assert frontier == [
+        faster_lower_charge_label,
+        slower_higher_charge_label,
+    ]
+
+
+def test_frontier_breaks_equivalent_metrics_by_stop_sequence():
+    """Equivalent labels retain the deterministic smaller stop sequence."""
+
+    later_sequence = _planning_label(
+        stop_indices=(1, 2),
+        arrival_soc_pct=25.0,
+        drive_min=70.0,
+        charge_min=12.0,
+        detour_min=4.0,
+    )
+    earlier_sequence = _planning_label(
+        stop_indices=(0, 2),
+        arrival_soc_pct=25.0,
+        drive_min=70.0,
+        charge_min=12.0,
+        detour_min=4.0,
+    )
+
+    frontier = retain_nondominated_label(
+        [later_sequence],
+        earlier_sequence,
+    )
+
+    assert frontier == [earlier_sequence]
 
 
 def test_charge_time_monotonic(store, cfg_a):
@@ -288,9 +503,7 @@ def test_verifier_rejects_invalid_departure_soc(
     )
 
     assert not report.ok
-    assert any(
-        violation.code == "departure_soc" for violation in report.violations
-    )
+    assert any(violation.code == "departure_soc" for violation in report.violations)
 
 
 def test_verifier_rejects_broken_leg_continuity(pipe_a, demo_text):
@@ -320,9 +533,7 @@ def test_verifier_rejects_tampered_leg_distance(pipe_a, demo_text):
     result = pipe_a.run(demo_text, "v-route-distance")
     itinerary = result.alternatives[0].itinerary
 
-    falsified_first_leg = itinerary.legs[0].model_copy(
-        update={"distance_km": 1.0}
-    )
+    falsified_first_leg = itinerary.legs[0].model_copy(update={"distance_km": 1.0})
     falsified_itinerary = itinerary.model_copy(
         update={
             "legs": [
@@ -339,10 +550,7 @@ def test_verifier_rejects_tampered_leg_distance(pipe_a, demo_text):
     )
 
     assert not report.ok
-    assert any(
-        violation.code == "route_distance"
-        for violation in report.violations
-    )
+    assert any(violation.code == "route_distance" for violation in report.violations)
 
 
 def test_verifier_rejects_tampered_detour(pipe_a, demo_text):
@@ -351,9 +559,7 @@ def test_verifier_rejects_tampered_detour(pipe_a, demo_text):
     result = pipe_a.run(demo_text, "v-route-detour")
     itinerary = result.alternatives[0].itinerary
 
-    falsified_first_stop = itinerary.stops[0].model_copy(
-        update={"detour_min": 0.0}
-    )
+    falsified_first_stop = itinerary.stops[0].model_copy(update={"detour_min": 0.0})
     falsified_itinerary = itinerary.model_copy(
         update={
             "stops": [
@@ -371,7 +577,4 @@ def test_verifier_rejects_tampered_detour(pipe_a, demo_text):
     )
 
     assert not report.ok
-    assert any(
-        violation.code == "detour"
-        for violation in report.violations
-    )
+    assert any(violation.code == "detour" for violation in report.violations)
