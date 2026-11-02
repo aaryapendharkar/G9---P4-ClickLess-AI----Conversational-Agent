@@ -70,7 +70,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | runtime OSRM routing | strict HTTP client, deterministic local response cache, cache-first waypoint routing, and verifier measurement integration implemented; fallback/planner integration pending |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
-| planner | v3 generalized forward label-setting search with Pareto pruning plus a separate +15% consumption robustness run that does not alter nominal recommendations |
+| planner | v4 forward label-setting search with Pareto pruning, separate +15% consumption robustness, and comfort meal-stop top-ups to the pre-taper threshold |
 | verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; Config A uses geometry while OSRM mode uses cache-backed road measurements |
 | weighted cost, trade-off selector | v0 implemented |
 | logreg ranker | falls back to weighted cost until trained |
@@ -95,6 +95,12 @@ reuses the normal stop search and simulation with the frozen
 `efficiency_penalty_robust` value. This sensitivity run may remove marginal
 plans or require more stops, but ordinary pipeline planning continues to use
 the nominal energy model.
+
+Departure-charge targets come from `planning/charging_policy.py`. Balanced and
+fastest profiles retain the just-enough target. At a stop that satisfies a
+requested food preference, the comfort profile may charge to the existing
+pre-taper threshold (80% in the committed energy model), capped by the maximum
+departure SoC. Search and final simulation call the same policy.
 
 Configuration A's verifier measurements remain deterministic geometric estimates,
 not live road reroutes. All committed A/B/C configurations still select fixture
