@@ -58,7 +58,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 4. Numbers shown to the user come from contract fields, never recomputed in explanation code.
 5. All randomness seeded; LLM temperature 0; prompts versioned; data frozen by hash.
 
-## Implementation status (walking skeleton, Oct 30)
+## Implementation status (walking skeleton, Nov 1)
 
 | Component | Status |
 |---|---|
@@ -73,7 +73,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | planner | v4 forward label-setting search with Pareto pruning, separate +15% consumption robustness, and comfort meal-stop top-ups to the pre-taper threshold |
 | verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; Config A uses geometry while OSRM mode uses cache-backed road measurements |
 | weighted cost, trade-off selector | v0 implemented |
-| logreg ranker | falls back to weighted cost until trained |
+| logreg ranker | standardized training, validation, save/load, probability ranking, and missing-model fallback implemented; final model awaits labeled DEV plans |
 | template explainer, trade-off presenter | placeholder wording |
 | Maps URL + approval gate | v0 (no segmentation) |
 | harness | runs; most metrics stubbed |
@@ -101,6 +101,19 @@ fastest profiles retain the just-enough target. At a stop that satisfies a
 requested food preference, the comfort profile may charge to the existing
 pre-taper threshold (80% in the committed energy model), capped by the maximum
 departure SoC. Search and final simulation call the same policy.
+
+Configuration A's `LogRegRanker` uses the five inputs listed by `FEATURE_NAMES`
+in `ranking/logreg_ranker.py`. `extract_feature_values` produces values in that
+same order. Training standardizes those features and fits the classifier as one
+scikit-learn pipeline, then saves that complete pipeline with joblib so runtime
+prediction applies the same preprocessing used during training.
+
+The default artifact path is `results/models/logreg_a.joblib`. Generated results
+are intentionally excluded from version control. When that artifact is absent,
+the ranker explicitly delegates to `WeightedRanker`, and the pipeline reports the
+fallback in its notes. The synthetic ranker tests verify this lifecycle; they do
+not replace the real labeled DEV candidate plans needed to train the final model.
+Held-out TEST labels must not be used for training or tuning.
 
 Configuration A's verifier measurements remain deterministic geometric estimates,
 not live road reroutes. All committed A/B/C configurations still select fixture
