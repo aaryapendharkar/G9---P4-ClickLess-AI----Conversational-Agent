@@ -152,7 +152,10 @@ add one warning to the plan. The warning remains active across the complete
 candidate collection, while cache mode and non-temporary OSRM errors retain
 their existing behavior.
 
-Remaining routing milestones:
-
-- connect routed leg measurements to itinerary construction; and
-- add integration tests for planner/verifier measurement agreement.
+Final itinerary construction now follows the routed-leg decision accepted in
+`docs/decisions/0008-routed-leg-itinerary-construction.md`. Forward search uses
+inexpensive geometric estimates to propose stop sequences. Final simulation
+then uses measured leg distances, measured driving durations, and measured stop
+detours for energy, charging, and public itinerary fields. Planner and verifier
+receive separate strategy instances so verification remains independent while
+both can reuse the cache-first route provider.

@@ -16,9 +16,14 @@ def test_cached_fixture_mode_keeps_geometric_verifier_measurements(pipe_a):
     """Configuration A remains deterministic and requires no network data."""
 
     assert isinstance(
+        pipe_a.planner.route_measurer,
+        GeometricRouteMeasurer,
+    )
+    assert isinstance(
         pipe_a.verifier.route_measurer,
         GeometricRouteMeasurer,
     )
+    assert pipe_a.planner.route_measurer is not pipe_a.verifier.route_measurer
 
 
 def test_osrm_mode_injects_cache_first_verifier_measurements(
@@ -48,6 +53,10 @@ def test_osrm_mode_injects_cache_first_verifier_measurements(
 
     assert isinstance(pipeline.router, CachingOSRMRouter)
     assert isinstance(
+        pipeline.planner.route_measurer,
+        TemporaryFailureFallbackMeasurer,
+    )
+    assert isinstance(
         pipeline.verifier.route_measurer,
         TemporaryFailureFallbackMeasurer,
     )
@@ -63,6 +72,7 @@ def test_osrm_mode_injects_cache_first_verifier_measurements(
         pipeline.verifier.route_measurer.fallback_measurer,
         GeometricRouteMeasurer,
     )
+    assert pipeline.planner.route_measurer is not pipeline.verifier.route_measurer
 
 
 def test_final_verification_adds_geometric_fallback_warning(
@@ -107,3 +117,30 @@ def test_successful_final_verification_adds_no_fallback_warning(
 
     assert result.status == "ok"
     assert not any("OSRM measurement unavailable" in note for note in result.notes)
+
+
+def test_planner_route_measurement_warning_is_returned(
+    pipe_a,
+    cfg_a,
+    demo_text,
+):
+    """Plan notes must disclose routed-leg estimates used during simulation."""
+
+    unavailable_osrm_measurer = Mock()
+    unavailable_osrm_measurer.measure.side_effect = OSRMTemporaryError(
+        "test planner route-measurement outage"
+    )
+    fallback_policy = TemporaryFailureFallbackMeasurer(
+        primary_measurer=unavailable_osrm_measurer,
+        fallback_measurer=GeometricRouteMeasurer(cfg_a["energy"]),
+    )
+    pipe_a.planner.route_measurer = fallback_policy
+
+    result = pipe_a.run(
+        demo_text,
+        request_id="planner-route-warning-test",
+    )
+
+    assert result.status == "ok"
+    assert fallback_policy.warning is not None
+    assert result.notes.count(fallback_policy.warning) == 1

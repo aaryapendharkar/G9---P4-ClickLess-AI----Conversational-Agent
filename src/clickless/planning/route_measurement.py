@@ -35,11 +35,12 @@ class MeasuredRoutePoint:
 
 @dataclass(frozen=True)
 class MeasuredLeg:
-    """Expected distance between two consecutive itinerary points."""
+    """Distance and driving time between consecutive itinerary points."""
 
     start_label: str
     end_label: str
     distance_km: float
+    duration_min: float
 
 
 @dataclass(frozen=True)
@@ -211,6 +212,7 @@ class OSRMRouteMeasurer:
                 start_label=point_labels[leg_index],
                 end_label=point_labels[leg_index + 1],
                 distance_km=measured_route.distance_km,
+                duration_min=measured_route.duration_min,
             )
             for leg_index, measured_route in enumerate(measured_leg_routes)
         )
@@ -373,8 +375,13 @@ def measure_itinerary_route(
 
     # Adjacent points define legs. With N charging stops this produces N + 1
     # legs, matching the structure checked by the verifier.
+    minutes_per_km = route.duration_min / route.distance_km
     measured_legs = tuple(
-        _measure_leg(measured_points[index], measured_points[index + 1])
+        _measure_leg(
+            measured_points[index],
+            measured_points[index + 1],
+            minutes_per_km,
+        )
         for index in range(len(measured_points) - 1)
     )
 
@@ -388,6 +395,7 @@ def measure_itinerary_route(
 def _measure_leg(
     start_point: MeasuredRoutePoint,
     end_point: MeasuredRoutePoint,
+    minutes_per_km: float,
 ) -> MeasuredLeg:
     """Measure travel from one ordered route point to the next."""
 
@@ -403,9 +411,14 @@ def _measure_leg(
     total_leg_distance_km = (
         on_route_distance_km + start_point.offroute_road_km + end_point.offroute_road_km
     )
+    estimated_duration_min = (
+        on_route_distance_km * minutes_per_km
+        + (start_point.detour_min + end_point.detour_min) / 2
+    )
 
     return MeasuredLeg(
         start_label=start_point.label,
         end_label=end_point.label,
         distance_km=total_leg_distance_km,
+        duration_min=estimated_duration_min,
     )
