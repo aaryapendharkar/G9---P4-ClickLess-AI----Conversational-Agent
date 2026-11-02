@@ -20,6 +20,7 @@ from ..contracts import (
     TripRequest,
     Vehicle,
 )
+from .charging_policy import departure_soc_target
 from .charging_time import estimate_charge_min
 from .energy import energy_kwh, kwh_to_soc_pct
 from .filters import compatible_ports
@@ -78,8 +79,7 @@ def simulate_itinerary(
 
     reserve_soc_pct = energy_config["reserve_soc_pct"]
     minimum_arrival_soc_pct = max(
-        request.arrival_soc_pct_min
-        or energy_config["default_arrival_soc_pct"],
+        request.arrival_soc_pct_min or energy_config["default_arrival_soc_pct"],
         reserve_soc_pct,
     )
     route_points = build_route_points(
@@ -140,6 +140,16 @@ def simulate_itinerary(
         if charging_candidate is None:
             raise ValueError("an intermediate route point must contain a candidate")
 
+        satisfied_preferences_by_key, amenity_ids = satisfied_preferences(
+            charging_candidate,
+            request,
+        )
+        satisfied_preference_keys = {
+            preference_key
+            for preference_key, match_score in satisfied_preferences_by_key.items()
+            if match_score > 0
+        }
+
         next_point = route_points[leg_index + 2]
         next_leg_distance_km = leg_distance_km(end_point, next_point)
         next_arrival_target_soc_pct = (
@@ -158,9 +168,15 @@ def simulate_itinerary(
         if departure_soc_pct_needed > energy_config["charge_target_max_soc_pct"]:
             return None
 
-        departure_soc_pct = max(
+        just_enough_departure_soc_pct = max(
             current_soc_pct,
             departure_soc_pct_needed,
+        )
+        departure_soc_pct = departure_soc_target(
+            request,
+            satisfied_preference_keys,
+            just_enough_departure_soc_pct,
+            energy_config,
         )
         compatible_charging_ports = compatible_ports(
             vehicle,
@@ -179,10 +195,6 @@ def simulate_itinerary(
             departure_soc_pct,
             energy_config["charging_model"],
         )
-        satisfied_preferences_by_key, amenity_ids = satisfied_preferences(
-            charging_candidate,
-            request,
-        )
         charging_stops.append(
             ChargingStop(
                 station_id=charging_candidate.station.station_id,
@@ -200,9 +212,7 @@ def simulate_itinerary(
         )
         current_soc_pct = departure_soc_pct
 
-    stop_identifier = (
-        "+".join(stop.station_id for stop in charging_stops) or "direct"
-    )
+    stop_identifier = "+".join(stop.station_id for stop in charging_stops) or "direct"
     return Itinerary(
         itinerary_id=f"{request.request_id}:{stop_identifier}",
         request_id=request.request_id,
@@ -211,12 +221,10 @@ def simulate_itinerary(
         legs=legs,
         total_drive_min=sum(leg.drive_min for leg in legs),
         total_charge_min=sum(
-            charging_stop.charge_min_est
-            for charging_stop in charging_stops
+            charging_stop.charge_min_est for charging_stop in charging_stops
         ),
         total_detour_min=sum(
-            charging_stop.detour_min
-            for charging_stop in charging_stops
+            charging_stop.detour_min for charging_stop in charging_stops
         ),
         arrival_soc_pct=current_soc_pct,
     )

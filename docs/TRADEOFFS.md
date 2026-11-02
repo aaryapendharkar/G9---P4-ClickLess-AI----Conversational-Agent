@@ -112,5 +112,10 @@ choose between Recommended/alternative on 5 scripted trips; report agreement wit
 
 - Is "wheelchair-accessible restroom" a soft preference (current) or a hard constraint when the
   user says "need"? Proposal relaxes amenities first — be explicit about accessibility.
-- Charge policy at a meal stop: charge "just enough" (current) or top up while eating (comfort)?
 - Default arrival SoC when unstated (currently 20 %) and the reserve (10 %).
+
+Resolved charging policy: balanced and fastest charge just enough for the next
+leg. Comfort may top up while eating only when the stop satisfies food requested
+by the driver. The target is the charging model's pre-taper threshold, capped by
+the maximum departure SoC, so the policy does not intentionally add slower
+tapered charging.

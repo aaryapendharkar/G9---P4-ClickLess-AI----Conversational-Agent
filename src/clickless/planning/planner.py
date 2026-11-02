@@ -18,8 +18,9 @@ Normal planning uses the documented nominal efficiency. ``plan_robust`` is a
 separate sensitivity run using ``efficiency_penalty_robust``; it never silently
 changes the driver's recommendation.
 
-TODO(Hriday): charge-target policy: "just enough" vs "top up while eating"
-for the comfort profile.
+Balanced and fastest planning charge only as much as the next leg requires.
+Comfort planning may top up to the charging model's efficient pre-taper target
+when the current stop satisfies food requested by the driver.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from ..contracts import (
     TripRequest,
     Vehicle,
 )
+from .charging_policy import departure_soc_target
 from .charging_time import estimate_charge_min
 from .energy import energy_kwh, kwh_to_soc_pct
 from .filters import compatible_ports
@@ -85,14 +87,10 @@ class ItineraryPlanner:
         expected. It does not replace or modify the driver's normal plan.
         """
 
-        efficiency_penalty = float(
-            self.energy_config["efficiency_penalty_robust"]
-        )
+        efficiency_penalty = float(self.energy_config["efficiency_penalty_robust"])
 
         if efficiency_penalty < 0:
-            raise ValueError(
-                "efficiency_penalty_robust must not be negative"
-            )
+            raise ValueError("efficiency_penalty_robust must not be negative")
 
         return self._plan_with_efficiency_penalty(
             request,
@@ -277,9 +275,18 @@ class ItineraryPlanner:
                     ):
                         continue
 
-                    departure_soc_pct = max(
+                    just_enough_departure_soc_pct = max(
                         label.arrival_soc_pct,
                         departure_soc_pct_needed,
+                    )
+                    current_stop_preference_keys = preference_keys_by_candidate[
+                        label.last_stop_index
+                    ]
+                    departure_soc_pct = departure_soc_target(
+                        request,
+                        current_stop_preference_keys,
+                        just_enough_departure_soc_pct,
+                        self.energy_config,
                     )
                     compatible_charging_ports = compatible_ports(
                         vehicle,
