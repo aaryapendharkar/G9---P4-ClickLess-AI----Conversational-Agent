@@ -74,7 +74,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; Config A uses geometry while OSRM mode uses cache-backed road measurements |
 | weighted cost, trade-off selector | v0 implemented |
 | logreg ranker | standardized training, validation, save/load, probability ranking, and missing-model fallback implemented; final model awaits labeled DEV plans |
-| template explainer, trade-off presenter | placeholder wording |
+| template explainer, trade-off presenter | template explanation v0; natural, contract-grounded alternative comparisons implemented |
 | Maps URL + approval gate | v0 (no segmentation) |
 | harness | runs; most metrics stubbed |
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
