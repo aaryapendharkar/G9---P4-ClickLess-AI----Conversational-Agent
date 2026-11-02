@@ -5,13 +5,14 @@ stations. A label records one useful partial stop sequence. Labels only move
 toward the destination, so the search cannot revisit a station or form a cycle.
 
 The search supports any number of stops up to the number of corridor candidates;
-it is not capped at two stops. To keep the search manageable, labels that reach
-the same station with the same stop count and satisfied-preference signature are
-reduced to the sequence with the smaller estimated detour.
+it is not capped at two stops. Labels that reach the same station with the same
+stop count and satisfied-preference signature retain a small Pareto frontier.
+A label is removed only when another arrives with at least as much charge and no
+more driving, charging, or detour time. Equivalent labels use the stop sequence
+as a deterministic tie-breaker. Complete itineraries are still simulated and
+verified after the search.
 
 TODO(Hriday):
-  * include charging time and arrival state of charge in label dominance so the
-    pruning rule can distinguish more multi-stop trade-offs at production scale
   * charge-target policy: "just enough" vs "top up while eating" (comfort profile)
   * robust feasibility run with efficiency_penalty_robust
 """
@@ -53,15 +54,135 @@ class RoutePoint:
 
 @dataclass(frozen=True)
 class PlanningLabel:
-    """A partial forward path retained by the multi-stop search."""
+    """One partial path reaching a charging station.
+
+    Metrics describe the state on arrival, before charging at the final station
+    in ``stop_indices``. A later expansion can therefore calculate how much
+    charging that station needs for the next leg.
+    """
 
     stop_indices: tuple[int, ...]
+    arrival_soc_pct: float
+    total_drive_min: float
+    total_charge_min: float
     total_detour_min: float
     satisfied_preference_keys: frozenset[str]
 
     @property
     def last_stop_index(self) -> int:
         return self.stop_indices[-1]
+
+
+def label_dominates(
+    first_label: PlanningLabel,
+    second_label: PlanningLabel,
+    tolerance: float = 1e-9,
+) -> bool:
+    """Return whether the first partial path makes the second unnecessary.
+
+    Both labels must already represent the same final station, stop count and
+    satisfied-preference signature. Higher arrival charge is better; drive,
+    charging and detour minutes are minimized.
+    """
+
+    first_is_no_worse = (
+        first_label.arrival_soc_pct >= second_label.arrival_soc_pct - tolerance
+        and first_label.total_drive_min <= second_label.total_drive_min + tolerance
+        and first_label.total_charge_min <= second_label.total_charge_min + tolerance
+        and first_label.total_detour_min <= second_label.total_detour_min + tolerance
+    )
+
+    first_is_strictly_better = (
+        first_label.arrival_soc_pct > second_label.arrival_soc_pct + tolerance
+        or first_label.total_drive_min < second_label.total_drive_min - tolerance
+        or first_label.total_charge_min < second_label.total_charge_min - tolerance
+        or first_label.total_detour_min < second_label.total_detour_min - tolerance
+    )
+
+    return first_is_no_worse and first_is_strictly_better
+
+
+def label_metrics_are_equivalent(
+    first_label: PlanningLabel,
+    second_label: PlanningLabel,
+    tolerance: float = 1e-9,
+) -> bool:
+    """Return whether two labels have effectively identical search metrics."""
+
+    return (
+        abs(first_label.arrival_soc_pct - second_label.arrival_soc_pct) <= tolerance
+        and abs(first_label.total_drive_min - second_label.total_drive_min) <= tolerance
+        and abs(first_label.total_charge_min - second_label.total_charge_min)
+        <= tolerance
+        and abs(first_label.total_detour_min - second_label.total_detour_min)
+        <= tolerance
+    )
+
+
+def retain_nondominated_label(
+    existing_frontier: list[PlanningLabel],
+    candidate_label: PlanningLabel,
+) -> list[PlanningLabel]:
+    """Return the frontier after considering one new partial path.
+
+    A dominated candidate is discarded. A candidate that dominates existing
+    labels replaces them. Metric-equivalent labels use the lexicographically
+    smaller stop sequence so results remain deterministic.
+    """
+
+    if any(
+        label_dominates(existing_label, candidate_label)
+        for existing_label in existing_frontier
+    ):
+        return list(existing_frontier)
+
+    equivalent_labels = [
+        existing_label
+        for existing_label in existing_frontier
+        if label_metrics_are_equivalent(
+            existing_label,
+            candidate_label,
+        )
+    ]
+
+    if equivalent_labels:
+        deterministic_label = min(
+            [
+                candidate_label,
+                *equivalent_labels,
+            ],
+            key=lambda label: label.stop_indices,
+        )
+        remaining_labels = [
+            existing_label
+            for existing_label in existing_frontier
+            if existing_label not in equivalent_labels
+        ]
+
+        return sorted(
+            [
+                *remaining_labels,
+                deterministic_label,
+            ],
+            key=lambda label: label.stop_indices,
+        )
+
+    remaining_labels = [
+        existing_label
+        for existing_label in existing_frontier
+        if not label_dominates(
+            candidate_label,
+            existing_label,
+        )
+    ]
+
+    return sorted(
+        [
+            *remaining_labels,
+            candidate_label,
+        ],
+        key=lambda label: label.stop_indices,
+    )
 
 
 def satisfied_preferences(
@@ -156,6 +277,7 @@ class ItineraryPlanner:
 
         route_distance_scale = self._route_distance_scale(route)
         road_factor = self.energy_config["placeholder_detour"]["road_factor"]
+        minutes_per_km = route.duration_min / route.distance_km
         origin_point = RoutePoint(
             label=request.origin.text,
             along_road_km=0.0,
@@ -171,30 +293,58 @@ class ItineraryPlanner:
             self._satisfied_preference_keys(candidate, request)
             for candidate in ordered_candidates
         ]
-        current_labels: dict[tuple[int, frozenset[str]], PlanningLabel] = {}
+        current_label_frontiers: dict[
+            tuple[int, frozenset[str]],
+            list[PlanningLabel],
+        ] = {}
 
         for candidate_index, candidate_point in enumerate(candidate_points):
-            if not self._origin_can_reach(
+            first_leg_distance_km = self._leg_distance_km(
                 origin_point,
                 candidate_point,
-                request.start_soc_pct,
+            )
+            first_leg_energy_kwh = energy_kwh(
+                first_leg_distance_km,
                 vehicle,
-            ):
+            )
+            arrival_soc_pct = request.start_soc_pct - kwh_to_soc_pct(
+                first_leg_energy_kwh,
+                vehicle,
+            )
+
+            if arrival_soc_pct < self.energy_config["reserve_soc_pct"]:
                 continue
 
             preference_keys = preference_keys_by_candidate[candidate_index]
-            current_labels[(candidate_index, preference_keys)] = PlanningLabel(
+            initial_label = PlanningLabel(
                 stop_indices=(candidate_index,),
+                arrival_soc_pct=arrival_soc_pct,
+                total_drive_min=self._leg_drive_min(
+                    origin_point,
+                    candidate_point,
+                    minutes_per_km,
+                ),
+                total_charge_min=0.0,
                 total_detour_min=candidate_point.detour_min,
                 satisfied_preference_keys=preference_keys,
             )
+            current_label_frontiers[(candidate_index, preference_keys)] = [
+                initial_label
+            ]
 
         # Each pass adds one stop. The loop ends when no label can move farther
         # along the route, even when unused candidates remain.
-        while current_labels:
-            next_labels: dict[tuple[int, frozenset[str]], PlanningLabel] = {}
+        while current_label_frontiers:
+            next_label_frontiers: dict[
+                tuple[int, frozenset[str]],
+                list[PlanningLabel],
+            ] = {}
 
-            for label in current_labels.values():
+            for label in (
+                retained_label
+                for label_frontier in current_label_frontiers.values()
+                for retained_label in label_frontier
+            ):
                 last_stop_point = candidate_points[label.last_stop_index]
 
                 for next_stop_index in range(
@@ -208,36 +358,110 @@ class ItineraryPlanner:
                     ):
                         continue
 
+                    last_station_candidate = last_stop_point.candidate
+
+                    if last_station_candidate is None:
+                        raise ValueError(
+                            "a label stop must contain a charging candidate"
+                        )
+
+                    next_leg_distance_km = self._leg_distance_km(
+                        last_stop_point,
+                        next_stop_point,
+                    )
+                    required_departure_soc_pct = self._required_departure_soc_pct(
+                        next_leg_distance_km,
+                        self.energy_config["reserve_soc_pct"],
+                        vehicle,
+                    )
+
+                    if (
+                        required_departure_soc_pct
+                        > self.energy_config["charge_target_max_soc_pct"]
+                    ):
+                        continue
+
+                    departure_soc_pct = max(
+                        label.arrival_soc_pct,
+                        required_departure_soc_pct,
+                    )
+                    compatible_charging_ports = compatible_ports(
+                        vehicle,
+                        last_station_candidate.station,
+                        request.connectors_override,
+                    )
+
+                    if not compatible_charging_ports:
+                        continue
+
+                    selected_port = max(
+                        compatible_charging_ports,
+                        key=lambda port: port.power_kw or 0.0,
+                    )
+                    added_charge_min = estimate_charge_min(
+                        vehicle,
+                        selected_port.power_kw,
+                        selected_port.level,
+                        label.arrival_soc_pct,
+                        departure_soc_pct,
+                        self.energy_config["charging_model"],
+                    )
+                    next_leg_soc_drop_pct = kwh_to_soc_pct(
+                        energy_kwh(
+                            next_leg_distance_km,
+                            vehicle,
+                        ),
+                        vehicle,
+                    )
+                    next_arrival_soc_pct = departure_soc_pct - next_leg_soc_drop_pct
                     preference_keys = (
                         label.satisfied_preference_keys
                         | preference_keys_by_candidate[next_stop_index]
                     )
+
                     expanded_label = PlanningLabel(
-                        stop_indices=label.stop_indices + (next_stop_index,),
+                        stop_indices=(label.stop_indices + (next_stop_index,)),
+                        arrival_soc_pct=next_arrival_soc_pct,
+                        total_drive_min=(
+                            label.total_drive_min
+                            + self._leg_drive_min(
+                                last_stop_point,
+                                next_stop_point,
+                                minutes_per_km,
+                            )
+                        ),
+                        total_charge_min=(label.total_charge_min + added_charge_min),
                         total_detour_min=(
                             label.total_detour_min + next_stop_point.detour_min
                         ),
                         satisfied_preference_keys=preference_keys,
                     )
-                    label_key = (next_stop_index, preference_keys)
-                    existing_label = next_labels.get(label_key)
+                    frontier_key = (
+                        next_stop_index,
+                        preference_keys,
+                    )
+                    existing_frontier = next_label_frontiers.get(
+                        frontier_key,
+                        [],
+                    )
+                    next_label_frontiers[frontier_key] = retain_nondominated_label(
+                        existing_frontier,
+                        expanded_label,
+                    )
 
-                    if (
-                        existing_label is None
-                        or expanded_label.total_detour_min
-                        < existing_label.total_detour_min
-                    ):
-                        next_labels[label_key] = expanded_label
-
-            if not next_labels:
+            if not next_label_frontiers:
                 break
 
-            for label in next_labels.values():
+            for label in (
+                retained_label
+                for label_frontier in next_label_frontiers.values()
+                for retained_label in label_frontier
+            ):
                 stop_sequences.append(
                     [ordered_candidates[index] for index in label.stop_indices]
                 )
 
-            current_labels = next_labels
+            current_label_frontiers = next_label_frontiers
 
         return stop_sequences
 
@@ -266,13 +490,10 @@ class ItineraryPlanner:
             start_point = route_points[leg_index]
             end_point = route_points[leg_index + 1]
             leg_distance_km = self._leg_distance_km(start_point, end_point)
-            on_route_distance_km = max(
-                0.0,
-                end_point.along_road_km - start_point.along_road_km,
-            )
-            leg_drive_min = (
-                on_route_distance_km * minutes_per_km
-                + (start_point.detour_min + end_point.detour_min) / 2
+            leg_drive_min = self._leg_drive_min(
+                start_point,
+                end_point,
+                minutes_per_km,
             )
             leg_energy_kwh = energy_kwh(leg_distance_km, vehicle)
             arrival_soc_pct = current_soc_pct - kwh_to_soc_pct(leg_energy_kwh, vehicle)
@@ -312,14 +533,10 @@ class ItineraryPlanner:
                 if leg_index + 2 == len(route_points) - 1
                 else reserve_soc_pct
             )
-            next_leg_soc_drop_pct = kwh_to_soc_pct(
-                energy_kwh(next_leg_distance_km, vehicle),
+            required_departure_soc_pct = self._required_departure_soc_pct(
+                next_leg_distance_km,
+                next_arrival_target_soc_pct,
                 vehicle,
-            )
-            required_departure_soc_pct = (
-                next_arrival_target_soc_pct
-                + next_leg_soc_drop_pct
-                + self.energy_config["charge_buffer_soc_pct"]
             )
 
             if (
@@ -452,6 +669,52 @@ class ItineraryPlanner:
             on_route_distance_km
             + start_point.offroute_road_km
             + end_point.offroute_road_km
+        )
+
+    @staticmethod
+    def _leg_drive_min(
+        start_point: RoutePoint,
+        end_point: RoutePoint,
+        minutes_per_km: float,
+    ) -> float:
+        """Estimate driving time between two ordered route points.
+
+        On-route time uses the base route's minutes-per-kilometre rate. The
+        detour contribution is divided between the incoming and outgoing legs,
+        matching the complete itinerary simulator.
+        """
+
+        on_route_distance_km = max(
+            0.0,
+            end_point.along_road_km - start_point.along_road_km,
+        )
+
+        return (
+            on_route_distance_km * minutes_per_km
+            + (start_point.detour_min + end_point.detour_min) / 2
+        )
+
+    def _required_departure_soc_pct(
+        self,
+        leg_distance_km: float,
+        required_arrival_soc_pct: float,
+        vehicle: Vehicle,
+    ) -> float:
+        """Return the departure charge needed for one subsequent leg."""
+
+        leg_energy_kwh = energy_kwh(
+            leg_distance_km,
+            vehicle,
+        )
+        leg_soc_drop_pct = kwh_to_soc_pct(
+            leg_energy_kwh,
+            vehicle,
+        )
+
+        return (
+            required_arrival_soc_pct
+            + leg_soc_drop_pct
+            + self.energy_config["charge_buffer_soc_pct"]
         )
 
     def _origin_can_reach(
