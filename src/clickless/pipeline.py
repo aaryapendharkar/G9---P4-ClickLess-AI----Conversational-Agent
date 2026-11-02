@@ -27,6 +27,7 @@ from .planning.filters import DefaultHardConstraintFilter
 from .planning.planner import ItineraryPlanner
 from .planning.relaxation import MinCostRelaxer
 from .planning.route_cache import OSRMRouteCache
+from .planning.route_measurement import OSRMRouteMeasurer
 from .planning.routing import (
     CachedRouter,
     CachingOSRMRouter,
@@ -135,7 +136,16 @@ class Pipeline:
         }[comp["matcher"]]()
         self.filter = DefaultHardConstraintFilter()
         self.planner = ItineraryPlanner(cfg["energy"])
-        self.verifier = CompleteItineraryVerifier(store, cfg["energy"])
+        route_measurer = (
+            OSRMRouteMeasurer(self.router)
+            if isinstance(self.router, CachingOSRMRouter)
+            else None
+        )
+        self.verifier = CompleteItineraryVerifier(
+            store,
+            cfg["energy"],
+            route_measurer=route_measurer,
+        )
         self.relaxer = MinCostRelaxer(cfg["relaxation"])
         t = cfg["tradeoffs"]
         self.ranker = {

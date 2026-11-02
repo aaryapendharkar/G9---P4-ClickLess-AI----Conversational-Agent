@@ -357,11 +357,16 @@ class CachingOSRMRouter:
         self.live_router = live_router
         self.route_cache = route_cache
 
-    def _get_route_through(
+    def route_through(
         self,
         route_points: Sequence[LatLon],
     ) -> Route:
-        """Return a cached route or fetch and save a live OSRM route."""
+        """Return a cached waypoint route or fetch and save a live one.
+
+        Keeping this operation public lets other routing consumers, including
+        independent verification, request the same cache-first measurement
+        without depending on this wrapper's private implementation details.
+        """
 
         cached_route = self.route_cache.load(route_points)
 
@@ -388,7 +393,7 @@ class CachingOSRMRouter:
         origin_coordinates = _coordinates_for_place(origin)
         destination_coordinates = _coordinates_for_place(destination)
 
-        return self._get_route_through(
+        return self.route_through(
             [
                 origin_coordinates,
                 destination_coordinates,
@@ -407,7 +412,7 @@ class CachingOSRMRouter:
             lon=candidate.station.lon,
         )
 
-        route_via_station = self._get_route_through(
+        route_via_station = self.route_through(
             [
                 route.origin,
                 station_coordinates,

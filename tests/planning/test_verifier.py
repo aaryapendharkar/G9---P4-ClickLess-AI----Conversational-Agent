@@ -2,6 +2,21 @@
 
 import pytest
 
+from clickless.planning.route_measurement import GeometricRouteMeasurer
+from clickless.planning.verifier import CompleteItineraryVerifier
+
+
+class _RecordingRouteMeasurer:
+    """Record the verifier's inputs while preserving geometric behavior."""
+
+    def __init__(self, energy_config):
+        self.geometric_measurer = GeometricRouteMeasurer(energy_config)
+        self.measured_station_ids: list[str] = []
+
+    def measure(self, route, stations):
+        self.measured_station_ids = [station.station_id for station in stations]
+        return self.geometric_measurer.measure(route, stations)
+
 
 def _verify_itinerary(pipe_a, itinerary, request):
     """Verify using authoritative vehicle and route inputs."""
@@ -18,6 +33,34 @@ def _verify_itinerary(pipe_a, itinerary, request):
         vehicle,
         route,
     )
+
+
+def test_verifier_uses_injected_route_measurement_strategy(pipe_a, demo_text):
+    """Routing measurements can change without changing verifier control flow."""
+
+    result = pipe_a.run(demo_text, "verifier-measurement-strategy")
+    itinerary = result.alternatives[0].itinerary
+    request = result.request
+    vehicle = pipe_a.store.vehicle(itinerary.vehicle_id)
+    route = pipe_a.router.route(request.origin, request.destination)
+    recording_measurer = _RecordingRouteMeasurer(pipe_a.cfg["energy"])
+    verifier = CompleteItineraryVerifier(
+        pipe_a.store,
+        pipe_a.cfg["energy"],
+        route_measurer=recording_measurer,
+    )
+
+    report = verifier.verify(
+        itinerary,
+        request,
+        vehicle,
+        route,
+    )
+
+    assert report.ok
+    assert recording_measurer.measured_station_ids == [
+        stop.station_id for stop in itinerary.stops
+    ]
 
 
 def test_verifier_catches_tampered_itinerary(pipe_a, demo_text):

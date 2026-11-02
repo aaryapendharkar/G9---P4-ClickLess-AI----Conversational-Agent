@@ -67,11 +67,11 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category equality) |
 | cached router + detour | placeholder (straight-line detour) |
-| runtime OSRM routing | strict HTTP client, deterministic local response cache, cache-first wrapper, and single-station waypoint detour implemented; fallback/verifier integration pending |
+| runtime OSRM routing | strict HTTP client, deterministic local response cache, cache-first waypoint routing, and verifier measurement integration implemented; fallback/planner integration pending |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
 | planner | v2 generalized forward label-setting search (direct + multi-stop) with Pareto pruning over arrival SoC, drive time, charging time, detour, and satisfied preferences |
-| verifier | v2 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; Config A measurements use cached geometry + authoritative station coordinates |
+| verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; Config A uses geometry while OSRM mode uses cache-backed road measurements |
 | weighted cost, trade-off selector | v0 implemented |
 | logreg ranker | falls back to weighted cost until trained |
 | template explainer, trade-off presenter | placeholder wording |
@@ -87,6 +87,11 @@ responsibility so each behavior has a focused place to evolve.
 Configuration A's verifier measurements remain deterministic geometric estimates,
 not live road reroutes. All committed A/B/C configurations still select fixture
 routing, so tests and demos remain offline and repeatable.
+
+When routing mode is switched to OSRM, the pipeline injects a cache-backed
+measurement strategy into the verifier. It independently requests each
+consecutive itinerary leg and each single-station detour through the waypoint
+router, rather than accepting distances copied from the planner.
 
 OSRM mode now uses a cache-first wrapper. A request is identified by its ordered
 coordinates and routing options. A cache hit returns a validated route labelled
@@ -105,6 +110,5 @@ Remaining routing milestones:
   errors classified as temporary;
 - preserve the selected measurement source and a user-visible warning when
   fallback is used;
-- connect selected OSRM measurements to planning and independent verification;
-  and
+- connect selected OSRM measurements to planning; and
 - add tests for fallback provenance, warnings, and verifier agreement.
