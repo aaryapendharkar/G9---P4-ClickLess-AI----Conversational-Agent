@@ -80,9 +80,9 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | minimum-cost relaxation | core penalty-ordered search implemented and unit-tested; end-to-end pipeline solver integration pending |
 | LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM/vehicle ingestion, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
-Planner readability follow-up: move label/frontier primitives into
-`planning/label_search.py` and split the combined planning tests by energy,
-filtering, search, and verification responsibility without changing behavior.
+Planner label/frontier primitives live in `planning/label_search.py`. Planning
+tests are grouped by energy and charging, filtering, search, and verification
+responsibility so each behavior has a focused place to evolve.
 
 Configuration A's verifier measurements remain deterministic geometric estimates,
 not live road reroutes. All committed A/B/C configurations still select fixture
