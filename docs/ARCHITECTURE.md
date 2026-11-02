@@ -77,7 +77,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | template explainer, trade-off presenter | placeholder wording |
 | Maps URL + approval gate | v0 (no segmentation) |
 | harness | runs; most metrics stubbed |
-| minimum-cost relaxation | core penalty-ordered search implemented and unit-tested; end-to-end pipeline solver integration pending |
+| minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM/vehicle ingestion, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
