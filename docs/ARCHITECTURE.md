@@ -84,6 +84,12 @@ Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification
 responsibility so each behavior has a focused place to evolve.
 
+Planner implementation responsibilities are also separated: `planner.py`
+orchestrates nominal/robust runs and forward stop search,
+`itinerary_simulation.py` constructs complete itineraries, and
+`route_points.py` owns the shared distance, drive-time, and departure-charge
+formulas used by both search and simulation.
+
 Robust feasibility is evaluated through `ItineraryPlanner.plan_robust`. It
 reuses the normal stop search and simulation with the frozen
 `efficiency_penalty_robust` value. This sensitivity run may remove marginal
