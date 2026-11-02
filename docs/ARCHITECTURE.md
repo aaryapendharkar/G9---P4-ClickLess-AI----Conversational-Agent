@@ -67,7 +67,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category equality) |
 | cached router + detour | placeholder (straight-line detour) |
-| runtime OSRM routing | strict client, local cache, waypoint routing, verifier measurement, and temporary-failure fallback policy implemented; shared pipeline activation pending |
+| runtime OSRM routing | strict client, local cache, waypoint routing, verifier measurement, and temporary-failure fallback with user-visible estimate warnings implemented |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
 | planner | v4 forward label-setting search with Pareto pruning, separate +15% consumption robustness, and comfort meal-stop top-ups to the pre-taper threshold |
@@ -140,12 +140,14 @@ strict OSRM client. Successful measurements remain labelled `osrm`. Only an
 `OSRMTemporaryError` delegates to the deterministic geometric measurer, records
 `geometry_fallback` as the selected source, and creates an estimate warning.
 The source and warning are reset for every attempt so a recovered service does
-not retain stale fallback state. This policy is implemented and unit tested but
-is not yet selected or surfaced by the shared pipeline.
+not retain stale fallback state. In OSRM mode, the shared pipeline now wraps the
+cache-first verifier measurer with this policy and appends its warning exactly
+once after final verification of the recommended plan. Cache-mode configurations
+continue to use deterministic geometry directly and do not report an OSRM warning.
 
 Remaining routing milestones:
 
-- wire the fallback measurement policy into OSRM-mode verifier construction;
-- copy its estimate warning into the user-visible plan notes;
-- connect selected OSRM measurements to planning; and
-- add integration tests for warning propagation and planner/verifier agreement.
+- add a separate temporary-failure policy for candidate-detour measurements
+  used during planning;
+- connect routed leg measurements to itinerary construction; and
+- add integration tests for planner/verifier measurement agreement.
