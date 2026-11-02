@@ -37,6 +37,7 @@ from .planning.routing import (
     CachingOSRMRouter,
     OSRMRouter,
     RouteNotCached,
+    TemporaryFailureDetourMeasurer,
 )
 from .planning.verifier import CompleteItineraryVerifier
 from .ranking.logreg_ranker import LogRegRanker
@@ -124,6 +125,17 @@ class Pipeline:
         self.router = _build_router(
             cfg,
             store,
+        )
+        self.detour_measurer = (
+            TemporaryFailureDetourMeasurer(
+                primary_measurer=self.router,
+                fallback_measurer=CachedRouter(
+                    store,
+                    cfg["energy"],
+                ),
+            )
+            if isinstance(self.router, CachingOSRMRouter)
+            else self.router
         )
         r = cfg["retrieval"]
         self.retriever = CorridorRetriever(
@@ -225,6 +237,14 @@ class Pipeline:
 
         candidates = self.retriever.candidates(route, request)
 
+        reset_detour_state = getattr(
+            self.detour_measurer,
+            "reset",
+            None,
+        )
+        if reset_detour_state is not None:
+            reset_detour_state()
+
         # Add request-specific amenity scores and route detours before applying
         # hard constraints. A relaxed request may contain different amenities
         # or a different maximum detour, so these values must be reconsidered.
@@ -236,7 +256,7 @@ class Pipeline:
                         nearby_amenity.amenity,
                     )
 
-            candidate.detour_min_est = self.router.detour_min(
+            candidate.detour_min_est = self.detour_measurer.detour_min(
                 route,
                 candidate,
             )
@@ -254,10 +274,17 @@ class Pipeline:
             request,
             vehicle,
         )
-        rejection_notes = [
+        planning_notes = [
             f"skipped {candidate.station.station_id}: {reason}"
             for candidate, reason in rejected_candidates
         ]
+        detour_warning = getattr(
+            self.detour_measurer,
+            "warning",
+            None,
+        )
+        if detour_warning is not None:
+            planning_notes.append(detour_warning)
 
         itineraries = self.planner.plan(
             request,
@@ -279,7 +306,7 @@ class Pipeline:
         lap("plan+verify")
 
         if not verified_itineraries:
-            return [], rejection_notes
+            return [], planning_notes
 
         ranked_itineraries = self.ranker.rank(
             verified_itineraries,
@@ -292,7 +319,7 @@ class Pipeline:
 
         lap("rank")
 
-        return alternatives, rejection_notes
+        return alternatives, planning_notes
 
     def plan_request(
         self, req: TripRequest, result: PlanResult, lap=lambda _n: None
@@ -306,13 +333,13 @@ class Pipeline:
         self._routes[req.request_id] = route
         lap("route")
 
-        result.alternatives, rejection_notes = self._solve_request(
+        result.alternatives, planning_notes = self._solve_request(
             req,
             vehicle,
             route,
             lap,
         )
-        result.notes.extend(rejection_notes)
+        result.notes.extend(planning_notes)
 
         if not result.alternatives:
             result.status = "infeasible"
@@ -328,7 +355,7 @@ class Pipeline:
                 attempt.
                 """
 
-                alternatives, _rejection_notes = self._solve_request(
+                alternatives, _planning_notes = self._solve_request(
                     relaxed_request,
                     vehicle,
                     route,

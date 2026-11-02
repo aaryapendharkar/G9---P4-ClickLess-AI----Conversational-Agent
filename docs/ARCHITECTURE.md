@@ -145,9 +145,14 @@ cache-first verifier measurer with this policy and appends its warning exactly
 once after final verification of the recommended plan. Cache-mode configurations
 continue to use deterministic geometry directly and do not report an OSRM warning.
 
+OSRM-mode candidate retrieval now uses the policy accepted in
+`docs/decisions/0007-candidate-detour-fallback.md`. Individual temporary
+station-reroute failures use the deterministic geometric detour estimate and
+add one warning to the plan. The warning remains active across the complete
+candidate collection, while cache mode and non-temporary OSRM errors retain
+their existing behavior.
+
 Remaining routing milestones:
 
-- add a separate temporary-failure policy for candidate-detour measurements
-  used during planning;
 - connect routed leg measurements to itinerary construction; and
 - add integration tests for planner/verifier measurement agreement.

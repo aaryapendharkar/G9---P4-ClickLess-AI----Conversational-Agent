@@ -16,7 +16,7 @@ import re
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from hashlib import sha256
-from typing import Any
+from typing import Any, Protocol
 
 import requests
 
@@ -427,3 +427,63 @@ class CachingOSRMRouter:
             0.0,
             measured_detour_min,
         )
+
+
+class CandidateDetourMeasurer(Protocol):
+    """Source of one candidate station's added driving time."""
+
+    def detour_min(
+        self,
+        route: Route,
+        candidate: Candidate,
+    ) -> float: ...
+
+
+class TemporaryFailureDetourMeasurer:
+    """Use geometric candidate detours only for temporary OSRM failures.
+
+    One planning attempt can measure several candidate stations. Once any
+    candidate uses fallback, the warning remains active until ``reset`` starts
+    the next attempt, even if later candidate measurements succeed through
+    OSRM.
+    """
+
+    def __init__(
+        self,
+        primary_measurer: CandidateDetourMeasurer,
+        fallback_measurer: CandidateDetourMeasurer,
+    ) -> None:
+        self.primary_measurer = primary_measurer
+        self.fallback_measurer = fallback_measurer
+        self.fallback_used = False
+        self.warning: str | None = None
+
+    def reset(self) -> None:
+        """Clear fallback state before measuring a new candidate collection."""
+
+        self.fallback_used = False
+        self.warning = None
+
+    def detour_min(
+        self,
+        route: Route,
+        candidate: Candidate,
+    ) -> float:
+        """Measure one detour, falling back only after a temporary failure."""
+
+        try:
+            return self.primary_measurer.detour_min(
+                route,
+                candidate,
+            )
+        except OSRMTemporaryError as error:
+            fallback_detour_min = self.fallback_measurer.detour_min(
+                route,
+                candidate,
+            )
+            self.fallback_used = True
+            self.warning = (
+                f"OSRM candidate-detour measurement unavailable ({error}); "
+                "using a deterministic geometric estimate."
+            )
+            return fallback_detour_min
