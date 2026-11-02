@@ -83,8 +83,12 @@ Other options:
   Fastest (Fixture Plaza Anthem): -10 min total; +0 min detour; -10 min charging; loses food, restroom_wheelchair.
 ```
 
-Target wording (Hriday's learning swap): *"Fastest: stop at Anthem instead — about 10 minutes
-quicker, but there's no lunch spot or accessible restroom within 400 m."*
+Hriday's learning-swap presenter now translates signed deltas into natural
+directions such as *"about 10 min quicker"*, suppresses differences below one
+minute, shows at most two numerical differences, labels charging time as an
+estimate, and translates internal preference keys such as `restroom_wheelchair`
+before showing them to the driver. Every displayed number still comes directly
+from `Alternative.deltas`.
 
 ## 5. Evaluation additions (Ian)
 
