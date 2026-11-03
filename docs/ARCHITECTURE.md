@@ -62,7 +62,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 
 | Component | Status |
 |---|---|
-| contracts, configs, fixtures, DataStore, geo utils | done (contracts v0.3) |
+| contracts, configs, fixtures, DataStore, geo utils | done (contracts v0.4) |
 | rules parser, template clarifier, priority phrases | placeholder (fixture phrasings) |
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category equality) |
@@ -78,7 +78,8 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | Maps URL + approval gate | v0 (no segmentation) |
 | harness | runs; most metrics stubbed |
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
-| LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM/vehicle ingestion, oracle, splits, statistics | stubs (`NotImplementedError`) |
+| curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
+| LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM ingestion, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification

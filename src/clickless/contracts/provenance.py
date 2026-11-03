@@ -22,8 +22,10 @@ class DataStatus(str, Enum):
 
 
 SourceName = Literal[
-    "AFDC", "FUELECONOMY", "MANUFACTURER", "OSM", "OSRM", "DERIVED", "SYNTHETIC"
+    "AFDC", "FUELECONOMY", "MANUFACTURER", "THIRD_PARTY", "OSM", "OSRM", "DERIVED", "SYNTHETIC"
 ]
+"""THIRD_PARTY (v0.4, ADR 0009): a named spec database or publication used for a curated value the
+manufacturer does not publish in the needed form; `source_url` must name the publisher."""
 
 
 class Provenance(BaseModel):

@@ -1,7 +1,7 @@
 # ADR 0009: Third-party sources in the curated vehicle table
 
-- Status: proposed
-- Date: 2026-11-02
+- Status: proposed — needs 2 approvals (contract change)
+- Date: 2026-11-02 (revised 2026-11-03 for issue #28)
 - Owner: Aarya
 - Approvers: Ian (benchmark/oracle), Hriday (energy model)
 
@@ -31,21 +31,40 @@ showed that manufacturers often do not publish these values in the form we need:
    `efficiency_source_type`, `adapter_source_type` and `max_dc_source_type`, each one of
    `MANUFACTURER`, `FUELECONOMY` or `THIRD_PARTY`. The type follows from the URL's publisher
    (manufacturer domain, fueleconomy.gov, anything else), never chosen by hand.
-3. **Provenance mapping in `data/vehicles.py`.** `MANUFACTURER` and `FUELECONOMY` map to the
-   same `SourceName`. `THIRD_PARTY` maps to a new `SourceName` value `"THIRD_PARTY"` once the
-   contract change below is approved; until then the loader uses `"DERIVED"` and always sets
-   `source_url`, so the real publisher is never lost.
-4. **Contract change (separate approval).** Add `"THIRD_PARTY"` to `SourceName` and bump
-   `CONTRACTS_VERSION` 0.3.0 → 0.4.0. Adding a literal value is backward compatible.
+3. **Provenance mapping in `data/vehicles.py`.** Each source type maps 1:1 to the `SourceName`
+   of the same name. There is no interim `DERIVED` mapping: the contract change ships in the
+   same PR as the loader, so the loader never runs against v0.3.
+4. **Contract change.** Add `"THIRD_PARTY"` to `SourceName` and bump `CONTRACTS_VERSION`
+   0.3.0 → 0.4.0. Adding a literal value is backward compatible; `tests/test_contracts.py`
+   checks every v0.3 source label still validates and unknown labels are rejected.
 5. **Sanity check kept with the data.** For every row, usable kWh ÷ (EPA range × efficiency) must
-   fall in 0.80–0.92 (expected charging-loss band). All 15 rows pass (0.83–0.92).
+   fall in 0.80–0.92 (expected charging-loss band). All 15 rows pass (0.83–0.90).
+6. **Usable capacity only (issue #28).** A `usable_kwh_basis` column states, per row, that
+   `usable_kwh` is usable (net) capacity. The loader accepts only `usable`; a nominal/gross
+   figure (e.g. a manufacturer's "60 kWh battery") must be replaced by a sourced usable figure
+   before it can load. It is never derated by a guessed percentage.
+7. **Loader is strict (issue #28).** `load_curated_vehicles` rejects, with file:line and column:
+   a changed header, wrong field count, duplicate `vehicle_id`, unknown connector, unknown source
+   type, non-https URL, a FUELECONOMY URL not on fueleconomy.gov, out-of-range numbers (unit
+   mistakes), adapters without a source (or a source without adapters), and malformed aliases.
+   Provenance is kept per field: `usable_kwh`, `efficiency_kwh_per_km`, `max_dc_kw`, and
+   `adapters` when present (status `static`, `retrieved_at` = `accessed_on`).
+8. **Alias matching (issue #28).** `DataStore.find_vehicles` matches aliases as whole words and
+   the longest matching alias wins, so "Model 3 RWD" resolves to one row while "my Model 3"
+   stays ambiguous (both Model 3 rows share `model 3` / `tesla model 3` on purpose, annotation
+   guide rule 2). Model year in the text is not used yet.
 
-Current split (15 vehicles): usable kWh 4 manufacturer / 11 third-party; max DC 6 / 9;
+Current split (15 vehicles): usable kWh 3 manufacturer / 12 third-party; max DC 6 / 9;
 adapters 12 manufacturer / 2 third-party (1 vehicle has none); efficiency 15 FuelEconomy.
 
 ## Known caveats
-- Nissan LEAF SV PLUS: 60 kWh is Nissan's stated (nominal) capacity; usable is likely a few kWh
-  lower. Ratio check 0.92 is the highest in the table, consistent with this.
+- Nissan LEAF SV PLUS (resolved, issue #28): Nissan USA sells the pack as "60 kWh"; it is the
+  62 kWh-nominal e+ pack with 59.0 kWh usable (ev-database.org, "Useable Capacity 59.0 kWh";
+  EVKX agrees). The table now uses 59.0 kWh (THIRD_PARTY). The Nissan figure is no longer used.
+- Nissan LEAF max DC 100 kW is Nissan's quick-charge port rating; real peak acceptance is lower.
+  This makes charge-time estimates optimistic for the LEAF but does not affect feasibility.
+- Native connectors have no per-value source column (they are not energy fields); add one if
+  the grounding metric needs to cite them.
 - F-150 Lightning ER peak DC (150 kW) is from Ford's 2025 spec sheet; the 2024 truck uses the same
   131 kWh battery.
 - Tesla CCS1 adapter compatibility is cited to Tesla's product page, which blocked automated

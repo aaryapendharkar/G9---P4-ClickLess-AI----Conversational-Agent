@@ -1,4 +1,4 @@
-"""Shared contracts (v0.3). Every module talks to every other module ONLY through these types.
+"""Shared contracts (v0.4). Every module talks to every other module ONLY through these types.
 
 Rules (see CONTRIBUTING.md):
   * each file is owned by the module that PRODUCES the type;
@@ -39,7 +39,7 @@ from .request import (
 )
 from .route import LatLon, Route
 
-CONTRACTS_VERSION = "0.3.0"
+CONTRACTS_VERSION = "0.4.0"
 
 __all__ = [
     "CONTRACTS_VERSION", "SAFETY_CRITICAL_FIELDS",
