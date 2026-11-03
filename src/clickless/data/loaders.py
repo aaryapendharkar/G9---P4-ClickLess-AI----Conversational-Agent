@@ -15,9 +15,20 @@ from ..config import repo_path
 from ..contracts import Amenity, Place, Provenance, Station, Vehicle
 
 
-def _contains_phrase(text: str, phrase: str) -> bool:
-    """`phrase` occurs in `text` not glued to other letters/digits ("i4" matches "my i4", not "i40")."""
-    return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text) is not None
+def _phrase_spans(text: str, phrase: str) -> list[tuple[int, int]]:
+    """Where `phrase` occurs in `text` as whole words ("i4" matches "my i4", not "i40")."""
+    pattern = rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])"
+    return [m.span() for m in re.finditer(pattern, text)]
+
+
+def _covered_chars(spans: list[tuple[int, int]]) -> int:
+    """Number of text characters covered by the union of `spans`."""
+    covered, end = 0, -1
+    for a, b in sorted(spans):
+        if b > end:
+            covered += b - max(a, end)
+            end = b
+    return covered
 
 
 def _read_records(path: Path) -> tuple[list[dict[str, Any]] | dict[str, Any], dict[str, Any]]:
@@ -81,19 +92,21 @@ class DataStore:
         return self.stations[station_id]
 
     def find_vehicles(self, text: str) -> list[Vehicle]:
-        """Vehicles whose alias appears in `text` as whole words; the longest matching alias wins.
+        """Vehicles whose aliases (whole words) cover the most characters of `text`.
 
-        "my Model 3 RWD" -> only the RWD row ("model 3 rwd" beats "model 3"); "my Model 3" -> both
-        Model 3 rows (equal-length tie), which callers report as ambiguous. Returns [] when no
-        alias matches. TODO(Deepti/Aarya): model-year disambiguation ("2022 Ioniq 5" when only a
+        Each vehicle scores the union of the text spans its aliases match, so the variant that
+        explains most of the user's words wins: "Tesla Model 3 RWD" -> RWD row ("tesla model 3" +
+        "model 3 rwd" cover 17 chars vs 13 for Long Range). "my Model 3" / "my Tesla Model 3" ->
+        both Model 3 rows (tie), which callers report as ambiguous. Returns [] when no alias
+        matches. TODO(Deepti/Aarya): model-year disambiguation ("2022 Ioniq 5" when only a
         2024 variant is curated) -- today the year in the text is ignored.
         """
         low = text.lower()
         best: dict[str, int] = {}
         for v in self.vehicles.values():
-            lengths = [len(a) for a in v.aliases if _contains_phrase(low, a)]
-            if lengths:
-                best[v.vehicle_id] = max(lengths)
+            spans = [span for a in v.aliases for span in _phrase_spans(low, a)]
+            if spans:
+                best[v.vehicle_id] = _covered_chars(spans)
         if not best:
             return []
         top = max(best.values())

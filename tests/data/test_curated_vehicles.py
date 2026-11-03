@@ -120,6 +120,11 @@ def test_curated_vehicles_pass_store_validation(curated_store):
         ("2024 model 3 long range awd", ["tesla-model-3-lr-awd-2024"]),
         ("my model 3", ["tesla-model-3-lr-awd-2024", "tesla-model-3-rwd-2024"]),  # ambiguous on purpose
         ("my tesla", []),
+    ("my 2024 tesla model 3 rwd", ["tesla-model-3-rwd-2024"]),  # hriday-001: brand + variant
+    ("tesla model 3 long range", ["tesla-model-3-lr-awd-2024"]),
+    ("my tesla model 3", ["tesla-model-3-lr-awd-2024", "tesla-model-3-rwd-2024"]),  # still ambiguous
+    ("tesla model y long range", ["tesla-model-y-lr-awd-2024"]),
+    ("traded my model 3 for an ioniq 5 long range", ["hyundai-ioniq-5-lr-rwd-2024"]),
         ("2024 bmw i4 edrive40", ["bmw-i4-edrive40-2024"]),
         ("route i40 east", []),  # whole words only
         ("ioniq 5 long range", ["hyundai-ioniq-5-lr-rwd-2024"]),

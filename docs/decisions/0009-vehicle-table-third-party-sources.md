@@ -49,9 +49,11 @@ showed that manufacturers often do not publish these values in the form we need:
    mistakes), adapters without a source (or a source without adapters), and malformed aliases.
    Provenance is kept per field: `usable_kwh`, `efficiency_kwh_per_km`, `max_dc_kw`, and
    `adapters` when present (status `static`, `retrieved_at` = `accessed_on`).
-8. **Alias matching (issue #28).** `DataStore.find_vehicles` matches aliases as whole words and
-   the longest matching alias wins, so "Model 3 RWD" resolves to one row while "my Model 3"
-   stays ambiguous (both Model 3 rows share `model 3` / `tesla model 3` on purpose, annotation
+8. **Alias matching (issue #28; revised after CI run #67).** `DataStore.find_vehicles` matches
+   aliases as whole words and picks the vehicle whose matched aliases cover the most characters
+   of the text (union of spans). "Tesla Model 3 RWD" resolves to the RWD row (the earlier
+   longest-single-alias rule tied on "tesla model 3"), while "my Model 3" / "my Tesla Model 3"
+   stay ambiguous (both Model 3 rows share `model 3` / `tesla model 3` on purpose, annotation
    guide rule 2). Model year in the text is not used yet.
 
 Current split (15 vehicles): usable kWh 3 manufacturer / 12 third-party; max DC 6 / 9;

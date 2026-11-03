@@ -42,14 +42,14 @@ def test_contracts_version_is_0_4():
 
 
 def test_provenance_sources_v03_still_valid_and_third_party_added():
-    from datetime import UTC, datetime
+    from datetime import datetime, timezone
 
     import pydantic
     import pytest
 
     from clickless.contracts import DataStatus, Provenance
 
-    now = datetime(2026, 11, 3, tzinfo=UTC)
+    now = datetime(2026, 11, 3, tzinfo=timezone.utc)
     for source in ["AFDC", "FUELECONOMY", "MANUFACTURER", "OSM", "OSRM", "DERIVED", "SYNTHETIC", "THIRD_PARTY"]:
         assert Provenance(source=source, retrieved_at=now, status=DataStatus.STATIC).source == source
     with pytest.raises(pydantic.ValidationError):

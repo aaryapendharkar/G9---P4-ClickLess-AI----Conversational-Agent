@@ -14,7 +14,7 @@ Rules (ADR 0009, issue #28):
 from __future__ import annotations
 
 import csv
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -160,7 +160,7 @@ def _parse_row(row: dict[str, str], where: str) -> Vehicle:
         raise err("aliases", "duplicate alias in the same row")
 
     try:
-        accessed = datetime.fromisoformat(row["accessed_on"]).replace(tzinfo=UTC)
+        accessed = datetime.fromisoformat(row["accessed_on"]).replace(tzinfo=timezone.utc)
     except ValueError:
         raise err("accessed_on", f"{row['accessed_on']!r} is not an ISO date (YYYY-MM-DD)") from None
 
