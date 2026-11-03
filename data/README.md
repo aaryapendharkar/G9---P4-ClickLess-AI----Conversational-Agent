@@ -3,7 +3,7 @@
 | Folder | In git? | What |
 |---|---|---|
 | `fixtures/` | yes | Tiny **synthetic** Phoenix→Flagstaff world. Everyone develops and tests against this until the real snapshot exists. Never cite it as real data. |
-| `curated/vehicles.csv` | yes | The ~15 supported model-year variants. One source URL per curated value + access date (proposal §II). |
+| `curated/vehicles.csv` | yes | The 15 supported model-year variants. One source URL + source type (`MANUFACTURER` / `FUELECONOMY` / `THIRD_PARTY`) per curated value, usable (not nominal) capacity only, access date per row. Loaded by `clickless.data.vehicles.load_curated_vehicles`, which rejects malformed rows (ADR 0009). |
 | `raw/` | no | Raw API pulls (AFDC JSON, Overpass JSON). Re-creatable. |
 | `snapshot/` | no (only `MANIFEST.json`) | The **frozen** normalized snapshot every configuration reads. Share the files via the team drive / a GitHub release; commit only the manifest so anyone can check hashes. |
 | `cache/` | no | OSRM / geocoder caches. |

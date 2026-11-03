@@ -7,11 +7,17 @@ Owner: Aarya. Everyone else only calls the public methods below.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from ..config import repo_path
 from ..contracts import Amenity, Place, Provenance, Station, Vehicle
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    """`phrase` occurs in `text` not glued to other letters/digits ("i4" matches "my i4", not "i40")."""
+    return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text) is not None
 
 
 def _read_records(path: Path) -> tuple[list[dict[str, Any]] | dict[str, Any], dict[str, Any]]:
@@ -75,14 +81,23 @@ class DataStore:
         return self.stations[station_id]
 
     def find_vehicles(self, text: str) -> list[Vehicle]:
-        """All vehicles with an alias appearing in `text`, longest alias wins per vehicle.
+        """Vehicles whose alias appears in `text` as whole words; the longest matching alias wins.
 
-        PLACEHOLDER matching (substring). TODO(Deepti/Aarya): word boundaries, model-year
-        disambiguation ("2022 Ioniq 5" vs "Ioniq 5"), and returning ambiguity explicitly.
+        "my Model 3 RWD" -> only the RWD row ("model 3 rwd" beats "model 3"); "my Model 3" -> both
+        Model 3 rows (equal-length tie), which callers report as ambiguous. Returns [] when no
+        alias matches. TODO(Deepti/Aarya): model-year disambiguation ("2022 Ioniq 5" when only a
+        2024 variant is curated) -- today the year in the text is ignored.
         """
         low = text.lower()
-        hits = [v for v in self.vehicles.values() if any(a in low for a in v.aliases)]
-        return hits
+        best: dict[str, int] = {}
+        for v in self.vehicles.values():
+            lengths = [len(a) for a in v.aliases if _contains_phrase(low, a)]
+            if lengths:
+                best[v.vehicle_id] = max(lengths)
+        if not best:
+            return []
+        top = max(best.values())
+        return [self.vehicles[vid] for vid, n in best.items() if n == top]
 
     def geocode(self, text: str) -> Place:
         """Fixture gazetteer lookup. TODO(Aarya): cached geocoder for the real benchmark."""
