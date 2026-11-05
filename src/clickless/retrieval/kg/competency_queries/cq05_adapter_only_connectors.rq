@@ -1,0 +1,13 @@
+# CQ5: Which connectors does vehicle V support only through an adapter?
+# Author: Aarya (learning swap). Assumes the stored graph asserts native connectors with
+# cc:supports and adapter connectors with cc:supportsViaAdapter only (no RDFS materialization of
+# the subPropertyOf link); otherwise every adapter connector would also match cc:supports.
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT ?connector
+WHERE {
+  VALUES ?vehicle { cc:vehicle_REPLACE_ME }
+  ?vehicle cc:supportsViaAdapter ?connector .
+  FILTER NOT EXISTS { ?vehicle cc:supports ?connector }
+}
+ORDER BY ?connector

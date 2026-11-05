@@ -11,3 +11,5 @@
 Snapshot layout must match fixtures layout (`stations.json`, `vehicles.json`, `amenities.json`, `places.json`, `routes/`) so switching `data.source: fixtures → snapshot` in a config is the only change needed.
 
 Freeze procedure: `make snapshot` → writes `snapshot/MANIFEST.json` (SHA-256 per file, retrieval timestamps, record counts). After the test-set freeze, the snapshot is never regenerated; fixes go in a new snapshot version + ADR.
+
+Build the real snapshot: see `data/snapshot/README.md` (`make snapshot-build`, needs internet and `NREL_API_KEY`).

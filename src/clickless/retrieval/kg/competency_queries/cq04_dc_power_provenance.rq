@@ -1,0 +1,19 @@
+# CQ4: What is the source, retrieval time and source update time of the power value of
+#      station S's DC fast ports?
+# Author: Aarya (learning swap). Station facts come from one AFDC record, so provenance hangs
+# off the station (proposed terms cc:chargerLevel, cc:hasProvenance, cc:sourceName). A port
+# without cc:powerKw is returned with an empty ?power: power unknown, never guessed (ADR 0010).
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT ?port ?power ?sourceName ?retrievedAt ?sourceUpdatedAt
+WHERE {
+  VALUES ?station { cc:station_REPLACE_ME }
+  ?station cc:hasPort       ?port ;
+           cc:hasProvenance ?source .
+  ?port    cc:chargerLevel  "dc_fast" .
+  OPTIONAL { ?port cc:powerKw ?power }
+  ?source  cc:sourceName    ?sourceName ;
+           cc:retrievedAt   ?retrievedAt .
+  OPTIONAL { ?source cc:sourceUpdatedAt ?sourceUpdatedAt }
+}
+ORDER BY DESC(?power)

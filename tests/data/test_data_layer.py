@@ -34,7 +34,6 @@ def test_manifest_roundtrip(tmp_path):
     assert verify_manifest(str(tmp_path)) == ["a.json"]
 
 
-@pytest.mark.xfail(raises=NotImplementedError, reason="TODO(Aarya)")
 def test_osm_category_mapping():
     from clickless.contracts import AmenityCategory
     assert normalize_category({"amenity": "fast_food"}) == AmenityCategory.FOOD
@@ -83,7 +82,7 @@ def _remove_vehicle_field_provenance(s):
         (_swap_coordinates, "coordinates", "outside US bounding boxes"),
         (_duplicate_amenity, "duplicate_ids", "appears 2 times"),
         (_remove_ports, "station_ports", "no ports"),
-        (_drop_dc_power, "dc_power", "no power_kw"),
+        (_drop_dc_power, "dc_power_unknown", "no power_kw"),
         (_remove_station_provenance, "provenance", "missing provenance"),
         (_remove_vehicle_field_provenance, "vehicle_field_provenance", "usable_kwh"),
     ],

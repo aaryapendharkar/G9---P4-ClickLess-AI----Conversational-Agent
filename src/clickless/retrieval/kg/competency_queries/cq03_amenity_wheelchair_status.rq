@@ -1,0 +1,14 @@
+# CQ3: Which amenities near station S are tagged wheelchair-accessible, and which are unknown?
+# Author: Aarya (learning swap). A missing cc:wheelchair value is reported as "unknown" and is
+# never treated as accessible (proposal §II). "limited" and "no" are excluded on purpose.
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT ?amenity ?wheelchair
+WHERE {
+  VALUES ?station { cc:station_REPLACE_ME }
+  ?station cc:near ?amenity .
+  OPTIONAL { ?amenity cc:wheelchair ?tagged }
+  BIND (COALESCE(?tagged, "unknown") AS ?wheelchair)
+  FILTER (?wheelchair IN ("yes", "unknown"))
+}
+ORDER BY DESC(?wheelchair) ?amenity

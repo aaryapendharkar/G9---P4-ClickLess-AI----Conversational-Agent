@@ -56,21 +56,34 @@ showed that manufacturers often do not publish these values in the form we need:
    stay ambiguous (both Model 3 rows share `model 3` / `tesla model 3` on purpose, annotation
    guide rule 2). Model year in the text is not used yet.
 
-Current split (15 vehicles): usable kWh 3 manufacturer / 12 third-party; max DC 6 / 9;
+Current split (15 vehicles): usable kWh 3 manufacturer / 12 third-party; max DC 5 / 10;
 adapters 12 manufacturer / 2 third-party (1 vehicle has none); efficiency 15 FuelEconomy.
 
 ## Known caveats
 - Nissan LEAF SV PLUS (resolved, issue #28): Nissan USA sells the pack as "60 kWh"; it is the
   62 kWh-nominal e+ pack with 59.0 kWh usable (ev-database.org, "Useable Capacity 59.0 kWh";
   EVKX agrees). The table now uses 59.0 kWh (THIRD_PARTY). The Nissan figure is no longer used.
-- Nissan LEAF max DC 100 kW is Nissan's quick-charge port rating; real peak acceptance is lower.
-  This makes charge-time estimates optimistic for the LEAF but does not affect feasibility.
+- Nissan LEAF max DC (resolved, issue #28 review by Hriday, 2026-11-04): Nissan's "100 kW
+  (CHAdeMO)" is the quick-charge port rating, not the car's sustained acceptance. The table now
+  uses a documented conservative cap of **46 kW** ("Charge Power (max) 46 kW DC",
+  ev-database.org, same page as the usable capacity; THIRD_PARTY). Even with the cap the
+  planner's constant-power-to-80% model is optimistic for this car: EVKX reports a 10-80%
+  average of about 27 kW, and the pack has no active cooling, so repeated fast charges slow down
+  further ("rapidgate"). **The LEAF is therefore excluded from charging-time accuracy claims**;
+  its feasibility results (energy, connectors, reserve) are unaffected and stay in scope.
 - Native connectors have no per-value source column (they are not energy fields); add one if
   the grounding metric needs to cite them.
 - F-150 Lightning ER peak DC (150 kW) is from Ford's 2025 spec sheet; the 2024 truck uses the same
   131 kWh battery.
 - Tesla CCS1 adapter compatibility is cited to Tesla's product page, which blocked automated
   access on 2026-11-02; verify by hand before the snapshot freeze.
+
+## Pre-freeze data follow-ups (keep until verified)
+1. Tesla CCS1 adapter compatibility (`tesla-model-3-*`, `tesla-model-y-*`): open Tesla's product
+   page by hand and confirm the 2024 Model 3/Y are listed; record the result here.
+2. F-150 Lightning ER max DC: replace the 2025 spec-sheet source with a 2024 one if Ford
+   publishes it, or keep this caveat.
+3. LEAF: excluded from charging-time accuracy claims (above); evaluation reports should say so.
 
 ## Consequences
 - The final report states: *"Efficiency comes from EPA ratings; usable capacity, peak DC power

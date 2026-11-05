@@ -1,0 +1,17 @@
+# CQ2: Which stations have a port vehicle V can use (natively or with a documented adapter)
+#      and a food amenity within 400 m?
+# Author: Aarya (learning swap). Assumes cc:near edges are only built for amenities <= 400 m
+# (retrieval.yaml amenity_radius_m) and the proposed term cc:amenityCategory (see
+# docs/COMPETENCY_QUESTIONS.md, "Ontology terms needed").
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT DISTINCT ?station ?amenity ?connector
+WHERE {
+  VALUES ?vehicle { cc:vehicle_REPLACE_ME }
+  ?vehicle  cc:supports|cc:supportsViaAdapter ?connector .
+  ?station  cc:hasPort      ?port .
+  ?port     cc:hasConnector ?connector .
+  ?station  cc:near         ?amenity .
+  ?amenity  cc:amenityCategory "food" .
+}
+ORDER BY ?station ?amenity

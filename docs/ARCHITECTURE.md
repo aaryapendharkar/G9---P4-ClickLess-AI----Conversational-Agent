@@ -75,11 +75,12 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | weighted cost, trade-off selector | v0 implemented |
 | logreg ranker | standardized training, validation, save/load, probability ranking, and missing-model fallback implemented; final model awaits labeled DEV plans |
 | template explainer, trade-off presenter | template explanation v0; natural, contract-grounded alternative comparisons implemented |
-| Maps URL + approval gate | v0 (no segmentation) |
+| Maps URL + approval gate | segmentation done (3 waypoints per URL, ADR 0010) |
 | harness | runs; most metrics stubbed |
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
-| LLM parser, SBERT, KG build/enrich, grounded explainer, AFDC/OSM ingestion, oracle, splits, statistics | stubs (`NotImplementedError`) |
+| AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
+| LLM parser, SBERT, KG build/enrich, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification

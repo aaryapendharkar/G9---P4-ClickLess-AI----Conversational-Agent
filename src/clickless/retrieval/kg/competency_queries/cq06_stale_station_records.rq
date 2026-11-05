@@ -1,0 +1,18 @@
+# CQ6: Which stations' records were last updated at the source more than N days before retrieval?
+# Author: Aarya (learning swap). SPARQL 1.1 has no portable dateTime subtraction, so the caller
+# substitutes ?cutoff = snapshot retrieval time - N days (e.g. N = 365, the stale threshold in
+# data/provenance.py). Stations without any source update date are not returned here; their
+# age cannot be judged (labelled "source update date unknown" in explanations).
+PREFIX cc:  <https://example.org/clickless#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?station ?sourceUpdatedAt ?retrievedAt
+WHERE {
+  VALUES ?cutoff { "2025-11-03T00:00:00Z"^^xsd:dateTime }
+  ?station a cc:Station ;
+           cc:hasProvenance ?source .
+  ?source  cc:retrievedAt     ?retrievedAt ;
+           cc:sourceUpdatedAt ?sourceUpdatedAt .
+  FILTER (?sourceUpdatedAt < ?cutoff)
+}
+ORDER BY ?sourceUpdatedAt
