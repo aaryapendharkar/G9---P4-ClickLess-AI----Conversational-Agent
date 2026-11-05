@@ -7,7 +7,9 @@ Owner: Aarya. Everyone else only calls the public methods below.
 from __future__ import annotations
 
 import json
+import os
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +54,10 @@ class DataStore:
         places: dict[str, tuple[float, float]],
         routes_dir: Path,
     ) -> None:
+        for kind, ids in (("station", [s.station_id for s in stations]), ("vehicle", [v.vehicle_id for v in vehicles])):
+            dupes = sorted(i for i, n in Counter(ids).items() if n > 1)
+            if dupes:  # a dict would silently keep only the last record (PR #26 review question 1)
+                raise ValueError(f"duplicate {kind} ids: {dupes[:10]}")
         self.stations = {s.station_id: s for s in stations}
         self.vehicles = {v.vehicle_id: v for v in vehicles}
         self.amenities = amenities
@@ -80,8 +86,28 @@ class DataStore:
 
     @classmethod
     def from_config(cls, cfg: dict[str, Any]) -> DataStore:
+        """`data.source` picks the world: `fixtures` (default in configs) or `snapshot`.
+
+        The environment variable CLICKLESS_DATA_SOURCE=fixtures|snapshot overrides the config for
+        one run, so the same config A/B/C can be evaluated on either world. A snapshot is loaded
+        only if MANIFEST.json exists and every file still matches its hash (issue #32).
+        """
         data = cfg["data"]
-        root = data["fixtures_dir"] if data["source"] == "fixtures" else data["snapshot_dir"]
+        source = os.environ.get("CLICKLESS_DATA_SOURCE", "").strip().lower() or data["source"]
+        if source == "fixtures":
+            return cls.from_dir(data["fixtures_dir"])
+        if source != "snapshot":
+            raise ValueError(f"data source must be 'fixtures' or 'snapshot', got {source!r}")
+        root = repo_path(data["snapshot_dir"])
+        if not (root / "MANIFEST.json").is_file():
+            raise FileNotFoundError(
+                f"no snapshot in {root}: build it (make snapshot-build) or download it; see data/snapshot/README.md"
+            )
+        from .snapshot import verify_manifest
+
+        changed = verify_manifest(str(root))
+        if changed:
+            raise ValueError(f"snapshot in {root} does not match MANIFEST.json (missing or changed: {changed})")
         return cls.from_dir(root)
 
     # ---------- lookups ----------

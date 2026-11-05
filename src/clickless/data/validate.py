@@ -2,17 +2,18 @@
 
 Checks every record of a DataStore before the freeze:
   * coordinates inside the US bounding boxes; no duplicate ids
-  * every station has >= 1 port with a normalized connector; DC ports have power_kw or a flag
+  * every station has >= 1 port with a normalized connector; reported DC power must be > 0
   * provenance completeness: source, retrieved_at always; source_updated_at reported as a share
   * vehicles: every curated numeric field has a field_provenance entry
 Output feeds the "provenance completeness" metric (proposal §V-C).
 
 Notes on scope:
-  * DataStore keys stations and vehicles by id, so duplicate station/vehicle ids in the raw files
-    are collapsed at load time and cannot be seen here; the check catches key/id mismatches and
-    duplicate amenity ids. Raw-file duplicate detection belongs in the loader (Aarya).
-  * The contracts have no "power unknown" flag on ChargingPort yet, so a DC port without
-    power_kw is reported as a problem until such a flag exists.
+  * DataStore now rejects duplicate station/vehicle ids when it is built (ADR 0010), so here the
+    check catches key/id mismatches and duplicate amenity ids.
+  * `ChargingPort.power_kw is None` is the contract's "not reported by the source" flag (ADR
+    0010). A DC port with unknown power is counted under the WARNING check `dc_power_unknown`
+    (the planner assumes a conservative power for it); it does not block a snapshot.
+    `blocking_problems()` returns only the checks that must be empty before a freeze.
 """
 
 from __future__ import annotations
@@ -40,9 +41,11 @@ CHECKS: tuple[str, ...] = (
     "duplicate_ids",
     "station_ports",
     "dc_power",
+    "dc_power_unknown",
     "provenance",
     "vehicle_field_provenance",
 )
+WARNING_CHECKS: frozenset[str] = frozenset({"dc_power_unknown"})
 
 
 def in_us(lat: float, lon: float) -> bool:
@@ -105,7 +108,7 @@ def validate_store(store: DataStore) -> dict[str, list[str]]:
             if port.count < 1:
                 problems["station_ports"].append(f"station {sid}: ports[{i}] count {port.count} < 1")
             if port.level == ChargerLevel.DC_FAST and port.power_kw is None:
-                problems["dc_power"].append(f"station {sid}: DC ports[{i}] has no power_kw and no flag")
+                problems["dc_power_unknown"].append(f"station {sid}: DC ports[{i}] has no power_kw (unknown)")
             if port.power_kw is not None and port.power_kw <= 0:
                 problems["dc_power"].append(f"station {sid}: ports[{i}] power_kw {port.power_kw} <= 0")
 
@@ -120,6 +123,11 @@ def validate_store(store: DataStore) -> dict[str, list[str]]:
                 problems["vehicle_field_provenance"].append(f"vehicle {vid}: {field} has no field_provenance")
 
     return problems
+
+
+def blocking_problems(problems: dict[str, list[str]]) -> dict[str, list[str]]:
+    """The checks that must be empty before a snapshot is frozen (warnings excluded)."""
+    return {k: v for k, v in problems.items() if k not in WARNING_CHECKS and v}
 
 
 def provenance_completeness(store: DataStore) -> dict[str, float]:

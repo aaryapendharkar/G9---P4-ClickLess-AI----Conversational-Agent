@@ -30,7 +30,7 @@ EXPECTED = {
     "hyundai-ioniq-6-lr-rwd-2024": (74.0, 233, [CCS1], [NACS]),
     "kia-ev6-lr-rwd-2024": (74.0, 240, [CCS1], [NACS]),
     "kia-ev9-lr-rwd-2024": (96.0, 210, [CCS1], [NACS]),
-    "nissan-leaf-sv-plus-2024": (59.0, 100, [CHADEMO, J1772], []),
+    "nissan-leaf-sv-plus-2024": (59.0, 46, [CHADEMO, J1772], []),  # 46 kW cap, ADR 0009
     "rivian-r1s-dual-large-2023": (131.0, 220, [CCS1], [NACS]),
     "volkswagen-id4-pro-rwd-2024": (77.0, 175, [CCS1], [NACS]),
     "bmw-i4-edrive40-2024": (80.7, 205, [CCS1], [NACS]),
@@ -120,11 +120,11 @@ def test_curated_vehicles_pass_store_validation(curated_store):
         ("2024 model 3 long range awd", ["tesla-model-3-lr-awd-2024"]),
         ("my model 3", ["tesla-model-3-lr-awd-2024", "tesla-model-3-rwd-2024"]),  # ambiguous on purpose
         ("my tesla", []),
-    ("my 2024 tesla model 3 rwd", ["tesla-model-3-rwd-2024"]),  # hriday-001: brand + variant
-    ("tesla model 3 long range", ["tesla-model-3-lr-awd-2024"]),
-    ("my tesla model 3", ["tesla-model-3-lr-awd-2024", "tesla-model-3-rwd-2024"]),  # still ambiguous
-    ("tesla model y long range", ["tesla-model-y-lr-awd-2024"]),
-    ("traded my model 3 for an ioniq 5 long range", ["hyundai-ioniq-5-lr-rwd-2024"]),
+        ("my 2024 tesla model 3 rwd", ["tesla-model-3-rwd-2024"]),  # hriday-001: brand + variant
+        ("tesla model 3 long range", ["tesla-model-3-lr-awd-2024"]),
+        ("my tesla model 3", ["tesla-model-3-lr-awd-2024", "tesla-model-3-rwd-2024"]),  # still ambiguous
+        ("tesla model y long range", ["tesla-model-y-lr-awd-2024"]),
+        ("traded my model 3 for an ioniq 5 long range", ["hyundai-ioniq-5-lr-rwd-2024"]),
         ("2024 bmw i4 edrive40", ["bmw-i4-edrive40-2024"]),
         ("route i40 east", []),  # whole words only
         ("ioniq 5 long range", ["hyundai-ioniq-5-lr-rwd-2024"]),
@@ -270,3 +270,11 @@ def test_empty_table_is_rejected(tmp_path):
     header, _ = _good_rows()
     with pytest.raises(CuratedVehicleError, match="no vehicle rows"):
         load_curated_vehicles(_write(tmp_path, header, []))
+
+
+def test_leaf_dc_power_is_the_documented_cap_not_the_port_rating(vehicles):
+    # Hriday's review of ADR 0009 (issue #28): Nissan's 100 kW is the port rating.
+    leaf = vehicles["nissan-leaf-sv-plus-2024"]
+    assert leaf.max_dc_kw == 46
+    prov = leaf.field_provenance["max_dc_kw"]
+    assert prov.source == "THIRD_PARTY" and "ev-database.org" in prov.source_url

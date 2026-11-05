@@ -1,4 +1,4 @@
-.PHONY: setup test todo lint demo eval-dev bench-check snapshot
+.PHONY: setup test todo lint demo eval-dev bench-check snapshot snapshot-build
 
 setup:            ## install in editable mode with dev tools
 	pip install -e ".[dev]"
@@ -23,3 +23,6 @@ bench-check:      ## validate every benchmark JSONL file
 
 snapshot:         ## hash the frozen snapshot into data/snapshot/MANIFEST.json
 	python -c "from clickless.data.snapshot import write_manifest; print(write_manifest())"
+
+snapshot-build:   ## download AFDC + OSM + geocodes and build data/snapshot (needs internet + NREL_API_KEY in .env)
+	python -m clickless.data.build_snapshot $(ARGS)
