@@ -1,7 +1,7 @@
 # ADR 0012: Connector compatibility with documented adapters
 
-- Status: proposed
-- Date: 2026-11-07
+- Status: proposed — needs the approvals listed under Approvals before merge
+- Date: 2026-11-07 (approvals section added 2026-11-08, PR #39 review)
 - Owner: Manas (learning swap in `planning/filters.py`)
 - Approvers: Hriday (planning owner), Aarya (vehicle table), Deepti (parser fills `connectors_override`)
 
@@ -51,3 +51,15 @@ maximal power, so a tie goes to the native plug.
 - When Deepti grounds the LLM `connectors` field into `connectors_override`, this rule already
   keeps it safe. The explanation does not yet say that a stop needs the adapter; that is a
   follow-up for `explain/`.
+- Shared planning behavior changes (the filter, the planner and the verifier), so this ADR requires
+  two approvals.
+
+## Approvals
+Each approver records approval here (name, date, PR comment or sync) before the status changes to
+accepted. Merge needs both required approvals.
+
+| Approver | Decision they approve | Required | Status |
+|---|---|---|---|
+| Hriday (planning owner) | Adapters count only at DC fast ports; native ports come first; the filter, planner and verifier keep sharing `compatible_ports` | yes | pending |
+| Aarya (vehicle table, ADR 0009) | The DC-fast-only rule loses no documented adapter: all 14 adapters in `data/curated/vehicles.csv` are cited to DC fast-charging sources, and any AC adapter added later waits for a contract field | yes | pending |
+| Deepti (parser) | `connectors_override` only narrows the vehicle's compatible set, so a grounded LLM `connectors` value can never widen it | for the override rule | pending |

@@ -93,32 +93,33 @@ def test_preference_query_adds_missing_category_word():
 
 
 # ---------------------------------------------------------------- scoring (no model needed)
+# Other categories always score 0.0 (category gate): tests/retrieval/test_category_gate.py.
 def test_related_phrase_scores_higher_than_unrelated(store):
     matcher = EmbeddingMatcher(store, encoder=ConceptEncoder())
-    mexican = _pref("food", "mexican food")
-    coffee = _pref("coffee", "coffee")
+    kitchen, burgers = _amenity(store, "fix:a05"), _amenity(store, "fix:a03")  # both food
+    mexican, burger = _pref("food", "mexican food"), _pref("food", "a burger")
 
-    assert matcher.score(mexican, _amenity(store, "fix:a05")) > matcher.score(mexican, _amenity(store, "fix:a03"))
-    assert matcher.score(coffee, _amenity(store, "fix:a01")) > 0.9
-    assert matcher.score(coffee, _amenity(store, "fix:a04")) == 0.0  # restroom: unrelated
+    assert matcher.score(mexican, kitchen) > matcher.score(mexican, burgers)
+    assert matcher.score(burger, burgers) > matcher.score(burger, kitchen)
+    assert matcher.score(_pref("coffee"), _amenity(store, "fix:a01")) > 0.9
 
 
 def test_score_is_clipped_rounded_cosine(store):
     vectors = {
-        "coffee": [1.0, 0.0],
-        "Fixture Coffee Bar. coffee. cafe": [2.0, 0.0],  # same direction, different length
+        "lunch food": [1.0, 0.0],
+        "Verde Fixture Kitchen. food. restaurant. mexican": [2.0, 0.0],  # same direction, different length
         "Canyon Fixture Diner. food. restaurant. american": [1.0, 1.0],  # 45 degrees
         "Junction Fixture Burgers. food. fast food. burger": [-1.0, 0.0],  # opposite
-        "Junction Fixture Restroom. restroom. toilets": [0.0, 3.0],  # orthogonal
+        "Sedona Fixture Bistro. food. restaurant. regional": [0.0, 3.0],  # orthogonal
     }
     matcher = EmbeddingMatcher(encoder=lambda texts: np.array([vectors[t] for t in texts]))
-    coffee = _pref("coffee")
+    lunch = _pref("food", "lunch")
 
-    assert matcher.score(coffee, _amenity(store, "fix:a01")) == 1.0
-    assert matcher.score(coffee, _amenity(store, "fix:a02")) == round(math.cos(math.pi / 4), 4)
-    assert matcher.score(coffee, _amenity(store, "fix:a03")) == 0.0  # negative cosine is clipped
-    assert matcher.score(coffee, _amenity(store, "fix:a04")) == 0.0
-    assert all(isinstance(matcher.score(coffee, _amenity(store, i)), float) for i in ("fix:a01", "fix:a02"))
+    assert matcher.score(lunch, _amenity(store, "fix:a05")) == 1.0
+    assert matcher.score(lunch, _amenity(store, "fix:a02")) == round(math.cos(math.pi / 4), 4)
+    assert matcher.score(lunch, _amenity(store, "fix:a03")) == 0.0  # negative cosine is clipped
+    assert matcher.score(lunch, _amenity(store, "fix:a08")) == 0.0
+    assert all(isinstance(matcher.score(lunch, _amenity(store, i)), float) for i in ("fix:a05", "fix:a02"))
 
 
 def test_scores_do_not_depend_on_call_order(store):
@@ -146,7 +147,7 @@ def test_disk_cache_is_reused_and_keyed_by_documents(store, tmp_path):
     assert _scores(_cached_matcher(store, tmp_path, encoder=warm_encoder), pairs) == cold
     assert not any(documents & set(call) for call in warm_encoder.calls)  # documents came from disk
 
-    preference, amenity = pairs[0]
+    preference, amenity = _pref("food", "lunch"), _amenity(store, "fix:a02")  # passes the category gate
     smaller_store = type("Store", (), {"amenities": store.amenities[:3]})()
     _cached_matcher(smaller_store, tmp_path).score(preference, amenity)
     _cached_matcher(store, tmp_path, revision="r2").score(preference, amenity)
@@ -167,14 +168,14 @@ def test_unreadable_disk_cache_is_recomputed(store, tmp_path):
 def test_model_needs_a_pinned_revision(store):
     matcher = EmbeddingMatcher(store, "sentence-transformers/all-MiniLM-L6-v2")  # nothing loaded yet
     with pytest.raises(ValueError, match="sbert_revision"):
-        matcher.score(_pref("food"), store.amenities[0])
+        matcher.score(_pref("food"), _amenity(store, "fix:a02"))
 
 
 def test_missing_nlp_extra_gives_install_hint(store, monkeypatch):
     monkeypatch.setitem(sys.modules, "sentence_transformers", None)
     matcher = EmbeddingMatcher(store, "sentence-transformers/all-MiniLM-L6-v2", revision="abc")
     with pytest.raises(ImportError, match=r"\.\[nlp\]"):
-        matcher.score(_pref("food"), store.amenities[0])
+        matcher.score(_pref("food"), _amenity(store, "fix:a02"))
 
 
 def test_config_b_wires_the_pinned_model(store):
@@ -204,15 +205,14 @@ def sbert_settings():
 @pytest.mark.network
 def test_sbert_related_phrase_beats_unrelated_phrase(store, sbert_settings):
     matcher = EmbeddingMatcher(store, **sbert_settings)
-    kitchen, burgers = _amenity(store, "fix:a05"), _amenity(store, "fix:a03")
-    coffee_bar, restroom = _amenity(store, "fix:a01"), _amenity(store, "fix:a04")
+    kitchen, burgers = _amenity(store, "fix:a05"), _amenity(store, "fix:a03")  # both food
 
     mexican = _pref("food", "mexican food")
     assert matcher.score(mexican, kitchen) > matcher.score(mexican, burgers) + 0.1
-    coffee = _pref("coffee", "somewhere to grab a coffee")
-    assert matcher.score(coffee, coffee_bar) > matcher.score(coffee, restroom) + 0.2
-    bathroom = _pref("restroom", "a bathroom")
-    assert matcher.score(bathroom, restroom) > matcher.score(bathroom, kitchen) + 0.2
+    burger = _pref("food", "a burger and fries")
+    assert matcher.score(burger, burgers) > matcher.score(burger, kitchen) + 0.2
+    # Raw cosine would give the coffee bar 0.45 here; the category gate makes it 0.
+    assert matcher.score(_pref("restroom", "restroom"), _amenity(store, "fix:a01")) == 0.0
 
 
 @pytest.mark.network

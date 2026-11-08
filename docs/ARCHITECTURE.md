@@ -66,8 +66,8 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | contracts, configs, fixtures, DataStore, geo utils | done (contracts v0.4) |
 | rules parser, template clarifier, priority phrases | placeholder (fixture phrasings) |
 | corridor retrieval | placeholder (brute force) |
-| TF-IDF matcher | placeholder (category equality) |
-| SBERT matcher (B, C) | Sentence-BERT cosine on the shared amenity documents (`retrieval/documents.py`); model pinned by commit in `configs/retrieval.yaml`, CPU, embeddings cached in `data/cache/sbert/`; category gate still open |
+| TF-IDF matcher | placeholder (category gate only: 1.0 inside the requested category, ADR 0013) |
+| SBERT matcher (B, C) | Sentence-BERT cosine on the shared amenity documents (`retrieval/documents.py`); model pinned by commit in `configs/retrieval.yaml`, CPU, embeddings cached in `data/cache/sbert/`; other categories score 0 (category gate, ADR 0013) |
 | cached router + detour | placeholder (straight-line detour) |
 | runtime OSRM routing | strict client, local cache, waypoint routing, verifier measurement, and temporary-failure fallback with user-visible estimate warnings implemented |
 | energy model, charging-time estimate | v0 implemented |

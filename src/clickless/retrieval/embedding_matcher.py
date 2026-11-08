@@ -1,8 +1,13 @@
 """Configurations B/C preference matcher: Sentence-BERT cosine similarity. Owner: Manas.
 
 score(preference, amenity) = cosine(embed(query), embed(document)), clipped to [0, 1] and rounded
-to SCORE_DECIMALS. Query and document text come from retrieval/documents.py, shared with TF-IDF so
-the component-level comparison is fair (proposal §IV-A).
+to SCORE_DECIMALS, for amenities that pass the category gate; 0.0 for every other amenity.
+Query and document text come from retrieval/documents.py, shared with TF-IDF so the
+component-level comparison is fair (proposal §IV-A).
+
+Category gate (retrieval/category_gate.py, ADR 0013, same rule as TF-IDF): an amenity of another
+category scores 0.0 before anything is embedded. Raw cosine gives other categories 0.13-0.45 with
+MiniLM on the fixtures, enough for planning to list a coffee bar as a requested restroom.
 
 Model and version (configs/retrieval.yaml):
   * `sbert_model` is the Hugging Face model id and `sbert_revision` the exact commit of that
@@ -26,8 +31,6 @@ Caching:
     documents). The key hashes the documents themselves, so each snapshot -- and the fixtures --
     gets its own file and a stale cache is never read. Files are safe to delete at any time.
 
-Open, shared with TF-IDF (decide on DEV, write an ADR): whether the amenity category is a hard
-gate. Raw cosine gives unrelated categories small positive scores (about 0.15-0.45 with MiniLM).
 The wheelchair rule is NOT applied here -- planning applies it (unknown never counts).
 """
 
@@ -43,6 +46,7 @@ from pathlib import Path
 import numpy as np
 
 from ..contracts import Amenity, AmenityPreference
+from .category_gate import passes_category_gate
 from .documents import amenity_document, preference_query
 
 _LOG = logging.getLogger(__name__)
@@ -79,6 +83,8 @@ class EmbeddingMatcher:
         self._query_vectors: dict[str, np.ndarray] = {}
 
     def score(self, preference: AmenityPreference, amenity: Amenity) -> float:
+        if not passes_category_gate(preference, amenity):
+            return 0.0  # checked first: a gated pair never loads the model or embeds anything
         document = self._document_vector(amenity_document(amenity))
         query = self._query_vector(preference_query(preference))
         similarity = float(np.dot(query.astype(np.float64), document.astype(np.float64)))
