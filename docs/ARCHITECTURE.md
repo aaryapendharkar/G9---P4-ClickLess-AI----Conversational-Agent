@@ -56,7 +56,8 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 3. Only `pipeline.py` knows which implementation is used; modules never import siblings'
    internals (e.g. `explain/` reads `PlanCost`, it does not call `ranking.cost`).
 4. Numbers shown to the user come from contract fields, never recomputed in explanation code.
-5. All randomness seeded; LLM temperature 0; prompts versioned; data frozen by hash.
+5. All randomness seeded; LLM temperature 0; prompts versioned; data frozen by hash; embedding
+   models pinned by commit.
 
 ## Implementation status (walking skeleton, Nov 1)
 
@@ -66,10 +67,11 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | rules parser, template clarifier, priority phrases | placeholder (fixture phrasings) |
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category equality) |
+| SBERT matcher (B, C) | Sentence-BERT cosine on the shared amenity documents (`retrieval/documents.py`); model pinned by commit in `configs/retrieval.yaml`, CPU, embeddings cached in `data/cache/sbert/`; category gate still open |
 | cached router + detour | placeholder (straight-line detour) |
 | runtime OSRM routing | strict client, local cache, waypoint routing, verifier measurement, and temporary-failure fallback with user-visible estimate warnings implemented |
 | energy model, charging-time estimate | v0 implemented |
-| filters | v0 (adapters missing) |
+| filters | v1: native connectors at any level + documented adapters at DC fast ports; a stated connector override only narrows (ADR 0012) |
 | planner | v4 forward label-setting search with Pareto pruning, separate +15% consumption robustness, and comfort meal-stop top-ups to the pre-taper threshold |
 | verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; generated boundary tests cover tolerances and charge limits |
 | weighted cost, trade-off selector | v0 implemented |
@@ -80,7 +82,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
 | AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
-| LLM parser, SBERT, KG build/enrich, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
+| LLM parser, KG build/enrich, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification

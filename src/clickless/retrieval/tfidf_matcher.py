@@ -2,7 +2,8 @@
 
 PLACEHOLDER: category equality only (1.0 / 0.0) so ranking has a signal on fixtures.
 TODO(Manas):
-  * build an amenity "document" = name + category + selected OSM tags (cuisine, amenity, shop)
+  * documents and queries: use retrieval/documents.py (amenity_document, preference_query), the
+    same text the SBERT matcher embeds, so the A-vs-B matcher comparison is fair
   * fit TfidfVectorizer on all amenity documents in the snapshot (fit ONCE, freeze vocabulary)
   * query = preference phrase (+ category word); score = cosine similarity, clipped to [0, 1]
   * keep category as a hard gate or as a feature? decide on DEV and write it in an ADR

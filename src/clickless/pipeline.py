@@ -164,7 +164,13 @@ class Pipeline:
         )
         self.matcher = {
             "tfidf": lambda: TfidfMatcher(store),
-            "sbert": lambda: EmbeddingMatcher(store, r["sbert_model"]),
+            "sbert": lambda: EmbeddingMatcher(
+                store,
+                r["sbert_model"],
+                revision=r.get("sbert_revision"),
+                device=r.get("sbert_device", "cpu"),
+                cache_dir=repo_path(r.get("sbert_cache_dir", "data/cache/sbert")),
+            ),
         }[comp["matcher"]]()
         self.filter = DefaultHardConstraintFilter()
         self.planner = ItineraryPlanner(
