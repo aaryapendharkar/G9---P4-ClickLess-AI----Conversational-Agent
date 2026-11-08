@@ -78,3 +78,10 @@ def test_unknown_vehicle_is_not_assigned(parser, monkeypatch):
 
     assert result.request.vehicle_id is None
     assert "vehicle_id" in result.missing_fields
+
+
+def test_versioned_prompt_is_available_as_package_data():
+    prompt_path = llm_parser._PROMPT_PATH
+
+    assert prompt_path.name == "extract_v1.txt"
+    assert prompt_path.is_file()
