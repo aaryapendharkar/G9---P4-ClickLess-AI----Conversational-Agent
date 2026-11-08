@@ -2,11 +2,12 @@
 
 Format (Maps URLs, api=1): https://www.google.com/maps/dir/?api=1&origin=LAT,LON
     &destination=LAT,LON&waypoints=LAT,LON|LAT,LON&travelmode=driving
-TODO(Aarya):
-  * confirm the waypoint limit per platform in the docs and put it in configs (currently 9)
-  * segmentation when stops exceed the limit: every approved stop exactly once, and segment k's
-    destination == segment k+1's origin (spec in tests/handoff/test_maps_url.py)
-  * decide: coordinates vs place names in the URL (coordinates are unambiguous)
+Decisions (ADR 0010 §handoff):
+  * waypoint limit: up to 3 waypoints open on mobile, up to 9 elsewhere; drivers use phones, so
+    configs use 3 (`handoff.max_waypoints`);
+  * more stops than that: split into consecutive URLs. Every approved stop appears exactly once,
+    and segment k's destination is segment k+1's origin (the driver continues from that stop);
+  * coordinates, not place names, everywhere (unambiguous, and they match the verified stops).
 """
 
 from __future__ import annotations
@@ -21,6 +22,17 @@ BASE_URL = "https://www.google.com/maps/dir/"
 
 def _fmt(p: LatLon) -> str:
     return f"{p.lat:.6f},{p.lon:.6f}"
+
+
+def segment_points(points: list[LatLon], max_waypoints: int) -> list[list[LatLon]]:
+    """Split [origin, stop1, ..., stopN, destination] into URL segments of at most
+    `max_waypoints` intermediate points; consecutive segments share their boundary point."""
+    if max_waypoints < 0:
+        raise ValueError("max_waypoints must be >= 0")
+    if len(points) < 2:
+        raise ValueError("need at least an origin and a destination")
+    step = max_waypoints + 1
+    return [points[i : i + step + 1] for i in range(0, len(points) - 1, step)]
 
 
 def build_url(origin: LatLon, destination: LatLon, waypoints: list[LatLon]) -> str:
@@ -38,6 +50,5 @@ class GoogleMapsHandoff:
     def build(self, itinerary: Itinerary, route: Route) -> list[str]:
         stops = [self.store.station(s.station_id) for s in itinerary.stops]
         waypoints = [LatLon(lat=s.lat, lon=s.lon) for s in stops]
-        if len(waypoints) <= self.max_waypoints:
-            return [build_url(route.origin, route.destination, waypoints)]
-        raise NotImplementedError("TODO(Aarya): split into segments preserving boundaries")
+        points = [route.origin, *waypoints, route.destination]
+        return [build_url(seg[0], seg[-1], seg[1:-1]) for seg in segment_points(points, self.max_waypoints)]

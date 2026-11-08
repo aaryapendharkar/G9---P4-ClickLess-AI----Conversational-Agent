@@ -1,7 +1,57 @@
 import pytest
 
+from clickless.contracts import Itinerary, PlanCost, TripRequest
 from clickless.ranking.cost import plan_cost, resolve_profile
-from clickless.ranking.tradeoffs import dominates
+from clickless.ranking.tradeoffs import TradeoffSelector, dominates
+
+
+def _test_itinerary(
+    itinerary_id: str,
+    total_time_min: float,
+    detour_min: float,
+    charge_min: float,
+) -> Itinerary:
+    """Build a minimal itinerary for selector-focused unit tests."""
+
+    return Itinerary(
+        itinerary_id=itinerary_id,
+        request_id="tradeoff-unit-test",
+        vehicle_id="test-vehicle",
+        stops=[],
+        legs=[],
+        total_drive_min=total_time_min - charge_min,
+        total_charge_min=charge_min,
+        total_detour_min=detour_min,
+        arrival_soc_pct=20.0,
+    )
+
+
+def _test_cost(
+    total_min: float,
+    amenity_satisfaction: float = 1.0,
+) -> PlanCost:
+    """Build a minimal cost without invoking the full planning pipeline."""
+
+    return PlanCost(
+        profile="balanced",
+        drive_min=total_min,
+        charge_min=0.0,
+        detour_penalty_min=0.0,
+        stop_overhead_min=0.0,
+        amenity_credit_min=0.0,
+        evidence_credit_min=0.0,
+        total_min=total_min,
+        amenity_satisfaction=amenity_satisfaction,
+    )
+
+
+def _test_request() -> TripRequest:
+    """Return a request with no amenities for selector-only tests."""
+
+    return TripRequest(
+        request_id="tradeoff-unit-test",
+        raw_text="selector unit test",
+    )
 
 
 def _plans(pipe_a, text, rid="r1"):
@@ -91,3 +141,129 @@ def test_dominates():
     axes = {"t": "min", "s": "max"}
     assert dominates({"t": 1, "s": 1}, {"t": 2, "s": 1}, axes)
     assert not dominates({"t": 1, "s": 0}, {"t": 2, "s": 1}, axes)
+
+
+def test_selector_breaks_equal_axis_ties_deterministically(cfg_a):
+    """Equal axis and cost values use itinerary ID as the final tie-breaker."""
+
+    recommended = _test_itinerary(
+        "recommended",
+        total_time_min=120.0,
+        detour_min=10.0,
+        charge_min=20.0,
+    )
+    alphabetically_later = _test_itinerary(
+        "zeta-fast",
+        total_time_min=100.0,
+        detour_min=10.0,
+        charge_min=20.0,
+    )
+    alphabetically_earlier = _test_itinerary(
+        "alpha-fast",
+        total_time_min=100.0,
+        detour_min=10.0,
+        charge_min=20.0,
+    )
+
+    selector = TradeoffSelector(cfg_a["tradeoffs"])
+    alternatives = selector.select(
+        [
+            (recommended, _test_cost(110.0)),
+            (alphabetically_later, _test_cost(90.0)),
+            (alphabetically_earlier, _test_cost(90.0)),
+        ],
+        _test_request(),
+    )
+
+    fastest = next(
+        alternative for alternative in alternatives if alternative.label == "Fastest"
+    )
+
+    assert fastest.itinerary.itinerary_id == "alpha-fast"
+
+
+def test_selector_suppresses_immaterial_detour_difference(cfg_a):
+    """A tiny detour improvement should not create another driver option."""
+
+    recommended = _test_itinerary(
+        "recommended",
+        total_time_min=100.0,
+        detour_min=10.0,
+        charge_min=20.0,
+    )
+    tiny_detour_improvement = _test_itinerary(
+        "tiny-detour-change",
+        total_time_min=100.0,
+        detour_min=7.0,
+        charge_min=20.0,
+    )
+
+    selector = TradeoffSelector(cfg_a["tradeoffs"])
+    alternatives = selector.select(
+        [
+            (recommended, _test_cost(80.0)),
+            (tiny_detour_improvement, _test_cost(85.0)),
+        ],
+        _test_request(),
+    )
+
+    assert [alternative.label for alternative in alternatives] == ["Recommended"]
+
+
+def test_selector_never_returns_plan_dominated_by_recommendation(cfg_a):
+    """A plan worse on every configured axis is not a valid alternative."""
+
+    recommended = _test_itinerary(
+        "recommended",
+        total_time_min=100.0,
+        detour_min=5.0,
+        charge_min=10.0,
+    )
+    dominated_plan = _test_itinerary(
+        "dominated",
+        total_time_min=110.0,
+        detour_min=8.0,
+        charge_min=15.0,
+    )
+
+    selector = TradeoffSelector(cfg_a["tradeoffs"])
+    alternatives = selector.select(
+        [
+            (recommended, _test_cost(80.0)),
+            (dominated_plan, _test_cost(95.0)),
+        ],
+        _test_request(),
+    )
+
+    assert [alternative.itinerary.itinerary_id for alternative in alternatives] == [
+        "recommended"
+    ]
+
+
+def test_selector_does_not_repeat_an_itinerary(cfg_a):
+    """The same itinerary ID may appear only once in driver-facing output."""
+
+    recommended = _test_itinerary(
+        "same-itinerary",
+        total_time_min=100.0,
+        detour_min=5.0,
+        charge_min=10.0,
+    )
+    duplicate_entry = recommended.model_copy(
+        update={
+            "total_drive_min": 80.0,
+        }
+    )
+
+    selector = TradeoffSelector(cfg_a["tradeoffs"])
+    alternatives = selector.select(
+        [
+            (recommended, _test_cost(90.0)),
+            (duplicate_entry, _test_cost(80.0)),
+        ],
+        _test_request(),
+    )
+
+    selected_ids = [alternative.itinerary.itinerary_id for alternative in alternatives]
+
+    assert selected_ids == ["same-itinerary"]

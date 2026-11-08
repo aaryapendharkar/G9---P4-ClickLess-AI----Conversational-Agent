@@ -18,7 +18,7 @@ routing:
   mode: cache                # cache | osrm
   osrm_base_url_env: OSRM_BASE_URL
 handoff:
-  max_waypoints: 9           # VERIFY against Google Maps URLs docs; differs by platform
+  max_waypoints: 3           # Google Maps URLs: up to 3 waypoints on mobile, 9 elsewhere (ADR 0010)
 includes:
   energy: configs/energy.yaml
   tradeoffs: configs/tradeoffs.yaml

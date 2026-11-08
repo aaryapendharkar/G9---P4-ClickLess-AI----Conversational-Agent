@@ -83,8 +83,12 @@ Other options:
   Fastest (Fixture Plaza Anthem): -10 min total; +0 min detour; -10 min charging; loses food, restroom_wheelchair.
 ```
 
-Target wording (Hriday's learning swap): *"Fastest: stop at Anthem instead — about 10 minutes
-quicker, but there's no lunch spot or accessible restroom within 400 m."*
+Hriday's learning-swap presenter now translates signed deltas into natural
+directions such as *"about 10 min quicker"*, suppresses differences below one
+minute, shows at most two numerical differences, labels charging time as an
+estimate, and translates internal preference keys such as `restroom_wheelchair`
+before showing them to the driver. Every displayed number still comes directly
+from `Alternative.deltas`.
 
 ## 5. Evaluation additions (Ian)
 
@@ -112,5 +116,10 @@ choose between Recommended/alternative on 5 scripted trips; report agreement wit
 
 - Is "wheelchair-accessible restroom" a soft preference (current) or a hard constraint when the
   user says "need"? Proposal relaxes amenities first — be explicit about accessibility.
-- Charge policy at a meal stop: charge "just enough" (current) or top up while eating (comfort)?
 - Default arrival SoC when unstated (currently 20 %) and the reserve (10 %).
+
+Resolved charging policy: balanced and fastest charge just enough for the next
+leg. Comfort may top up while eating only when the stop satisfies food requested
+by the driver. The target is the charging model's pre-taper threshold, capped by
+the maximum departure SoC, so the policy does not intentionally add slower
+tapered charging.

@@ -1,4 +1,4 @@
-.PHONY: setup test todo lint demo eval-dev bench-check snapshot
+.PHONY: setup test todo lint demo eval-dev bench-check snapshot snapshot-build snapshot-report snapshot-verify
 
 setup:            ## install in editable mode with dev tools
 	pip install -e ".[dev]"
@@ -21,5 +21,14 @@ eval-dev:         ## run the harness on the dev split (CONFIG=A|B|C)
 bench-check:      ## validate every benchmark JSONL file
 	python -c "from evaluation.schema import load_items; [print(s, len(load_items('benchmark/requests/'+s))) for s in ('raw','dev','test')]"
 
-snapshot:         ## hash the frozen snapshot into data/snapshot/MANIFEST.json
-	python -c "from clickless.data.snapshot import write_manifest; print(write_manifest())"
+snapshot:         ## check data/snapshot against MANIFEST.json (the build writes the manifest; never re-hash by hand)
+	python -m clickless.data.snapshot_report --verify-only
+
+snapshot-build:   ## download AFDC + OSM + geocodes and build data/snapshot (needs internet + NREL_API_KEY in .env)
+	python -m clickless.data.build_snapshot $(ARGS)
+
+snapshot-report:  ## Markdown report of data/snapshot for issue #36 (ARGS="--pack snapshot.zip" to also zip it)
+	python -m clickless.data.snapshot_report $(ARGS)
+
+snapshot-verify:  ## after downloading a shared snapshot: every file must match MANIFEST.json
+	python -m clickless.data.snapshot_report --verify-only

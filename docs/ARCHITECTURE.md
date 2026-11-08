@@ -58,22 +58,106 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 4. Numbers shown to the user come from contract fields, never recomputed in explanation code.
 5. All randomness seeded; LLM temperature 0; prompts versioned; data frozen by hash.
 
-## Implementation status (walking skeleton, Oct 24)
+## Implementation status (walking skeleton, Nov 1)
 
 | Component | Status |
 |---|---|
-| contracts, configs, fixtures, DataStore, geo utils | done (v0.1) |
+| contracts, configs, fixtures, DataStore, geo utils | done (contracts v0.4) |
 | rules parser, template clarifier, priority phrases | placeholder (fixture phrasings) |
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category equality) |
 | cached router + detour | placeholder (straight-line detour) |
+| runtime OSRM routing | strict client, local cache, waypoint routing, verifier measurement, and temporary-failure fallback with user-visible estimate warnings implemented |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v0 (adapters missing) |
-| planner | v1 generalized forward label-setting search (direct + multi-stop); richer time/SoC dominance remains TODO |
-| verifier | v1 (SoC chain, reserve/arrival, station existence/status/access, connector, power, detour, departure cap, continuity); authoritative route distance/detour recomputation remains TODO |
+| planner | v4 forward label-setting search with Pareto pruning, separate +15% consumption robustness, and comfort meal-stop top-ups to the pre-taper threshold |
+| verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; generated boundary tests cover tolerances and charge limits |
 | weighted cost, trade-off selector | v0 implemented |
-| logreg ranker | falls back to weighted cost until trained |
-| template explainer, trade-off presenter | placeholder wording |
-| Maps URL + approval gate | v0 (no segmentation) |
+| logreg ranker | standardized training, validation, save/load, probability ranking, and missing-model fallback implemented; final model awaits labeled DEV plans |
+| template explainer, trade-off presenter | template explanation v0; natural, contract-grounded alternative comparisons implemented |
+| Maps URL + approval gate | segmentation done (3 waypoints per URL, ADR 0010) |
 | harness | runs; most metrics stubbed |
-| LLM parser, SBERT, KG build/enrich, grounded explainer, OSRM, AFDC/OSM/vehicle ingestion, relaxation, oracle, splits, statistics | stubs (`NotImplementedError`) |
+| minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
+| curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
+| AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
+| LLM parser, SBERT, KG build/enrich, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
+
+Planner label/frontier primitives live in `planning/label_search.py`. Planning
+tests are grouped by energy and charging, filtering, search, and verification
+responsibility so each behavior has a focused place to evolve.
+
+Planner implementation responsibilities are also separated: `planner.py`
+orchestrates nominal/robust runs and forward stop search,
+`itinerary_simulation.py` constructs complete itineraries, and
+`route_points.py` owns the shared distance, drive-time, and departure-charge
+formulas used by both search and simulation.
+
+Robust feasibility is evaluated through `ItineraryPlanner.plan_robust`. It
+reuses the normal stop search and simulation with the frozen
+`efficiency_penalty_robust` value. This sensitivity run may remove marginal
+plans or require more stops, but ordinary pipeline planning continues to use
+the nominal energy model.
+
+Departure-charge targets come from `planning/charging_policy.py`. Balanced and
+fastest profiles retain the just-enough target. At a stop that satisfies a
+requested food preference, the comfort profile may charge to the existing
+pre-taper threshold (80% in the committed energy model), capped by the maximum
+departure SoC. Search and final simulation call the same policy.
+
+Configuration A's `LogRegRanker` uses the five inputs listed by `FEATURE_NAMES`
+in `ranking/logreg_ranker.py`. `extract_feature_values` produces values in that
+same order. Training standardizes those features and fits the classifier as one
+scikit-learn pipeline, then saves that complete pipeline with joblib so runtime
+prediction applies the same preprocessing used during training.
+
+The default artifact path is `results/models/logreg_a.joblib`. Generated results
+are intentionally excluded from version control. When that artifact is absent,
+the ranker explicitly delegates to `WeightedRanker`, and the pipeline reports the
+fallback in its notes. The synthetic ranker tests verify this lifecycle; they do
+not replace the real labeled DEV candidate plans needed to train the final model.
+Held-out TEST labels must not be used for training or tuning.
+
+Configuration A's verifier measurements remain deterministic geometric estimates,
+not live road reroutes. All committed A/B/C configurations still select fixture
+routing, so tests and demos remain offline and repeatable.
+
+When routing mode is switched to OSRM, the pipeline injects a cache-backed
+measurement strategy into the verifier. It independently requests each
+consecutive itinerary leg and each single-station detour through the waypoint
+router, rather than accepting distances copied from the planner.
+
+OSRM mode now uses a cache-first wrapper. A request is identified by its ordered
+coordinates and routing options. A cache hit returns a validated route labelled
+`cached`; a miss calls the strict OSRM client, stores the validated runtime route,
+and returns it. Cache files are generated under `data/cache/` and are excluded
+from version control.
+
+OSRM failures are now classified before routing policy handles them. Timeouts,
+connection failures, and HTTP 5xx responses are temporary and eligible for
+geometric fallback. `NoRoute`, invalid input, non-retryable HTTP responses,
+malformed responses, and configuration errors are not fallback-eligible.
+
+`TemporaryFailureFallbackMeasurer` applies that rule without weakening the
+strict OSRM client. Successful measurements remain labelled `osrm`. Only an
+`OSRMTemporaryError` delegates to the deterministic geometric measurer, records
+`geometry_fallback` as the selected source, and creates an estimate warning.
+The source and warning are reset for every attempt so a recovered service does
+not retain stale fallback state. In OSRM mode, the shared pipeline now wraps the
+cache-first verifier measurer with this policy and appends its warning exactly
+once after final verification of the recommended plan. Cache-mode configurations
+continue to use deterministic geometry directly and do not report an OSRM warning.
+
+OSRM-mode candidate retrieval now uses the policy accepted in
+`docs/decisions/0007-candidate-detour-fallback.md`. Individual temporary
+station-reroute failures use the deterministic geometric detour estimate and
+add one warning to the plan. The warning remains active across the complete
+candidate collection, while cache mode and non-temporary OSRM errors retain
+their existing behavior.
+
+Final itinerary construction now follows the routed-leg decision accepted in
+`docs/decisions/0008-routed-leg-itinerary-construction.md`. Forward search uses
+inexpensive geometric estimates to propose stop sequences. Final simulation
+then uses measured leg distances, measured driving durations, and measured stop
+detours for energy, charging, and public itinerary fields. Planner and verifier
+receive separate strategy instances so verification remains independent while
+both can reuse the cache-first route provider.

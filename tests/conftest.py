@@ -12,6 +12,15 @@ DEMO_TEXT = (
 )
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _always_fixture_world():
+    """Tests run on the synthetic fixtures even if CLICKLESS_DATA_SOURCE is set in the shell."""
+    mp = pytest.MonkeyPatch()
+    mp.delenv("CLICKLESS_DATA_SOURCE", raising=False)
+    yield
+    mp.undo()
+
+
 @pytest.fixture(scope="session")
 def cfg_a():
     return load_config("A")
