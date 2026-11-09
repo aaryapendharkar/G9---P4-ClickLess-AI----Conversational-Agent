@@ -107,3 +107,29 @@ def test_connector_aliases_are_normalized(parser, monkeypatch):
     result = parser.parse("plan my trip", "llm-connector-alias")
 
     assert result.request.connectors_override == ["CCS1"]
+
+
+def test_invalid_connector_output_falls_back_safely(store, monkeypatch):
+    response = {**VALID_EXTRACTION, "connectors": ["unknown-port"]}
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: json.dumps(response))
+
+    result = LLMParser(store, {"model": "test-model", "temperature": 0}).parse(
+        "Phoenix to Flagstaff in my spark", "llm-invalid-connector"
+    )
+
+    assert result.parser == "llm"
+    assert result.request.start_soc_pct is None
+    assert result.missing_fields == ["start_soc_pct"]
+
+
+def test_out_of_range_battery_output_falls_back_safely(store, monkeypatch):
+    response = {**VALID_EXTRACTION, "start_soc_pct": 140}
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: json.dumps(response))
+
+    result = LLMParser(store, {"model": "test-model", "temperature": 0}).parse(
+        "Phoenix to Flagstaff in my spark", "llm-invalid-battery"
+    )
+
+    assert result.parser == "llm"
+    assert result.request.start_soc_pct is None
+    assert result.missing_fields == ["start_soc_pct"]
