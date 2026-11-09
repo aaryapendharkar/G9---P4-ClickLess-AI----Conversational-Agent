@@ -13,7 +13,7 @@ VALID_EXTRACTION = {
     "arrival_soc_pct_min": 20,
     "max_detour_min": 10,
     "min_power_kw": 50,
-    "connectors": ["CCS1"],
+    "connectors": ["CCS"],
     "amenities": [
         {"category": "food", "phrase": "lunch", "important": True},
         {"category": "restroom", "phrase": "accessible restroom", "wheelchair_required": True, "important": True},
@@ -85,3 +85,25 @@ def test_versioned_prompt_is_available_as_package_data():
 
     assert prompt_path.name == "extract_v1.txt"
     assert prompt_path.is_file()
+
+
+def test_malformed_amenity_phrase_triggers_safe_fallback(store, monkeypatch):
+    malformed_response = {**VALID_EXTRACTION, "amenities": [{"category": "food", "phrase": ["lunch"]}]}
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: json.dumps(malformed_response))
+
+    result = LLMParser(store, {"model": "test-model", "temperature": 0}).parse(
+        "Phoenix to Flagstaff in my spark", "llm-malformed-amenity"
+    )
+
+    assert result.parser == "llm"
+    assert result.request.start_soc_pct is None
+    assert result.missing_fields == ["start_soc_pct"]
+
+
+def test_connector_aliases_are_normalized(parser, monkeypatch):
+    response = {**VALID_EXTRACTION, "connectors": ["J1772 Combo"]}
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: json.dumps(response))
+
+    result = parser.parse("plan my trip", "llm-connector-alias")
+
+    assert result.request.connectors_override == ["CCS1"]

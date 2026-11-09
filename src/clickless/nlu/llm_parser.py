@@ -33,6 +33,17 @@ _NUMERIC_RANGES = {
     "max_detour_min": (0.0, math.inf),
     "min_power_kw": (0.0, math.inf),
 }
+_CONNECTOR_ALIASES = {
+    "ccs": Connector.CCS1,
+    "ccs1": Connector.CCS1,
+    "combo 1": Connector.CCS1,
+    "ccs combo 1": Connector.CCS1,
+    "j1772 combo": Connector.CCS1,
+    "nacs": Connector.NACS,
+    "tesla": Connector.NACS,
+    "chademo": Connector.CHADEMO,
+    "j1772": Connector.J1772,
+}
 
 _EXTRACTION_SCHEMA = {
     "type": "object",
@@ -63,6 +74,15 @@ def _json_object(raw_response: str) -> dict[str, Any]:
     return parsed_response
 
 
+def _normalize_connector(value: str) -> Connector:
+    """Map common driver/model phrases to the canonical connector enum."""
+    normalized_value = re.sub(r"\s+", " ", value.strip().lower())
+    try:
+        return _CONNECTOR_ALIASES[normalized_value]
+    except KeyError as error:
+        raise ValueError(f"unsupported connector: {value}") from error
+
+
 def _validate_extraction(extracted: dict[str, Any]) -> None:
     """Reject malformed model output before it can enter the shared request contract."""
     unknown_fields = set(extracted) - _ALLOWED_FIELDS
@@ -87,10 +107,7 @@ def _validate_extraction(extracted: dict[str, Any]) -> None:
     if not isinstance(connectors, list) or any(not isinstance(value, str) for value in connectors):
         raise ValueError("connectors must be a list of strings")
     for connector in connectors:
-        try:
-            Connector(connector.upper())
-        except ValueError as error:
-            raise ValueError(f"unsupported connector: {connector}") from error
+        _normalize_connector(connector)
 
     amenities = extracted.get("amenities", [])
     if not isinstance(amenities, list):
@@ -99,8 +116,12 @@ def _validate_extraction(extracted: dict[str, Any]) -> None:
     for amenity in amenities:
         if not isinstance(amenity, dict) or set(amenity) - _ALLOWED_AMENITY_FIELDS:
             raise ValueError("amenity has an unsupported shape")
-        if amenity.get("category", "other") not in valid_categories:
-            raise ValueError(f"unsupported amenity category: {amenity.get('category')}")
+        category_value = amenity.get("category", "other")
+        if not isinstance(category_value, str) or category_value.lower() not in valid_categories:
+            raise ValueError(f"unsupported amenity category: {category_value}")
+        phrase = amenity.get("phrase", category_value)
+        if not isinstance(phrase, str):
+            raise ValueError("amenity phrase must be a string")
         for boolean_field in ("wheelchair_required", "important"):
             if boolean_field in amenity and not isinstance(amenity[boolean_field], bool):
                 raise ValueError(f"amenity {boolean_field} must be boolean")
@@ -173,7 +194,7 @@ class LLMParser:
             arrival_soc_pct_min=extracted.get("arrival_soc_pct_min"),
             max_detour_min=extracted.get("max_detour_min"),
             min_power_kw=extracted.get("min_power_kw"),
-            connectors_override=[Connector(value.upper()) for value in extracted.get("connectors", [])] or None,
+            connectors_override=[_normalize_connector(value) for value in extracted.get("connectors", [])] or None,
             tradeoff_profile=detect_profile(text),
             weight_overrides=detect_weight_overrides(text),
         )
@@ -186,11 +207,11 @@ class LLMParser:
             ambiguous["vehicle_id"] = [vehicle.vehicle_id for vehicle in matching_vehicles]
 
         for amenity_data in extracted.get("amenities", []):
-            category = AmenityCategory(amenity_data.get("category", "other"))
+            category = AmenityCategory(amenity_data.get("category", "other").lower())
             request.amenities.append(
                 AmenityPreference(
                     category=category,
-                    phrase=str(amenity_data.get("phrase", category.value)),
+                    phrase=amenity_data.get("phrase", category.value),
                     wheelchair_required=bool(amenity_data.get("wheelchair_required", False)),
                     priority=("important" if bool(amenity_data.get("important", False)) else "nice_to_have"),
                 )
