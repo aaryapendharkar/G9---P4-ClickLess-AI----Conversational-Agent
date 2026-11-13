@@ -19,7 +19,13 @@ class TemplateExplainer:
 
     def explain(self, result: PlanResult) -> tuple[str, list[Claim]]:
         if result.status == "needs_clarification" and result.clarification:
-            return result.clarification.question, []
+            question = result.clarification.question
+            options = result.clarification.options
+            if options:
+                question += "\n" + "\n".join(
+                    f"{index}. {option}" for index, option in enumerate(options, start=1)
+                )
+            return question, []
         if result.status == "rejected_incomplete":
             missing = ", ".join(result.notes) or "some trip details"
             return f"I can't plan this safely yet -- missing: {missing}.", []
