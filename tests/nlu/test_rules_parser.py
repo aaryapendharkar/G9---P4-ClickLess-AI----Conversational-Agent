@@ -69,3 +69,12 @@ def test_clarifier_explains_ambiguous_origin(parser):
     assert question.field == "origin"
     assert question.options == ["Springfield, IL", "Springfield, MO"]
     assert "starting location" in question.question
+
+
+def test_clarifier_orders_multiple_missing_safety_fields(parser):
+    parse_result = parser.parse("Phoenix to Flagstaff", "t10")
+
+    question = TemplateClarifier().question_for(parse_result)
+
+    assert parse_result.missing_fields == ["vehicle_id", "start_soc_pct"]
+    assert question.field == "vehicle_id"

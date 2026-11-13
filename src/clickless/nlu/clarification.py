@@ -1,8 +1,9 @@
 """Deterministic clarification questions for Config C. Owner: Deepti.
 
-This module handles the question-selection part of clarification without owning conversation
-state. It never invents a safety-critical value. A future session layer can reuse these questions
-when it merges a user's answer into the previous request.
+This module handles the question-selection and presentation part of clarification only. Multi-turn
+session storage and answer merging are tracked in TODO(#53) and are intentionally outside this MVP.
+It never invents a safety-critical value. A future session layer can reuse these questions when it
+merges a user's answer into the previous request.
 """
 
 from __future__ import annotations
