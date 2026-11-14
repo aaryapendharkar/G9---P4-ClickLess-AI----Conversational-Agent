@@ -64,6 +64,10 @@ def test_config_c_clarification_continues_after_answer(pipe_a):
     assert completed.status == "ok"
     assert completed.request.start_soc_pct == 65
     assert completed.request.request_id == "multi-1"
+    assert "clarified start_soc_pct from answer: '65%'" in completed.notes
+
+    approved = pipe_a.approve(completed)
+    assert approved.approved and approved.handoff_urls
 
 
 def test_config_c_rejects_two_invalid_clarification_answers(pipe_a):
@@ -78,3 +82,10 @@ def test_config_c_rejects_two_invalid_clarification_answers(pipe_a):
     assert first_retry.status == "needs_clarification"
     assert rejected.status == "rejected_incomplete"
     assert "start_soc_pct" in rejected.notes
+
+
+def test_config_a_clarification_continuation_requires_pending_session(pipe_a):
+    import pytest
+
+    with pytest.raises(KeyError):
+        pipe_a.continue_clarification("unknown-request", "65%")
