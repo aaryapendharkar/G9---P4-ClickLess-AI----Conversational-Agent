@@ -205,3 +205,26 @@ def test_non_json_reply_is_retried(store, tmp_path, monkeypatch):
     monkeypatch.setattr(osm.time, "sleep", lambda s: None)
     paths = osm.fetch_amenities(list(store.stations.values())[:1], str(tmp_path), progress=False)
     assert replies == [] and len(osm.amenities_from_raw(paths)[0]) == 1
+
+
+def test_truncated_batch_from_an_interrupted_run_is_downloaded_again(store, tmp_path, monkeypatch):
+    """#36 US build: the laptop slept mid-run. A half-written batch file must not count as done."""
+    requests = pytest.importorskip("requests")
+    calls = []
+
+    def fake_post(url, data, headers, timeout):
+        calls.append(data["data"])
+        return _Resp(200, {"elements": [node(len(calls), {"amenity": "cafe"})]})
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(osm.time, "sleep", lambda s: None)
+    stations = list(store.stations.values())[:3]
+    paths = osm.fetch_amenities(stations, str(tmp_path), batch_size=2, progress=False)
+    assert len(calls) == 2 and not list(tmp_path.glob("*.tmp"))  # writes leave no temporary files
+
+    whole = open(paths[1], encoding="utf-8").read()
+    open(paths[1], "w", encoding="utf-8").write(whole[: len(whole) // 2])  # simulate a write cut off by sleep
+    assert osm.fetch_amenities(stations, str(tmp_path), batch_size=2, progress=False) == paths
+    assert len(calls) == 3  # only the broken batch was fetched again
+    items, _, _ = osm.amenities_from_raw(paths)
+    assert len(items) == 2
