@@ -1,0 +1,4 @@
+# Frozen split files are hashed in FROZEN.json: never let git rewrite their line endings.
+requests/dev/dev.jsonl -text
+requests/test/test.jsonl -text
+FROZEN.json -text
