@@ -16,6 +16,9 @@ from typing import Any
 from ..config import repo_path
 from ..contracts import Amenity, Place, Provenance, Station, Vehicle
 
+_NEGATION = re.compile(r"\b(not|neither|nor|isn'?t|aren'?t|don'?t|doesn'?t)\b|n't\b")
+_LABEL_WORD = re.compile(r"[a-z0-9.]+")
+
 
 def _phrase_spans(text: str, phrase: str) -> list[tuple[int, int]]:
     """Where `phrase` occurs in `text` as whole words ("i4" matches "my i4", not "i40")."""
@@ -34,7 +37,7 @@ def _covered_chars(spans: list[tuple[int, int]]) -> int:
 
 
 def _read_records(path: Path) -> tuple[list[dict[str, Any]] | dict[str, Any], dict[str, Any]]:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         payload = json.load(f)
     return payload["records"], payload.get("_meta", {})
 
@@ -117,29 +120,77 @@ class DataStore:
     def station(self, station_id: str) -> Station:
         return self.stations[station_id]
 
-    def find_vehicles(self, text: str) -> list[Vehicle]:
+    def vehicle_label(self, vehicle_id: str) -> str:
+        """Driver-facing name of a vehicle, e.g. "2024 Tesla Model 3 RWD".
+
+        Use it to *show* vehicle options in a clarification question; keep the vehicle_id itself
+        as the machine value in `ParseResult.ambiguous_fields` (ADR 0014). Unknown ids raise
+        KeyError, like `vehicle()`.
+        """
+        v = self.vehicles[vehicle_id]
+        return " ".join(str(part) for part in (v.model_year, v.make, v.model, v.variant) if part)
+
+    def find_vehicles(self, text: str, among: list[str] | None = None) -> list[Vehicle]:
         """Vehicles whose aliases (whole words) cover the most characters of `text`.
 
         Each vehicle scores the union of the text spans its aliases match, so the variant that
         explains most of the user's words wins: "Tesla Model 3 RWD" -> RWD row ("tesla model 3" +
         "model 3 rwd" cover 17 chars vs 13 for Long Range). "my Model 3" / "my Tesla Model 3" ->
         both Model 3 rows (tie), which callers report as ambiguous. Returns [] when no alias
-        matches. TODO(Deepti/Aarya): model-year disambiguation ("2022 Ioniq 5" when only a
-        2024 variant is curated) -- today the year in the text is ignored.
+        matches.
+
+        `among` (optional) limits the search to these vehicle_ids. A clarification answer passes
+        the ids it offered as options, so the reply can only pick one of them, never a different
+        car (ADR 0014). Ids not in the store are ignored. When aliases do not single out one of
+        the offered vehicles, the words that tell the offered labels apart are tried next, so short
+        replies such as "the RWD one" or "long range" pick the one option they name; words shared
+        by several options ("model 3") or naming several options at once resolve nothing.
+
+        TODO(Deepti/Aarya): model-year disambiguation ("2022 Ioniq 5" when only a 2024 variant is
+        curated) -- today the year in the text is ignored.
         """
         low = text.lower()
+        if among is not None and _NEGATION.search(low):
+            return []  # "not the RWD one": safer to ask again than to pick by the words left over
+        if among is None:
+            pool = list(self.vehicles.values())
+        else:
+            pool = [self.vehicles[i] for i in among if i in self.vehicles]
         best: dict[str, int] = {}
-        for v in self.vehicles.values():
+        for v in pool:
             spans = [span for a in v.aliases for span in _phrase_spans(low, a)]
             if spans:
                 best[v.vehicle_id] = _covered_chars(spans)
-        if not best:
-            return []
-        top = max(best.values())
-        return [self.vehicles[vid] for vid, n in best.items() if n == top]
+        top = max(best.values(), default=0)
+        found = [self.vehicles[vid] for vid, n in best.items() if n == top]
+        if among is not None and len(found) != 1:
+            picked = self._pick_by_distinguishing_words(low, found or pool)
+            if picked is not None:
+                return [picked]
+        return found
+
+    def _pick_by_distinguishing_words(self, low: str, options: list[Vehicle]) -> Vehicle | None:
+        """The one option whose label words, unique among `options`, appear in `low`; else None."""
+        # e.g. Model 3 LR AWD -> {"2024", "tesla", "model", "3", "long", "range", "awd"}; RWD -> {..., "rwd"}
+        words = {v.vehicle_id: set(_LABEL_WORD.findall(self.vehicle_label(v.vehicle_id).lower())) for v in options}
+        counts = Counter(w for ws in words.values() for w in ws)
+        hits = {
+            vid
+            for vid, ws in words.items()
+            for w in ws
+            if counts[w] == 1 and _phrase_spans(low, w)
+        }
+        return self.vehicles[hits.pop()] if len(hits) == 1 else None
 
     def geocode(self, text: str) -> Place:
-        """Fixture gazetteer lookup. TODO(Aarya): cached geocoder for the real benchmark."""
+        """Offline gazetteer lookup in `places.json` (fixtures, or the snapshot built by geocode.py).
+
+        Never calls the network and never guesses: a name that is not in the gazetteer, or a bare
+        ambiguous name such as "Springfield", comes back unresolved (`lat`/`lon` None), and the
+        caller must ask the driver again. The snapshot gazetteer is closed: it holds the benchmark
+        origins/destinations ("City, ST" and the bare city when unique), so a clarification answer
+        naming another place stays unresolved (ADR 0014).
+        """
         key = text.strip().lower()
         if key in self.places:
             lat, lon = self.places[key]
