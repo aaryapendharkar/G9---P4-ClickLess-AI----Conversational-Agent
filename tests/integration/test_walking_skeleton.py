@@ -89,3 +89,17 @@ def test_config_a_clarification_continuation_requires_pending_session(pipe_a):
 
     with pytest.raises(KeyError):
         pipe_a.continue_clarification("unknown-request", "65%")
+
+
+def test_config_c_session_wiring_asks_next_question():
+    pipe_c = build_pipeline(load_config("C"))
+    first = pipe_c.run("Phoenix to Flagstaff", request_id="config-c-session")
+
+    assert first.status == "needs_clarification"
+    assert first.clarification.field == "vehicle_id"
+
+    second = pipe_c.continue_clarification("config-c-session", "Spark")
+
+    assert second.status == "needs_clarification"
+    assert second.clarification.field == "start_soc_pct"
+    assert second.request.request_id == "config-c-session"
