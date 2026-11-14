@@ -7,7 +7,7 @@
    lists the files to download again; the app also refuses to load a mismatching snapshot.
 
 ## Build it (Aarya; needs internet)
-1. Get a free API key at https://developer.nrel.gov/signup/ and put `NREL_API_KEY=...` in `.env`
+1. Get a free API key at https://developer.nlr.gov/signup/ and put `NREL_API_KEY=...` in `.env`
    at the repo root (`.env` is git-ignored; never commit the key).
 2. Trial run on a small area first: `make snapshot-build ARGS="--states AZ"`.
 3. Full US: `make snapshot-build`. AFDC is one request; OSM is fetched in batches of 100 stations

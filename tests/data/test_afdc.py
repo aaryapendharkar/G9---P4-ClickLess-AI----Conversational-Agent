@@ -265,3 +265,11 @@ def test_ac_level_variants(level, expected):
 def test_odd_port_counts_do_not_crash():
     r = rec(id=11, ev_charging_units=None, ev_dc_fast_num="two", ev_level2_evse_num="", ev_level1_evse_num=None)
     assert {p.count for p in to_station(r, RETRIEVED).ports} == {1}
+
+
+def test_afdc_urls_use_the_current_domain():
+    """developer.nrel.gov was retired on 2026-05-29; requests to it fail with ConnectionError."""
+    from clickless.data import afdc
+
+    for url in (afdc.API_URL, afdc.RECORD_URL):
+        assert url.startswith("https://developer.nlr.gov/api/alt-fuel-stations/v1")

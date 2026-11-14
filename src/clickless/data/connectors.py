@@ -8,7 +8,7 @@ from __future__ import annotations
 from ..contracts import Connector
 
 # AFDC `ev_connector_types` codes -> our enum. Every value listed by the All Stations API docs
-# (https://developer.nrel.gov/docs/transportation/alt-fuel-stations-v1/all/, checked 2026-11-03)
+# (https://developer.nlr.gov/docs/transportation/alt-fuel-stations-v1/all/, checked 2026-11-03)
 # is mapped here; decisions recorded in docs/decisions/0010-afdc-station-normalization.md.
 #   * NEMA 14-50 / 5-15 / 5-20 are household outlets (Level 1/2 with the car's own cord): dropped.
 #   * J3271 is MCS (Megawatt Charging System) for heavy trucks; no curated vehicle uses it: dropped.
