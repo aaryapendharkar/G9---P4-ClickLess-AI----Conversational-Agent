@@ -273,3 +273,50 @@ def test_afdc_urls_use_the_current_domain():
 
     for url in (afdc.API_URL, afdc.RECORD_URL):
         assert url.startswith("https://developer.nlr.gov/api/alt-fuel-stations/v1")
+
+
+_ALL_CODES = ("J1772", "J3271", "TESLA", "CHADEMO", "NEMA515", "NEMA520", "NEMA1450", "J1772COMBO")
+
+
+def _unit(level, **present):
+    """A unit as the live API (Nov 2026) returns it: every code listed, absent ones with port_count 0."""
+    connectors = {code: {"power_kw": None, "port_count": 0} for code in _ALL_CODES}
+    for code, (count, power) in present.items():
+        connectors[code] = {"power_kw": power, "port_count": count}
+    return {"network": "Non-Networked", "connectors": connectors, "port_count": 1,
+            "charging_level": level, "funding_sources": []}
+
+
+def test_connectors_with_zero_ports_are_not_ports():
+    """Regression (#36 AZ trial): absent connectors (port_count 0) became phantom CCS1/CHAdeMO DC ports,
+    so 1,580 of 1,609 Arizona stations looked like DC fast stations (AFDC's own count: 232)."""
+    level2_only = rec(
+        id=39856, station_name="East Valley Nissan", ev_network="Non-Networked",
+        ev_connector_types=["J1772"], ev_dc_fast_num=None, ev_level2_evse_num=1,
+        ev_charging_units=[_unit("2", J1772=(1, None))],
+    )
+    st = to_station(level2_only, RETRIEVED)
+    assert [(p.connector, p.level, p.count) for p in st.ports] == [(Connector.J1772, ChargerLevel.L2, 1)]
+
+    fast = rec(ev_charging_units=[_unit("dc_fast", J1772COMBO=(2, 150.0), CHADEMO=(1, 50.0))])
+    st = to_station(fast, RETRIEVED)
+    assert {(p.connector, p.level, p.power_kw, p.count) for p in st.ports} == {
+        (Connector.CCS1, ChargerLevel.DC_FAST, 150.0, 2),
+        (Connector.CHADEMO, ChargerLevel.DC_FAST, 50.0, 1),
+    }
+
+
+def test_connector_with_missing_count_is_still_a_port():
+    st = to_station(rec(ev_connector_types=["J1772COMBO"], ev_charging_units=[
+        {"charging_level": "dc_fast", "connectors": {"J1772COMBO": {"power_kw": 150, "port_count": None}}}
+    ]), RETRIEVED)
+    assert [(p.connector, p.count) for p in st.ports] == [(Connector.CCS1, 1)]
+
+
+def test_household_outlets_only_station_is_skipped():
+    _, report = stations_from_records(
+        [rec(id=375341, ev_connector_types=["NEMA515", "NEMA520"], ev_dc_fast_num=None, ev_level1_evse_num=2,
+             ev_charging_units=[_unit("1", NEMA515=(1, None)), _unit("1", NEMA520=(1, None))])],
+        RETRIEVED,
+    )
+    assert report.skipped == {"no_supported_connector": 1}

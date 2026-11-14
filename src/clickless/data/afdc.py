@@ -204,6 +204,10 @@ def _ports_from_units(units: list[dict[str, Any]]) -> list[ChargingPort]:
             if conn is None:
                 continue
             spec = spec or {}
+            # The API lists every connector code in every unit and marks the absent ones with
+            # port_count 0. Only a missing count means "present, count not reported".
+            if spec.get("port_count") is not None and _int(spec.get("port_count")) == 0:
+                continue
             if conn in _DC_ONLY:
                 level = ChargerLevel.DC_FAST
             elif conn == Connector.J1772:
