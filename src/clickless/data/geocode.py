@@ -83,9 +83,10 @@ def geocode_places(
                     raise RuntimeError(f"Nominatim failed for {place!r} (HTTP {status}); rerun to resume")
                 time.sleep(pause_s * 5 * attempt)
             stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-            path.write_text(json.dumps({"retrieved_at": stamp, "query": place, "results": resp.json()}))
+            payload = {"retrieved_at": stamp, "query": place, "results": resp.json()}
+            path.write_text(json.dumps(payload), encoding="utf-8")
             time.sleep(pause_s)
-        saved = json.loads(path.read_text())
+        saved = json.loads(path.read_text(encoding="utf-8"))
         if not saved["results"]:
             results[place] = {"error": "no Nominatim result"}
             continue
@@ -128,5 +129,5 @@ def write_places(results: dict[str, dict[str, Any]], out_path: str | Path) -> Pa
     note = "Cached geocodes of benchmark places (data/geocode.py). Keys are lowercase; see _meta.details."
     payload = {"_meta": {"note": note, "details": details}, "records": records}
     out = Path(out_path)
-    out.write_text(json.dumps(payload, indent=1))
+    out.write_text(json.dumps(payload, indent=1), encoding="utf-8")
     return out

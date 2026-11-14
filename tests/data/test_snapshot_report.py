@@ -94,7 +94,7 @@ def test_pack_then_teammate_verify_roundtrip(built, tmp_path, capsys):
 def test_report_saved_to_file(built, tmp_path):
     out = tmp_path / "report.md"
     assert snapshot_report.main(["--dir", str(built), "--out", str(out)]) == 0
-    assert out.read_text().startswith("## Snapshot report")
+    assert out.read_text(encoding="utf-8").startswith("## Snapshot report")
 
 
 def test_missing_snapshot_is_a_clear_error(tmp_path):

@@ -33,7 +33,7 @@ def _read_dotenv(path: Path) -> None:
     """Minimal .env reader (KEY=VALUE lines); never overrides variables already set."""
     if not path.exists():
         return
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
@@ -41,7 +41,7 @@ def _read_dotenv(path: Path) -> None:
 
 
 def _write_records(path: Path, records: list[Any], meta: dict[str, Any]) -> None:
-    path.write_text(json.dumps({"_meta": meta, "records": records}))
+    path.write_text(json.dumps({"_meta": meta, "records": records}), encoding="utf-8")
 
 
 def _latest_raw(raw_dir: Path, states: str | None) -> Path | None:

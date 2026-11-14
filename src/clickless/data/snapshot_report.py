@@ -60,7 +60,7 @@ def collect(
         raise FileNotFoundError(
             f"no MANIFEST.json in {root}: build (make snapshot-build) or download the snapshot first"
         )
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     changed = verify_manifest(str(root))
     report: dict[str, Any] = {"dir": str(root), "verify_manifest": changed, "manifest": manifest}
     if changed:
@@ -71,7 +71,7 @@ def collect(
     ports = [p for s in store.stations.values() for p in s.ports]
     by_level = Counter(p.level.value for p in ports)
     dc_unknown = sum(1 for p in ports if p.level == ChargerLevel.DC_FAST and p.power_kw is None)
-    places = json.loads((root / "places.json").read_text())
+    places = json.loads((root / "places.json").read_text(encoding="utf-8"))
     report.update(
         counts={
             "stations": len(store.stations),
@@ -137,7 +137,7 @@ def to_markdown(r: dict[str, Any]) -> str:
 def pack(snapshot_dir: str | Path, out_zip: str | Path) -> Path:
     """Zip MANIFEST.json, every file it lists, and an empty routes/ folder."""
     root = repo_path(snapshot_dir)
-    manifest = json.loads((root / "MANIFEST.json").read_text())
+    manifest = json.loads((root / "MANIFEST.json").read_text(encoding="utf-8"))
     out = Path(out_zip)
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED) as z:
@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     print(text)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.out).write_text(text)
+        Path(args.out).write_text(text, encoding="utf-8")
     if report["verify_manifest"] or report["blocking"]:
         return 1
     if args.pack:
