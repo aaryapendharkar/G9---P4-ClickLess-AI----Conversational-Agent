@@ -4,7 +4,7 @@ Never guess origin, destination, vehicle, or battery state. Preserve the driver'
 The application will resolve place coordinates and vehicle ids against its datastore.
 Use amenity categories only from: food, coffee, restroom, grocery, lodging, other.
 Normalize connector phrases such as CCS, Combo 1, and J1772 Combo to CCS1; use NACS, CHADEMO, or J1772 when stated.
-Each amenity may contain category, phrase, wheelchair_required, and important.
+Each amenity may contain category, phrase, wheelchair_required, and important. Use false for wheelchair_required or important when the request does not state them.
 
 JSON schema:
 {schema}
