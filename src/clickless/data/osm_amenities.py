@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -208,6 +209,22 @@ def _strip_editor_info(element: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in element.items() if k not in {"user", "uid", "changeset"}}
 
 
+def _complete_batch_file(path: Path) -> bool:
+    """True if a saved batch file is whole (a run killed mid-write can leave a truncated file)."""
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(saved, dict) and "_meta" in saved and isinstance(saved.get("elements"), list)
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Write to a temporary file, then rename, so an interrupted run never leaves half a file."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 def fetch_amenities(
     stations: list[Station],
     out_dir: str = "data/raw/osm",
@@ -233,7 +250,9 @@ def fetch_amenities(
         digest = hashlib.sha256(query.encode()).hexdigest()[:16]
         path = out / f"osm_batch_{b:05d}_{digest}.json"
         paths.append(str(path))
-        if path.exists():
+        if path.exists() and _complete_batch_file(path):
+            if progress:
+                print(f"  OSM batch {b + 1}/{n_batches} already saved", flush=True)
             continue
         for attempt in range(1, max_attempts + 1):
             retrieved_at = datetime.now(timezone.utc).replace(microsecond=0)
@@ -257,7 +276,7 @@ def fetch_amenities(
                         "radius_m": radius_m,
                         "station_ids": [s.station_id for s in batch],
                     }
-                    path.write_text(json.dumps({"_meta": meta, "elements": elements}), encoding="utf-8")
+                    _write_atomic(path, json.dumps({"_meta": meta, "elements": elements}))
                     break
             if attempt == max_attempts:
                 raise OverpassError(f"batch {b}: Overpass failed after {attempt} attempts (HTTP {status} {err})")
