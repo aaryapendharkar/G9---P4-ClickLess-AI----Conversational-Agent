@@ -22,8 +22,17 @@ class TemplateExplainer:
             question = result.clarification.question
             options = result.clarification.options
             if options:
+                display_options = options
+                if result.clarification.field == "vehicle_id":
+                    display_options = [
+                        self.store.vehicle_label(option)
+                        if option in self.store.vehicles
+                        else option
+                        for option in options
+                    ]
                 question += "\n" + "\n".join(
-                    f"{index}. {option}" for index, option in enumerate(options, start=1)
+                    f"{index}. {option}"
+                    for index, option in enumerate(display_options, start=1)
                 )
             return question, []
         if result.status == "rejected_incomplete":

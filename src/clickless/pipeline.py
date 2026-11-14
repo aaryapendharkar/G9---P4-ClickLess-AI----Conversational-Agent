@@ -10,16 +10,25 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from .config import repo_path
-from .contracts import Alternative, PlanResult, Route, TripRequest, Vehicle
+from .contracts import (
+    Alternative,
+    ClarificationQuestion,
+    ParseResult,
+    PlanResult,
+    Route,
+    TripRequest,
+    Vehicle,
+)
 from .data import DataStore
 from .explain.grounded import GroundedLLMExplainer
 from .explain.templates import TemplateExplainer
 from .handoff.approval import ApprovalGate
 from .handoff.maps_url import GoogleMapsHandoff
-from .nlu.clarification import TemplateClarifier
+from .nlu.clarification import TemplateClarifier, merge_answer
 from .nlu.llm_parser import LLMParser
 from .nlu.rules_parser import RulesParser
 from .nlu.spacy_parser import SpacyParser
@@ -125,6 +134,16 @@ def _build_route_measurer(
     return GeometricRouteMeasurer(energy_config)
 
 
+MAX_FAILED_CLARIFICATION_ANSWERS = 2
+
+
+@dataclass
+class _PendingClarification:
+    parse: ParseResult
+    question: ClarificationQuestion
+    failed_answers: int = 0
+
+
 class Pipeline:
     def __init__(self, cfg: dict[str, Any], store: DataStore) -> None:
         comp = cfg["components"]
@@ -204,6 +223,7 @@ class Pipeline:
         self.handoff = GoogleMapsHandoff(store, cfg["handoff"]["max_waypoints"])
         self.gate = ApprovalGate()
         self._routes: dict[str, Route] = {}
+        self._pending: dict[str, _PendingClarification] = {}
 
     # ------------------------------------------------------------------ plan
     def run(self, text: str, request_id: str | None = None) -> PlanResult:
@@ -230,10 +250,9 @@ class Pipeline:
 
         if parse.needs_input:
             if self.clarifier:
-                result.status, result.clarification = (
-                    "needs_clarification",
-                    self.clarifier.question_for(parse),
-                )
+                question = self.clarifier.question_for(parse)
+                self._pending[rid] = _PendingClarification(parse=parse, question=question)
+                result.status, result.clarification = "needs_clarification", question
             else:
                 result.status = "rejected_incomplete"
                 result.notes = parse.missing_fields + [
@@ -242,6 +261,58 @@ class Pipeline:
             return self._finish(result)
 
         return self.plan_request(req, result, lap)
+
+    def continue_clarification(self, request_id: str, answer: str) -> PlanResult:
+        """Apply one answer and continue Config C planning when the request is complete."""
+        if self.clarifier is None or request_id not in self._pending:
+            raise KeyError(f"no pending clarification for request_id {request_id!r}")
+
+        pending = self._pending[request_id]
+        merged = merge_answer(pending.parse, pending.question, answer, self.store)
+        answer_accepted = merged.request != pending.parse.request
+        if not answer_accepted:
+            pending.failed_answers += 1
+            if pending.failed_answers >= MAX_FAILED_CLARIFICATION_ANSWERS:
+                del self._pending[request_id]
+                rejected = PlanResult(
+                    request_id=request_id,
+                    config=self.name,
+                    status="rejected_incomplete",
+                    request=merged.request,
+                    notes=merged.missing_fields + [
+                        f"ambiguous {field}" for field in merged.ambiguous_fields
+                    ],
+                )
+                return self._finish(rejected)
+        else:
+            pending.failed_answers = 0
+
+        if merged.needs_input:
+            next_question = self.clarifier.question_for(merged)
+            self._pending[request_id] = _PendingClarification(
+                parse=merged,
+                question=next_question,
+                failed_answers=pending.failed_answers,
+            )
+            result = PlanResult(
+                request_id=request_id,
+                config=self.name,
+                status="needs_clarification",
+                request=merged.request,
+                clarification=next_question,
+                notes=[f"clarified {pending.question.field}"] if answer_accepted else [],
+            )
+            return self._finish(result)
+
+        del self._pending[request_id]
+        result = PlanResult(
+            request_id=request_id,
+            config=self.name,
+            status="ok",
+            request=merged.request,
+            notes=[f"clarified {pending.question.field}"],
+        )
+        return self.plan_request(merged.request, result)
 
     def _solve_request(
         self,

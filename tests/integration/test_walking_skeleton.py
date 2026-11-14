@@ -48,3 +48,33 @@ def test_config_c_clarifies_incomplete_request():
     pipe_c = build_pipeline(load_config("C"))
     r = pipe_c.run("Phoenix to Flagstaff in my spark", request_id="it-7")
     assert r.status == "needs_clarification" and r.clarification.field == "start_soc_pct"
+
+
+def test_config_c_clarification_continues_after_answer(pipe_a):
+    from clickless.nlu.clarification import TemplateClarifier
+
+    pipe_a.clarifier = TemplateClarifier()
+    first = pipe_a.run("Phoenix to Flagstaff in my comet", request_id="multi-1")
+
+    assert first.status == "needs_clarification"
+    assert first.clarification.field == "start_soc_pct"
+
+    completed = pipe_a.continue_clarification("multi-1", "65%")
+
+    assert completed.status == "ok"
+    assert completed.request.start_soc_pct == 65
+    assert completed.request.request_id == "multi-1"
+
+
+def test_config_c_rejects_two_invalid_clarification_answers(pipe_a):
+    from clickless.nlu.clarification import TemplateClarifier
+
+    pipe_a.clarifier = TemplateClarifier()
+    pipe_a.run("Phoenix to Flagstaff in my comet", request_id="multi-2")
+
+    first_retry = pipe_a.continue_clarification("multi-2", "about half")
+    rejected = pipe_a.continue_clarification("multi-2", "still half")
+
+    assert first_retry.status == "needs_clarification"
+    assert rejected.status == "rejected_incomplete"
+    assert "start_soc_pct" in rejected.notes
