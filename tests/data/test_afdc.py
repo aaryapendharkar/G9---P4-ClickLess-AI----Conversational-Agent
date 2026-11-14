@@ -320,3 +320,25 @@ def test_household_outlets_only_station_is_skipped():
         RETRIEVED,
     )
     assert report.skipped == {"no_supported_connector": 1}
+
+
+def test_legacy_units_are_ignored_and_counted():
+    """Regression (#36 US build): the nationwide data has units with charging_level 'legacy'
+    (old, non-standard equipment). They are never planning ports and must not stop the build."""
+    mixed = rec(id=21, ev_connector_types=["J1772COMBO", "J1772"], ev_dc_fast_num=2, ev_level2_evse_num=None,
+                ev_charging_units=[_unit("dc_fast", J1772COMBO=(2, 150.0)), _unit("legacy", J1772=(1, None))])
+    legacy_only = rec(id=22, ev_connector_types=["J1772"], ev_dc_fast_num=None, ev_level2_evse_num=1,
+                      ev_charging_units=[_unit("LEGACY", J1772=(1, None))])
+    stations, report = stations_from_records([mixed, legacy_only], RETRIEVED)
+
+    assert [(s.station_id, [(p.connector, p.level) for p in s.ports]) for s in stations] == [
+        ("afdc:21", [(Connector.CCS1, ChargerLevel.DC_FAST)])  # the legacy J1772 does not come back as L2
+    ]
+    assert report.skipped == {"legacy_chargers_only": 1}
+    assert report.legacy_units_ignored == 2
+    assert report.as_dict()["legacy_units_ignored"] == 2
+
+
+def test_other_unknown_levels_still_fail_loudly():
+    with pytest.raises(AfdcSchemaError, match="charging_level"):
+        to_station(rec(ev_charging_units=[_unit("level 3", J1772COMBO=(1, 50.0))]), RETRIEVED)

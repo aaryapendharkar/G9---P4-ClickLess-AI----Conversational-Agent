@@ -85,7 +85,11 @@ def build(args: argparse.Namespace) -> int:
         stations = [s for s in stations if in_us(s.lat, s.lon)]
         report.skipped["outside_us_bounding_boxes"] += len(outside)
     report.converted = len(stations)
-    print(f"  stations: {len(stations)} kept, skipped {dict(report.skipped)}", flush=True)
+    print(
+        f"  stations: {len(stations)} kept, skipped {dict(report.skipped)}, "
+        f"legacy charging units ignored: {report.legacy_units_ignored}",
+        flush=True,
+    )
     sources["afdc"] = {"raw_file": raw.name, **meta, "conversion": report.as_dict()}
     _write_records(
         out / "stations.json",
