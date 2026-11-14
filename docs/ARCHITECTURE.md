@@ -82,8 +82,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
 | AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
-| KG build + enrichment (C) | v0.1: rdflib graph of the store (ontology v0.2), built on first use; fills `Candidate.evidence` (ADR 0015) |
-| LLM parser, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
+| LLM parser, KG build/enrich, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification

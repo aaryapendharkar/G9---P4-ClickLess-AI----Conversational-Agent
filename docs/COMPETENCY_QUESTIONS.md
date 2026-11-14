@@ -18,11 +18,10 @@ Ontology adequacy = share of these 20 questions answerable by a SPARQL query ove
 | 10–20 | TODO (Manas): cover access restrictions, status, opening hours, port counts, vehicle max DC power, evidence freshness labels | | |
 
 ## Ontology terms needed by CQ2–CQ6 (proposal for Manas)
-CQ2–CQ6 are drafts. `retrieval/kg/build.py::build_graph(store)` now builds the fixture KG, so each
-CQ can get its expected-answer test (CQ3 already runs on it in `tests/retrieval/test_kg_enrichment.py`).
+CQ2–CQ6 are drafts: they cannot return rows until `retrieval/kg/build.py` builds the graph.
 `tests/retrieval/test_competency_queries.py` checks their structure everywhere and parses them
-with rdflib where it is installed (`pip install -e ".[kg]"`). They use these terms, defined in
-`ontology.ttl` v0.2 (ADR 0015):
+with rdflib where it is installed (`pip install -e ".[kg]"`). They use these terms, which
+`ontology.ttl` does not define yet:
 
 | Term | Domain → range | Used by | Value |
 |---|---|---|---|
