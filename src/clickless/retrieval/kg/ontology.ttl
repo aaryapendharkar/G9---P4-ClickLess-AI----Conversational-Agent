@@ -5,7 +5,9 @@
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 
-# Minimal domain ontology v0.1 (proposal §III-C). Owner: Manas.
+# Minimal domain ontology v0.2 (proposal §III-C). Owner: Manas.
+# v0.2 (ADR 0015): the terms retrieval/kg/build.py writes and retrieval/kg/enrich.py reads, incl.
+# the four terms CQ2-CQ6 proposed in docs/COMPETENCY_QUESTIONS.md.
 # TODO(Manas): replace example.org namespace; align Claim/Source with PROV-O; add competency
 # questions in docs/COMPETENCY_QUESTIONS.md and make sure each is answerable.
 
@@ -28,11 +30,33 @@ cc:supportedBy  a owl:ObjectProperty ; rdfs:domain cc:Claim        ; rdfs:range 
 
 cc:powerKw       a owl:DatatypeProperty ; rdfs:domain cc:ChargingPort ; rdfs:range xsd:decimal .
 cc:portCount     a owl:DatatypeProperty ; rdfs:domain cc:ChargingPort ; rdfs:range xsd:integer .
-cc:distanceM     a owl:DatatypeProperty .
+cc:distanceM     a owl:DatatypeProperty ; rdfs:domain cc:Proximity ; rdfs:range xsd:decimal .
 cc:wheelchair    a owl:DatatypeProperty ; rdfs:domain cc:Amenity ; rdfs:range xsd:string .
 cc:status        a owl:DatatypeProperty ; rdfs:domain cc:Station ; rdfs:range xsd:string .
 cc:retrievedAt   a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
 cc:sourceUpdatedAt a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+
+# v0.2 -------------------------------------------------------------------------------------
+# Station NEAR Amenity as an n-ary link, so the straight-line distance has a node to hang on.
+# The plain cc:near edge is kept as well (CQ2, CQ3 traverse it).
+cc:Proximity     a owl:Class .
+cc:fromStation   a owl:ObjectProperty ; rdfs:domain cc:Proximity ; rdfs:range cc:Station .
+cc:toAmenity     a owl:ObjectProperty ; rdfs:domain cc:Proximity ; rdfs:range cc:Amenity .
+
+# Every Station, Amenity and Proximity has exactly one Source (its contract Provenance).
+cc:hasProvenance a owl:ObjectProperty ; rdfs:range cc:Source .
+cc:sourceName    a owl:DatatypeProperty ; rdfs:domain cc:Source ; rdfs:range xsd:string .
+cc:sourceRecordId a owl:DatatypeProperty ; rdfs:domain cc:Source ; rdfs:range xsd:string .
+cc:sourceUrl     a owl:DatatypeProperty ; rdfs:domain cc:Source ; rdfs:range xsd:anyURI .
+cc:dataStatus    a owl:DatatypeProperty ; rdfs:domain cc:Source ; rdfs:range xsd:string .
+
+# Contract identifiers and fields (names are rdfs:label).
+cc:identifier    a owl:DatatypeProperty ; rdfs:range xsd:string .
+cc:access        a owl:DatatypeProperty ; rdfs:domain cc:Station ; rdfs:range xsd:string .
+cc:portIndex     a owl:DatatypeProperty ; rdfs:domain cc:ChargingPort ; rdfs:range xsd:integer .
+cc:chargerLevel  a owl:DatatypeProperty ; rdfs:domain cc:ChargingPort ; rdfs:range xsd:string .
+cc:amenityCategory a owl:DatatypeProperty ; rdfs:domain cc:Amenity ; rdfs:range xsd:string .
+cc:openingHours  a owl:DatatypeProperty ; rdfs:domain cc:Amenity ; rdfs:range xsd:string .
 
 cc:CCS1    a cc:Connector .
 cc:NACS    a cc:Connector .
