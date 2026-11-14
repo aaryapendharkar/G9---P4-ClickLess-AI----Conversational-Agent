@@ -33,8 +33,9 @@ from ..config import repo_path
 from ..contracts import ChargerLevel, ChargingPort, Connector, DataStatus, Provenance, Station, StationStatus
 from .connectors import normalize_afdc_connector
 
-API_URL = "https://developer.nrel.gov/api/alt-fuel-stations/v1.json"
-RECORD_URL = "https://developer.nrel.gov/api/alt-fuel-stations/v1/{id}.json"  # key not included
+# NREL retired developer.nrel.gov on 2026-05-29; the same API and keys are served from developer.nlr.gov.
+API_URL = "https://developer.nlr.gov/api/alt-fuel-stations/v1.json"
+RECORD_URL = "https://developer.nlr.gov/api/alt-fuel-stations/v1/{id}.json"  # key not included
 FETCH_PARAMS: dict[str, str] = {
     "fuel_type": "ELEC",
     "access": "public",
