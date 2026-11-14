@@ -19,11 +19,16 @@ def chat(
     timeout_s: float = 60.0,
     **extra: Any,
 ) -> str:
-    base = os.environ["VOYAGER_BASE_URL"].rstrip("/")
-    key = os.environ["VOYAGER_API_KEY"]
+    base = os.environ.get("VOYAGER_BASE_URL", "").rstrip("/")
+    if not base:
+        raise RuntimeError("VOYAGER_BASE_URL is not configured")
+    key = os.environ.get("VOYAGER_API_KEY", "")
+    headers = {"Content-Type": "application/json"}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     resp = requests.post(
         f"{base}/chat/completions",
-        headers={"Authorization": f"Bearer {key}"},
+        headers=headers,
         json={"model": model, "messages": messages, "temperature": temperature, **extra},
         timeout=timeout_s,
     )

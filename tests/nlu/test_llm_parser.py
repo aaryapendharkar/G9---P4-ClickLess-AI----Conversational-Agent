@@ -133,3 +133,21 @@ def test_out_of_range_battery_output_falls_back_safely(store, monkeypatch):
     assert result.parser == "llm"
     assert result.request.start_soc_pct is None
     assert result.missing_fields == ["start_soc_pct"]
+
+
+def test_parser_uses_environment_model_when_config_is_placeholder(parser, monkeypatch):
+    captured = {}
+
+    def fake_chat(messages, **kwargs):
+        captured.update(kwargs)
+        return json.dumps(VALID_EXTRACTION)
+
+    monkeypatch.setenv("VOYAGER_MODEL", "qwen3:8b")
+    monkeypatch.setattr(llm_parser, "chat", fake_chat)
+
+    LLMParser(parser.store, {"model": "CHANGE_ME", "temperature": 0}).parse(
+        "plan my Phoenix to Flagstaff trip", "llm-env-model"
+    )
+
+    assert captured["model"] == "qwen3:8b"
+    assert captured["temperature"] == 0.0

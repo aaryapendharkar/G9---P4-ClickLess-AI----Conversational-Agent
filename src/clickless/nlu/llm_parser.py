@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -153,7 +154,9 @@ class LLMParser:
     def _call(self, text: str, repair_error: str | None = None) -> str:
         model_name = self.llm_cfg.get("model")
         if not model_name or model_name == "CHANGE_ME":
-            raise RuntimeError("LLM model is not configured")
+            model_name = os.environ.get("VOYAGER_MODEL")
+        if not model_name:
+            raise RuntimeError("LLM model is not configured; set llm.model or VOYAGER_MODEL")
         return chat(
             self._messages(text, repair_error),
             model=model_name,
