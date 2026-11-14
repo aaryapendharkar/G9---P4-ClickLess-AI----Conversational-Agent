@@ -45,3 +45,36 @@ def test_percent_word(parser):
 def test_vague_battery_is_ambiguous(parser):
     pr: ParseResult = parser.parse("from Phoenix to Flagstaff in my comet, about half full", "t7")
     assert "start_soc_pct" in pr.ambiguous_fields
+
+
+def test_clarifier_prioritizes_ambiguous_safety_field(parser):
+    parse_result = parser.parse("Phoenix to Flagstaff with 70%", "t8").model_copy(
+        update={"ambiguous_fields": {"vehicle_id": ["vehicle-a", "vehicle-b"]}}
+    )
+
+    question = TemplateClarifier().question_for(parse_result)
+
+    assert question.field == "vehicle_id"
+    assert question.options == ["vehicle-a", "vehicle-b"]
+    assert "Which vehicle did you mean?" == question.question
+
+
+def test_clarifier_explains_ambiguous_origin(parser):
+    parse_result = parser.parse("Phoenix to Chicago in my Spark LR with 70%", "t9").model_copy(
+        update={"ambiguous_fields": {"origin": ["Springfield, IL", "Springfield, MO"]}}
+    )
+
+    question = TemplateClarifier().question_for(parse_result)
+
+    assert question.field == "origin"
+    assert question.options == ["Springfield, IL", "Springfield, MO"]
+    assert "starting location" in question.question
+
+
+def test_clarifier_orders_multiple_missing_safety_fields(parser):
+    parse_result = parser.parse("Phoenix to Flagstaff", "t10")
+
+    question = TemplateClarifier().question_for(parse_result)
+
+    assert parse_result.missing_fields == ["vehicle_id", "start_soc_pct"]
+    assert question.field == "vehicle_id"
