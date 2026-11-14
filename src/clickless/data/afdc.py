@@ -74,6 +74,7 @@ class ConversionReport:
     skipped: Counter = field(default_factory=Counter)
     examples: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     unknown_power_dc_ports: int = 0
+    legacy_units_ignored: int = 0
 
     def skip(self, reason: str, record_id: Any) -> None:
         self.skipped[reason] += 1
@@ -87,6 +88,7 @@ class ConversionReport:
             "skipped": dict(self.skipped),
             "skipped_examples": {k: v for k, v in self.examples.items()},
             "dc_ports_with_unknown_power": self.unknown_power_dc_ports,
+            "legacy_units_ignored": self.legacy_units_ignored,
         }
 
 
@@ -176,6 +178,22 @@ def _count(value: Any) -> int:
     return max(n, 1)
 
 
+def _is_legacy(value: Any) -> bool:
+    """AFDC's 'legacy' level: old, non-standard equipment (pre-J1772/CCS era), not a usable port class."""
+    return str(value if value is not None else "").strip().lower() == "legacy"
+
+
+def _present_connectors(unit: dict[str, Any]) -> set[Connector]:
+    """Supported connectors a unit actually has (listed with a port count other than 0)."""
+    out = set()
+    for code, spec in (unit.get("connectors") or {}).items():
+        conn = _connector(code)
+        spec = spec or {}
+        if conn is not None and not (spec.get("port_count") is not None and _int(spec.get("port_count")) == 0):
+            out.add(conn)
+    return out
+
+
 def _level(value: Any) -> ChargerLevel:
     """'dc_fast', 'DC Fast', 'level 2', 'L2', 2 ... -> ChargerLevel; anything else is a schema error."""
     key = str(value if value is not None else "").strip().lower()
@@ -198,6 +216,8 @@ def _int(value: Any) -> int:
 def _ports_from_units(units: list[dict[str, Any]]) -> list[ChargingPort]:
     merged: dict[tuple[Connector, ChargerLevel, float | None], int] = defaultdict(int)
     for unit in units:
+        if _is_legacy(unit.get("charging_level")):
+            continue  # legacy equipment is never a planning port (counted in the conversion report)
         unit_level = _level(unit.get("charging_level"))
         for code, spec in (unit.get("connectors") or {}).items():
             conn = _connector(code)
@@ -264,7 +284,13 @@ def to_station(record: dict[str, Any], retrieved_at: str | datetime) -> Station:
     if units:  # unit data wins; connectors listed only at station level are kept (power unknown)
         unit_ports = _ports_from_units(units)
         covered = {p.connector for p in unit_ports}
-        ports = unit_ports + [p for p in ports if p.connector not in covered]
+        # A connector that only a legacy unit has must not come back through the station-level counts.
+        legacy_only = set().union(
+            *(_present_connectors(u) for u in units if _is_legacy(u.get("charging_level")))
+        ) - covered
+        ports = unit_ports + [p for p in ports if p.connector not in covered and p.connector not in legacy_only]
+        if not ports and all(_is_legacy(u.get("charging_level")) for u in units):
+            raise AfdcRecordSkipped("legacy_chargers_only", str(rid))
     if not ports:
         raise AfdcRecordSkipped("no_supported_connector", str(rid))
 
@@ -303,6 +329,9 @@ def stations_from_records(
     stations: list[Station] = []
     seen: set[str] = set()
     for rec in records:
+        report.legacy_units_ignored += sum(
+            1 for u in rec.get("ev_charging_units") or [] if _is_legacy((u or {}).get("charging_level"))
+        )
         try:
             st = to_station(rec, retrieved_at)
         except AfdcRecordSkipped as e:
