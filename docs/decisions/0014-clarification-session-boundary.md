@@ -1,10 +1,16 @@
 # ADR 0014: Clarification session state and answer merge (issue #53)
 
-- Status: proposed — `pipeline.py` is shared, so this needs 2 approvals
-- Date: 2026-11-13
+- Status: accepted (2 approvals: Hriday 2026-11-14, Deepti 2026-11-14)
+- Date: 2026-11-13 (accepted 2026-11-14, PR #54)
 - Owner: Aarya (integration boundary, data lookups); implementation: Deepti (`nlu/`, `pipeline.py`)
 - Approvers: Deepti, Hriday (integration captain from Nov 16)
 - Issues: #53 (this decision), #47 (Config C clarification MVP, PR #51)
+
+## Approvals
+| Approver | Scope | Date | Record |
+|---|---|---|---|
+| Hriday | Planning and integration boundary: private pipeline state keyed by `request_id`, active-field-only merge, no defaults for safety-critical values, one `plan_request()` call, `run()`/harness/contracts/configs unchanged, two-failed-answer limit | 2026-11-14 | [PR #54 review](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/54#pullrequestreview-5900894151) |
+| Deepti | NLU/clarification side: pure `merge_answer` boundary, no shared-contract change, unresolved safety-critical fields preserved, vehicle-option restriction and unresolved-place behaviour | 2026-11-14 | [PR #54 review](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/54#pullrequestreview-5901983151) |
 
 ## Context
 Config C (`incomplete_request: clarify`) already returns `status="needs_clarification"` with a
