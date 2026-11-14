@@ -101,14 +101,16 @@ def build(args: argparse.Namespace) -> int:
     targets = osm_targets(stations, args.osm_scope)
     if targets:
         print(f"OSM amenities around {len(targets)} stations (scope={args.osm_scope}) ...", flush=True)
-        paths = osm_amenities.fetch_amenities(targets, radius_m=args.radius_m, batch_size=args.osm_batch_size)
+        paths = osm_amenities.fetch_amenities(
+            targets, radius_m=args.radius_m, batch_size=args.osm_batch_size, endpoint=args.overpass_url
+        )
         amenities, dropped, stamps = osm_amenities.amenities_from_raw(paths)
         window = [min(stamps), max(stamps)] if stamps else None
     else:
         amenities, dropped, window = [], {}, None
     print(f"  amenities: {len(amenities)}", flush=True)
     sources["osm"] = {
-        "endpoint": osm_amenities.OVERPASS_URL,
+        "endpoint": args.overpass_url,  # each batch file also records the endpoint that answered it
         "scope": args.osm_scope,
         "stations_queried": len(targets),
         "radius_m": args.radius_m,
@@ -190,6 +192,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--refresh-afdc", action="store_true", help="download AFDC again even if a saved file exists")
     p.add_argument("--osm-scope", choices=["dc_fast", "all", "none"], default="dc_fast")
     p.add_argument("--osm-batch-size", type=int, default=100)
+    p.add_argument(
+        "--overpass-url",
+        default=osm_amenities.OVERPASS_URL,
+        help=f"Overpass endpoint; if the main server keeps timing out use {osm_amenities.OVERPASS_MIRROR_URL}. "
+        "Saved batches are reused whichever server answered them.",
+    )
     p.add_argument("--radius-m", type=int, default=400)
     p.add_argument("--skip-geocode", action="store_true")
     p.add_argument(
