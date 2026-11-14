@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from ..contracts import (
     Candidate,
+    ChargerLevel,
     ChargingPort,
     Connector,
     Station,
@@ -18,19 +19,47 @@ from ..contracts import (
 
 _UNUSABLE_STATUS = {StationStatus.TEMPORARILY_UNAVAILABLE, StationStatus.PLANNED}
 
+# Levels at which a documented adapter is trusted. Every adapter in data/curated/vehicles.csv is
+# cited to a DC fast-charging source (Tesla's CCS1 adapter, manufacturers' NACS DC adapters,
+# ADR 0009), and the Vehicle contract records no level for an adapter.
+_ADAPTER_LEVELS = frozenset({ChargerLevel.DC_FAST})
+
 
 def compatible_ports(
     vehicle: Vehicle, station: Station, override: list[Connector] | None = None
 ) -> list[ChargingPort]:
-    """Ports on `station` the vehicle can physically use.
+    """Ports on `station` the vehicle can physically use, native ports first.
 
-    PLACEHOLDER: native connectors only -- documented adapters are ignored (conservative: we may
-    miss valid stops but never propose an unusable one).
-    LEARNING SWAP (Manas): include vehicle.adapters, decide how `override` interacts with the
-    vehicle table, and add tests (NACS car + CCS adapter at a CCS-only station, etc.).
+    Compatibility comes only from the curated vehicle table (conservative: we may miss a valid
+    stop but never propose an unusable one):
+
+    * a native connector matches a port with that connector at any level;
+    * a documented adapter (`vehicle.adapters`) matches a port with that connector at DC fast
+      level only. Using an adapter on AC (e.g. a CCS1 car with a NACS DC adapter at a Tesla
+      destination charger) is not documented, so it is never inferred;
+    * nothing else is inferred -- not an adapter that is sold for the car but missing from the
+      table, nor one implied by another connector.
+
+    `override` (`TripRequest.connectors_override`, connectors the driver stated) can only narrow
+    this set, never widen it: a stated connector the vehicle table does not support is ignored, so
+    a parsing mistake cannot make an unusable station look compatible. "I left my adapter at home"
+    becomes an override with only the native connector. `None` or `[]` means no override.
+
+    Native ports come before adapter ports (station order within each group). Callers that pick
+    the first of several equally powerful ports therefore never send the driver to an adapter
+    port when a native port is just as fast.
     """
-    allowed = set(override) if override else set(vehicle.native_connectors)
-    return [p for p in station.ports if p.connector in allowed]
+    allowed = set(override) if override else None
+    native_ports: list[ChargingPort] = []
+    adapter_ports: list[ChargingPort] = []
+    for port in station.ports:
+        if allowed is not None and port.connector not in allowed:
+            continue
+        if port.connector in vehicle.native_connectors:
+            native_ports.append(port)
+        elif port.connector in vehicle.adapters and port.level in _ADAPTER_LEVELS:
+            adapter_ports.append(port)
+    return native_ports + adapter_ports
 
 
 class DefaultHardConstraintFilter:

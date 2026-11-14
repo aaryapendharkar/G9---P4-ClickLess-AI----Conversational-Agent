@@ -4,6 +4,7 @@
 ```bash
 python -m venv .venv && source .venv/bin/activate
 make setup            # pip install -e ".[dev]"
+pip install -e ".[nlp]"  # only for B/C Sentence-BERT matching; first use downloads the pinned model (~90 MB)
 cp .env.example .env  # only needed for B/C (Voyager) and live AFDC/OSRM
 make test && make demo
 ```

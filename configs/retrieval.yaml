@@ -3,3 +3,6 @@ corridor_buffer_km: 8
 amenity_radius_m: 400            # proposal §II: Station NEAR Amenity within 400 m straight-line
 max_candidates: 60
 sbert_model: sentence-transformers/all-MiniLM-L6-v2   # pin the exact model for reproducibility
+sbert_revision: 1110a243fdf4706b3f48f1d95db1a4f5529b4d41  # Hugging Face commit of sbert_model (main on 2026-11-07)
+sbert_device: cpu                # GPU/MPS kernels can change the last digits of embeddings
+sbert_cache_dir: data/cache/sbert  # amenity embeddings per model + revision + document set (git-ignored)
