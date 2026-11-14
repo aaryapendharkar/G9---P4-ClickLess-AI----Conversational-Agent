@@ -48,3 +48,72 @@ def test_config_c_clarifies_incomplete_request():
     pipe_c = build_pipeline(load_config("C"))
     r = pipe_c.run("Phoenix to Flagstaff in my spark", request_id="it-7")
     assert r.status == "needs_clarification" and r.clarification.field == "start_soc_pct"
+
+
+def test_config_c_clarification_continues_after_answer(pipe_a):
+    from clickless.nlu.clarification import TemplateClarifier
+
+    pipe_a.clarifier = TemplateClarifier()
+    first = pipe_a.run("Phoenix to Flagstaff in my comet", request_id="multi-1")
+
+    assert first.status == "needs_clarification"
+    assert first.clarification.field == "start_soc_pct"
+
+    completed = pipe_a.continue_clarification("multi-1", "65%")
+
+    assert completed.status == "ok"
+    assert completed.request.start_soc_pct == 65
+    assert completed.request.request_id == "multi-1"
+    assert "clarified start_soc_pct from answer: '65%'" in completed.notes
+
+    approved = pipe_a.approve(completed)
+    assert approved.approved and approved.handoff_urls
+
+
+def test_config_c_rejects_two_invalid_clarification_answers(pipe_a):
+    from clickless.nlu.clarification import TemplateClarifier
+
+    pipe_a.clarifier = TemplateClarifier()
+    pipe_a.run("Phoenix to Flagstaff in my comet", request_id="multi-2")
+
+    first_retry = pipe_a.continue_clarification("multi-2", "about half")
+    rejected = pipe_a.continue_clarification("multi-2", "still half")
+
+    assert first_retry.status == "needs_clarification"
+    assert rejected.status == "rejected_incomplete"
+    assert "start_soc_pct" in rejected.notes
+
+
+def test_config_a_clarification_continuation_requires_pending_session(pipe_a):
+    import pytest
+
+    with pytest.raises(KeyError):
+        pipe_a.continue_clarification("unknown-request", "65%")
+
+
+def test_config_c_session_wiring_asks_next_question():
+    pipe_c = build_pipeline(load_config("C"))
+    first = pipe_c.run("Phoenix to Flagstaff", request_id="config-c-session")
+
+    assert first.status == "needs_clarification"
+    assert first.clarification.field == "vehicle_id"
+
+    second = pipe_c.continue_clarification("config-c-session", "Spark")
+
+    assert second.status == "needs_clarification"
+    assert second.clarification.field == "start_soc_pct"
+    assert second.request.request_id == "config-c-session"
+
+
+def test_new_run_replaces_pending_clarification_with_same_request_id(pipe_a, demo_text):
+    import pytest
+
+    from clickless.nlu.clarification import TemplateClarifier
+
+    pipe_a.clarifier = TemplateClarifier()
+    pipe_a.run("Phoenix to Flagstaff in my comet", request_id="reused-id")
+    complete = pipe_a.run(demo_text, request_id="reused-id")
+
+    assert complete.status == "ok"
+    with pytest.raises(KeyError):
+        pipe_a.continue_clarification("reused-id", "40%")
