@@ -16,7 +16,12 @@ Copy the environment template and keep the file local:
 
 ```bash
 cp .env.example .env
+set -a
+source .env
+set +a
 ```
+
+The `set -a`/`source` step exports the local values to the Python process; `.env` is intentionally not loaded or committed automatically.
 
 The local values are:
 
