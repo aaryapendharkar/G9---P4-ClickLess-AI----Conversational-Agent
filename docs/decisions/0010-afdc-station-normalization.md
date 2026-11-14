@@ -1,9 +1,18 @@
 # ADR 0010: AFDC station normalization, unknown power, places, snapshot build, Maps limit
 
-- Status: proposed
-- Date: 2026-11-03
+- Status: accepted (2 approvals: Hriday 2026-11-05, Ian 2026-11-09)
+- Date: 2026-11-03 (accepted 2026-11-13, issue #34)
 - Owner: Aarya
 - Approvers: Hriday (planner consumes ports/power), Ian (validator, oracle inputs)
+
+## Approvals
+| Approver | Scope | Date | Record |
+|---|---|---|---|
+| Hriday | Planner, charging-time and hard-constraint semantics | 2026-11-05 | [issue #34 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/issues/34#issuecomment-6651698710) |
+| Ian | Validator and independent-oracle compatibility | 2026-11-09 | [issue #34 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/issues/34#issuecomment-6735179056), [PR #35 review](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/35#pullrequestreview-5823161466) |
+
+Both approvals asked for the unknown-power fallback to move from code to configuration and to stop
+being called conservative. PR #35 made that change; the text below reflects it.
 
 ## Context
 `data/afdc.py`, `data/geocode.py` and the snapshot build were stubs, and PR #26 left two
@@ -37,11 +46,25 @@ vehicle). An undocumented code, status code, access code or charging level raise
    boxes (e.g. Guam).
 
 **Unknown power (PR #26 question 2).** No contract change: `ChargingPort.power_kw is None`
-already means "not reported by the source", and the planner already treats it conservatively
-(`min_power_kw` filters fail, `charging_time` assumes 50 kW DC, explanations say "unknown
-power"). The validator reports such ports under a new **warning** check `dc_power_unknown`;
-`blocking_problems()` excludes warnings, so they do not stop a freeze. Non-positive power is
-still a blocking `dc_power` problem.
+already means "not reported by the source", and it stays `None` everywhere (station data, the
+snapshot, the chosen `ChargingStop.port_power_kw`). What each part does with it:
+
+- **Hard constraints:** unknown power never satisfies an explicit `min_power_kw` request.
+  Without such a request, the station stays a candidate.
+- **Charging-duration estimate only:** the planner uses a configured fallback per charger level,
+  `charging_model.unknown_power_kw` in `configs/energy.yaml` (DC fast 50 kW, L2 6.6 kW,
+  L1 1.4 kW; PR #35). This is an estimate, **not a guaranteed-conservative value**: an unknown
+  station may deliver less than 50 kW, so the estimated duration can be optimistic. The fallback
+  is never written back as station data.
+- **Explanations:** such a stop is shown as "unknown power", and its duration as "(estimate)".
+- **Evaluation:** the independent oracle reads the same frozen `unknown_power_kw` key (it does
+  not import planner code) and adds an unknown-power sensitivity check, because the
+  ×0.75/×1.25 charge-time scaling does not cover a 50 kW guess at a slower station.
+- **Validator:** such ports are reported under a **warning** check `dc_power_unknown`;
+  `blocking_problems()` excludes warnings, so they do not stop a freeze. Non-positive power is
+  still a blocking `dc_power` problem.
+
+`tests/integration/test_unknown_power_boundary.py` locks these properties in.
 
 **Duplicate ids (PR #26 question 1).** `DataStore.__init__` raises `ValueError` on duplicate
 station or vehicle ids instead of silently keeping the last one. AFDC conversion also drops and
@@ -77,8 +100,12 @@ into consecutive URLs: every stop exactly once, segment k's destination = segmen
 (`evaluation/metrics/handoff.check_urls` passes on the result). Coordinates, not names.
 
 ## Consequences
-- Hriday: older stations without unit data have unknown power; the 50 kW DC default in
-  `charging_time.py` applies to them. The manifest reports how many such ports exist.
+- Hriday: older stations without unit data have unknown power; the configurable fallback in
+  `configs/energy.yaml` (`charging_model.unknown_power_kw`) gives their duration estimate. The
+  manifest reports how many such ports exist (`sources.afdc.conversion.dc_ports_with_unknown_power`
+  and `validation.warnings.dc_power_unknown`), and `make snapshot-report` prints the count.
+- After the test freeze, changing `unknown_power_kw` is an `energy.yaml` change: it needs an ADR
+  and invalidates results that used it.
 - Ian: the validator's `dc_power` check no longer fires for missing power; the new
   `dc_power_unknown` check does (test updated). Use `blocking_problems()` for freeze decisions.
 - Deepti: confirm the label wording and the 365-day threshold.

@@ -53,11 +53,21 @@ starting points: **tune on DEV only, then freeze before the test run** (record i
 The proposal says we do not model vehicle-specific charging curves. We keep that honesty but
 still need a duration to trade against amenities and detours:
 
-* peak power = min(port power, vehicle max DC power); L2 ports × 0.9 AC efficiency;
+* peak power = min(port power, vehicle max DC power); AC (L2/L1) ports × 0.9 AC efficiency;
 * constant power up to 80 % SoC, then 40 % of peak above it (DC); + 3 min session overhead;
+* unknown station power (the source did not report it, ADR 0010): the estimate uses a
+  configurable fallback per charger level, `charging_model.unknown_power_kw` in
+  `configs/energy.yaml` (DC fast 50 kW, L2 6.6 kW, L1 1.4 kW). It is **not guaranteed
+  conservative**: an unknown station may be slower, so its duration can be underestimated. The
+  station's power stays unknown in the data and is shown as "unknown power", and it never
+  satisfies an explicit minimum-power request;
 * always shown as "about N min (estimate)";
 * robustness: Ian re-ranks with charge time × 0.75 and × 1.25 and reports how often the
-  recommendation changes.
+  recommendation changes. That scaling does not cover a wrong fallback (a 50 kW guess at a
+  25 kW station doubles the time), so stops with unknown power get a separate unknown-power
+  sensitivity check;
+* the Nissan LEAF is excluded from charge-time accuracy and sensitivity results (ADR 0009); its
+  feasibility results stay in scope.
 
 ## 4. What the driver sees
 
@@ -98,6 +108,7 @@ from `Alternative.deltas`.
 | delta faithfulness | numbers in trade-off sentences equal the computed deltas (C's LLM included) |
 | weight sensitivity | Kendall τ of rankings across profiles and ±20 % weights; recommendation flip rate |
 | charge-time sensitivity | same with charge time × 0.75 / × 1.25 |
+| unknown-power sensitivity | same with `unknown_power_kw` varied, for plans with unknown-power stops (ADR 0010) |
 | priority-phrase accuracy | predicted profile vs gold on the `priority_tradeoff` benchmark items |
 
 Each author adds 2 `priority_tradeoff` items (10 total). Optional, if time allows: 3–5 classmates
