@@ -34,7 +34,7 @@ def _covered_chars(spans: list[tuple[int, int]]) -> int:
 
 
 def _read_records(path: Path) -> tuple[list[dict[str, Any]] | dict[str, Any], dict[str, Any]]:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         payload = json.load(f)
     return payload["records"], payload.get("_meta", {})
 

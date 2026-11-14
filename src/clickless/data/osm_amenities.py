@@ -257,7 +257,7 @@ def fetch_amenities(
                         "radius_m": radius_m,
                         "station_ids": [s.station_id for s in batch],
                     }
-                    path.write_text(json.dumps({"_meta": meta, "elements": elements}))
+                    path.write_text(json.dumps({"_meta": meta, "elements": elements}), encoding="utf-8")
                     break
             if attempt == max_attempts:
                 raise OverpassError(f"batch {b}: Overpass failed after {attempt} attempts (HTTP {status} {err})")
@@ -274,7 +274,7 @@ def amenities_from_raw(paths: list[str]) -> tuple[list[Amenity], Counter, list[s
     dropped: Counter = Counter()
     stamps: list[str] = []
     for p in paths:
-        saved = json.loads(Path(p).read_text())
+        saved = json.loads(Path(p).read_text(encoding="utf-8"))
         if saved["_meta"].get("remark"):  # files from older versions of this module
             raise OverpassError(f"{p}: Overpass remark (likely a timeout, data incomplete): {saved['_meta']['remark']}")
         stamps.append(saved["_meta"]["retrieved_at"])

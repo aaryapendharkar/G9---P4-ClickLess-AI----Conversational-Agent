@@ -134,7 +134,7 @@ def fetch_stations(
         "params": params,
         "total_results": payload.get("total_results"),
     }
-    path.write_text(json.dumps({"_meta": meta, "response": payload}))
+    path.write_text(json.dumps({"_meta": meta, "response": payload}), encoding="utf-8")
     return str(path)
 
 
@@ -317,7 +317,7 @@ def stations_from_records(
 
 def stations_from_raw(path: str | Path) -> tuple[list[Station], ConversionReport, dict[str, Any]]:
     """Load a file written by fetch_stations() and convert it."""
-    saved = json.loads(Path(path).read_text())
+    saved = json.loads(Path(path).read_text(encoding="utf-8"))
     meta = saved["_meta"]
     stations, report = stations_from_records(saved["response"]["fuel_stations"], meta["retrieved_at"])
     return stations, report, meta

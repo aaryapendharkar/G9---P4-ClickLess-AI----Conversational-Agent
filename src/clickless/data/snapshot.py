@@ -22,7 +22,7 @@ def _record_count(path: Path) -> int | None:
     if path.suffix != ".json":
         return None
     try:
-        records = json.loads(path.read_text()).get("records")
+        records = json.loads(path.read_text(encoding="utf-8")).get("records")
     except (ValueError, AttributeError):
         return None
     return len(records) if isinstance(records, (list, dict)) else None
@@ -41,14 +41,14 @@ def write_manifest(snapshot_dir: str = "data/snapshot", extra: dict | None = Non
         **(extra or {}),
     }
     out = root / "MANIFEST.json"
-    out.write_text(json.dumps(manifest, indent=2))
+    out.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return out
 
 
 def verify_manifest(snapshot_dir: str = "data/snapshot") -> list[str]:
     """Return files that are missing or whose hash no longer matches the manifest (empty = intact)."""
     root = repo_path(snapshot_dir)
-    manifest = json.loads((root / "MANIFEST.json").read_text())
+    manifest = json.loads((root / "MANIFEST.json").read_text(encoding="utf-8"))
     return [
         rel
         for rel, digest in manifest["files"].items()
@@ -66,7 +66,7 @@ FREEZE_ADRS: tuple[str, ...] = (
 
 def adr_status(path: Path) -> str:
     """The text after '- Status:' in an ADR, lowercased ('' if absent)."""
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip().lower().startswith("- status:"):
             return line.split(":", 1)[1].strip().lower()
     return ""
