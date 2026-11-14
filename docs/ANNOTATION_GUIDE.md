@@ -23,9 +23,12 @@
 4. Places: write the place text as you'd geocode it ("Flagstaff, AZ").
 5. Amenities: one entry per requested category; `wheelchair_required` only when stated;
    `priority: "important"` only for explicit needs ("must", "need").
-6. Trade-off phrasing (category `priority_tradeoff`): add `"tradeoff_profile"` to
-   `gold_request` — `fastest` ("in a hurry"), `comfort` ("no rush if there's good food"),
-   otherwise omit.
+   "Accessible restroom" and "wheelchair-accessible restroom" are treated the same: set
+   `wheelchair_required: true`. Only set it when the driver mentions accessibility.
+6. Trade-off phrasing (any category, wherever the driver states it): add `"tradeoff_profile"`
+   to `gold_request` — `fastest` ("in a hurry"), `comfort` ("no rush if there's good food"),
+   otherwise omit. `priority_tradeoff` items must have it; items in other categories (e.g.
+   `conflicting_prefs`) get it too when the text states a profile.
 7. Percentages as numbers (`65`, not `"65%"`); minutes for detours.
 
 ## Categories
