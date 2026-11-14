@@ -152,16 +152,19 @@ class LLMParser:
         return [{"role": "system", "content": system_message}, {"role": "user", "content": user_message}]
 
     def _call(self, text: str, repair_error: str | None = None) -> str:
+        model_env = self.llm_cfg.get("model_env", "VOYAGER_MODEL")
         model_name = self.llm_cfg.get("model")
         if not model_name or model_name == "CHANGE_ME":
-            model_name = os.environ.get("VOYAGER_MODEL")
+            model_name = os.environ.get(model_env)
         if not model_name:
-            raise RuntimeError("LLM model is not configured; set llm.model or VOYAGER_MODEL")
+            raise RuntimeError(f"LLM model is not configured; set llm.model or {model_env}")
         return chat(
             self._messages(text, repair_error),
             model=model_name,
             temperature=float(self.llm_cfg.get("temperature", 0.0)),
             timeout_s=float(self.llm_cfg.get("timeout_s", 60.0)),
+            base_url_env=self.llm_cfg.get("base_url_env", "VOYAGER_BASE_URL"),
+            api_key_env=self.llm_cfg.get("api_key_env", "VOYAGER_API_KEY"),
         )
 
     def _log_raw(self, request_id: str, raw_response: str) -> None:

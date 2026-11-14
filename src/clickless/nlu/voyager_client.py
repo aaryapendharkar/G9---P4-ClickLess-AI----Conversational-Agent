@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -17,12 +18,18 @@ def chat(
     model: str,
     temperature: float = 0.0,
     timeout_s: float = 60.0,
+    base_url_env: str = "VOYAGER_BASE_URL",
+    api_key_env: str = "VOYAGER_API_KEY",
     **extra: Any,
 ) -> str:
-    base = os.environ.get("VOYAGER_BASE_URL", "").rstrip("/")
+    base = os.environ.get(base_url_env, "").rstrip("/")
     if not base:
-        raise RuntimeError("VOYAGER_BASE_URL is not configured")
-    key = os.environ.get("VOYAGER_API_KEY", "")
+        raise RuntimeError(f"{base_url_env} is not configured")
+    key = os.environ.get(api_key_env, "")
+    host = urlparse(base).hostname
+    is_local_endpoint = host in {"localhost", "127.0.0.1", "::1"}
+    if not key and not is_local_endpoint:
+        raise RuntimeError(f"{api_key_env} is required for non-local Voyager endpoints")
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = f"Bearer {key}"

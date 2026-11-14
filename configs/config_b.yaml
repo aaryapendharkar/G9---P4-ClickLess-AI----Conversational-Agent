@@ -14,6 +14,7 @@ llm:
   base_url_env: VOYAGER_BASE_URL
   api_key_env: VOYAGER_API_KEY
   model: CHANGE_ME           # set VOYAGER_MODEL in .env; pin the same exact model for B/C
+  model_env: VOYAGER_MODEL
   temperature: 0
 data:
   source: fixtures
