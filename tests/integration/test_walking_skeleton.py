@@ -103,3 +103,17 @@ def test_config_c_session_wiring_asks_next_question():
     assert second.status == "needs_clarification"
     assert second.clarification.field == "start_soc_pct"
     assert second.request.request_id == "config-c-session"
+
+
+def test_new_run_replaces_pending_clarification_with_same_request_id(pipe_a, demo_text):
+    import pytest
+
+    from clickless.nlu.clarification import TemplateClarifier
+
+    pipe_a.clarifier = TemplateClarifier()
+    pipe_a.run("Phoenix to Flagstaff in my comet", request_id="reused-id")
+    complete = pipe_a.run(demo_text, request_id="reused-id")
+
+    assert complete.status == "ok"
+    with pytest.raises(KeyError):
+        pipe_a.continue_clarification("reused-id", "40%")

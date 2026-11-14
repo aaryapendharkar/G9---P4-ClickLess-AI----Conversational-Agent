@@ -228,6 +228,8 @@ class Pipeline:
     # ------------------------------------------------------------------ plan
     def run(self, text: str, request_id: str | None = None) -> PlanResult:
         rid = request_id or uuid.uuid4().hex[:8]
+        # A new run with the same ID replaces any abandoned interactive session.
+        self._pending.pop(rid, None)
         timings: dict[str, float] = {}
         t0 = time.perf_counter()
 
