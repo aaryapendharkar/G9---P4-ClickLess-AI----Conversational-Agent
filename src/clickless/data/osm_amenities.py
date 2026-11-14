@@ -26,6 +26,8 @@ from ..config import repo_path
 from ..contracts import Amenity, AmenityCategory, DataStatus, Provenance, Station
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Public mirror listed on the OSM wiki (formerly overpass.kumi.systems); used with --overpass-url.
+OVERPASS_MIRROR_URL = "https://overpass.private.coffee/api/interpreter"
 USER_AGENT = "ClickLessCharge/0.1 (ASU CSE 573 course project)"
 
 # tag key -> {tag value -> category}. Checked in this order; the first match wins.
@@ -233,7 +235,8 @@ def fetch_amenities(
     batch_size: int = 100,
     endpoint: str = OVERPASS_URL,
     pause_s: float = 2.0,
-    max_attempts: int = 4,
+    max_attempts: int = 7,
+    max_backoff_s: float = 120.0,
     progress: bool = True,
 ) -> list[str]:
     """Query Overpass in batches; each batch file is reused if it already exists (resume)."""
@@ -257,7 +260,9 @@ def fetch_amenities(
         for attempt in range(1, max_attempts + 1):
             retrieved_at = datetime.now(timezone.utc).replace(microsecond=0)
             try:
-                resp = requests.post(endpoint, data={"data": query}, headers={"User-Agent": USER_AGENT}, timeout=240)
+                resp = requests.post(
+                    endpoint, data={"data": query}, headers={"User-Agent": USER_AGENT}, timeout=(30, 240)
+                )  # 30 s to connect, 240 s for the answer
             except requests.RequestException as e:
                 status, err = None, type(e).__name__
             else:
@@ -279,8 +284,15 @@ def fetch_amenities(
                     _write_atomic(path, json.dumps({"_meta": meta, "elements": elements}))
                     break
             if attempt == max_attempts:
-                raise OverpassError(f"batch {b}: Overpass failed after {attempt} attempts (HTTP {status} {err})")
-            time.sleep(pause_s * 2**attempt)  # 429 / 504 / remark / network: back off and retry
+                raise OverpassError(
+                    f"batch {b}: Overpass failed after {attempt} attempts (HTTP {status} {err}). "
+                    f"{b} of {n_batches} batches are saved; run the same command again to resume, "
+                    f"or add --overpass-url {OVERPASS_MIRROR_URL} to use the public mirror"
+                )
+            wait = min(pause_s * 2**attempt, max_backoff_s)  # 429 / 504 / remark / network: back off
+            if progress:
+                print(f"  OSM batch {b + 1}/{n_batches}: {status or err}, retrying in {wait:.0f} s", flush=True)
+            time.sleep(wait)
         if progress:
             print(f"  OSM batch {b + 1}/{n_batches} done", flush=True)
         time.sleep(pause_s)

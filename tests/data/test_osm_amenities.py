@@ -228,3 +228,52 @@ def test_truncated_batch_from_an_interrupted_run_is_downloaded_again(store, tmp_
     assert len(calls) == 3  # only the broken batch was fetched again
     items, _, _ = osm.amenities_from_raw(paths)
     assert len(items) == 2
+
+
+def test_give_up_message_says_how_to_resume_and_waits_are_capped(store, tmp_path, monkeypatch):
+    requests = pytest.importorskip("requests")
+
+    def unreachable(*a, **k):
+        raise requests.ConnectTimeout("no route")
+
+    waits = []
+    monkeypatch.setattr(requests, "post", unreachable)
+    monkeypatch.setattr(osm.time, "sleep", waits.append)
+    with pytest.raises(osm.OverpassError) as e:
+        osm.fetch_amenities(list(store.stations.values())[:1], str(tmp_path), max_attempts=9, progress=False)
+    assert "ConnectTimeout" in str(e.value) and "run the same command again" in str(e.value)
+    assert osm.OVERPASS_MIRROR_URL in str(e.value)
+    assert waits and max(waits) <= 120  # backs off, but never more than two minutes per retry
+
+
+def test_other_server_reuses_saved_batches(store, tmp_path, monkeypatch):
+    requests = pytest.importorskip("requests")
+    urls = []
+
+    def fake_post(url, data, headers, timeout):
+        urls.append(url)
+        return _Resp(200, {"elements": []})
+
+    monkeypatch.setattr(requests, "post", fake_post)
+    monkeypatch.setattr(osm.time, "sleep", lambda s: None)
+    stations = list(store.stations.values())[:3]
+    first = osm.fetch_amenities(stations[:2], str(tmp_path), batch_size=2, progress=False)
+    both = osm.fetch_amenities(stations, str(tmp_path), batch_size=2, endpoint=osm.OVERPASS_MIRROR_URL,
+                               progress=False)
+    assert both[0] == first[0]
+    assert urls == [osm.OVERPASS_URL, osm.OVERPASS_MIRROR_URL]  # the saved batch was not fetched again
+    assert json.loads(open(both[1], encoding="utf-8").read())["_meta"]["endpoint"] == osm.OVERPASS_MIRROR_URL
+
+
+def test_build_has_an_overpass_url_option():
+    from clickless.data import build_snapshot
+
+    seen = []
+    orig = build_snapshot.build
+    try:
+        build_snapshot.build = lambda args: seen.append(args.overpass_url) or 0
+        build_snapshot.main([])
+        build_snapshot.main(["--overpass-url", osm.OVERPASS_MIRROR_URL])
+    finally:
+        build_snapshot.build = orig
+    assert seen == [osm.OVERPASS_URL, osm.OVERPASS_MIRROR_URL]
