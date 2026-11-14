@@ -1,9 +1,18 @@
 # ADR 0009: Third-party sources in the curated vehicle table
 
-- Status: proposed — needs 2 approvals (contract change)
-- Date: 2026-11-02 (revised 2026-11-03 for issue #28)
+- Status: accepted (2 approvals: Hriday 2026-11-04, Ian 2026-11-09)
+- Date: 2026-11-02 (revised 2026-11-03 for issue #28; accepted 2026-11-13)
 - Owner: Aarya
 - Approvers: Ian (benchmark/oracle), Hriday (energy model)
+
+## Approvals
+| Approver | Scope | Date | Record |
+|---|---|---|---|
+| Hriday | Energy model: source policy, usable-only capacity, strict loading, `THIRD_PARTY` + `CONTRACTS_VERSION` 0.4.0. Not a certification of every CSV value. | 2026-11-04 | [issue #28 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/issues/28#issuecomment-6620754260) |
+| Ian | Benchmark/evaluation, including the LEAF resolution (46 kW cap; LEAF excluded from charge-time accuracy and charge-time sensitivity results) | 2026-11-09 | [issue #28 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/issues/28#issuecomment-6735232222) |
+
+The contract change shipped with the loader in PR #29. The pre-freeze data follow-ups below
+remain open and are tracked in issue #36 (final snapshot criteria).
 
 ## Context
 Proposal §II says EPA data give efficiency and *manufacturer specifications* give usable capacity,
@@ -84,6 +93,9 @@ adapters 12 manufacturer / 2 third-party (1 vehicle has none); efficiency 15 Fue
 2. F-150 Lightning ER max DC: replace the 2025 spec-sheet source with a 2024 one if Ford
    publishes it, or keep this caveat.
 3. LEAF: excluded from charging-time accuracy claims (above); evaluation reports should say so.
+   Ian's evaluation keeps LEAF items (currently aarya-011, aarya-027, and deepti-010 once PR #40
+   merges) in feasibility metrics and excludes them from charge-time accuracy and charge-time
+   sensitivity results.
 
 ## Consequences
 - The final report states: *"Efficiency comes from EPA ratings; usable capacity, peak DC power
