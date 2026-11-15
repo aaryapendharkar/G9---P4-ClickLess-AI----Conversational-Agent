@@ -1,5 +1,5 @@
 from clickless.contracts import ClarificationQuestion, ParseResult
-from clickless.nlu.clarification import merge_answer
+from clickless.nlu.clarification import TemplateClarifier, merge_answer
 from clickless.nlu.rules_parser import RulesParser
 
 
@@ -80,3 +80,19 @@ def test_merge_answer_reasks_for_unresolved_place(store):
 
     assert merged.request.origin == parse_result.request.origin
     assert merged.missing_fields == parse_result.missing_fields
+
+
+def test_vague_battery_hint_cannot_turn_option_number_into_percentage(store):
+    parser = RulesParser(store)
+    parse_result = parser.parse(
+        "Phoenix to Flagstaff in my comet, battery around half full",
+        "merge-battery-hint",
+    )
+    question = TemplateClarifier().question_for(parse_result)
+
+    merged = merge_answer(parse_result, question, "1", store)
+
+    assert question.field == "start_soc_pct"
+    assert question.options == []
+    assert merged.request.start_soc_pct is None
+    assert "start_soc_pct" in merged.ambiguous_fields
