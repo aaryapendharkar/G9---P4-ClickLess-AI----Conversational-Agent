@@ -91,6 +91,12 @@ def merge_answer(
         match = _EXPLICIT_PERCENT.fullmatch(answer)
         if not match:
             return parse
+        if (
+            field in parse.ambiguous_fields
+            and "%" not in answer
+            and "percent" not in answer.casefold()
+        ):
+            return parse
         battery_percentage = float(match.group(1))
         if not 0 <= battery_percentage <= 100:
             return parse
@@ -108,6 +114,11 @@ class TemplateClarifier:
     def question_for(self, parse: ParseResult) -> ClarificationQuestion:
         for field in SAFETY_CRITICAL_FIELDS:
             options = parse.ambiguous_fields.get(field)
+            if field == "start_soc_pct" and options:
+                return ClarificationQuestion(
+                    field=field,
+                    question=_MISSING_TEMPLATES["start_soc_pct"],
+                )
             if options:
                 label = _field_label(field)
                 return ClarificationQuestion(
