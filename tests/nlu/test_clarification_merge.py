@@ -91,8 +91,11 @@ def test_vague_battery_hint_cannot_turn_option_number_into_percentage(store):
     question = TemplateClarifier().question_for(parse_result)
 
     merged = merge_answer(parse_result, question, "1", store)
+    explicit = merge_answer(parse_result, question, "65%", store)
 
     assert question.field == "start_soc_pct"
     assert question.options == []
     assert merged.request.start_soc_pct is None
     assert "start_soc_pct" in merged.ambiguous_fields
+    assert explicit.request.start_soc_pct == 65
+    assert "start_soc_pct" not in explicit.ambiguous_fields

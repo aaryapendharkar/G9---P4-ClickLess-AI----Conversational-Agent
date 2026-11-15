@@ -22,7 +22,10 @@ _MISSING_TEMPLATES = {
     "origin": "Where are you starting from? Please include the city and state if it could be ambiguous.",
     "destination": "Where are you headed? Please include the city and state if it could be ambiguous.",
     "vehicle_id": "Which EV are you driving? Please include the make, model, and year.",
-    "start_soc_pct": "What percentage battery do you have right now?",
+    "start_soc_pct": (
+        "What percentage battery do you have right now? "
+        "Please answer with a number followed by % or the word percent."
+    ),
 }
 _EXPLICIT_PERCENT = re.compile(r"^\s*(\d{1,3})(?:\s*%|\s+percent)?\s*$", re.IGNORECASE)
 

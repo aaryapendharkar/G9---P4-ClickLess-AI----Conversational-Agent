@@ -117,3 +117,21 @@ def test_new_run_replaces_pending_clarification_with_same_request_id(pipe_a, dem
     assert complete.status == "ok"
     with pytest.raises(KeyError):
         pipe_a.continue_clarification("reused-id", "40%")
+
+
+def test_ambiguous_battery_number_reasks_same_question(pipe_a):
+    from clickless.nlu.clarification import TemplateClarifier
+
+    pipe_a.clarifier = TemplateClarifier()
+    first = pipe_a.run(
+        "Phoenix to Flagstaff in my comet, battery around half full",
+        request_id="battery-hint",
+    )
+
+    retry = pipe_a.continue_clarification("battery-hint", "1")
+
+    assert first.clarification.field == "start_soc_pct"
+    assert retry.status == "needs_clarification"
+    assert retry.clarification.field == "start_soc_pct"
+    assert retry.request.request_id == "battery-hint"
+    assert "% or the word percent" in retry.clarification.question

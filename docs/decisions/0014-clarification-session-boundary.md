@@ -78,8 +78,11 @@ needed, so there is **no `CONTRACTS_VERSION` bump**.
    vehicle comes back. With options, the answer cannot switch to a car that was not offered,
    short replies that name one option ("the RWD one", "long range") pick it, and a reply with a
    negation ("not the RWD") picks nothing, so the question is asked again.
-5. `start_soc_pct`: accept exactly one explicit number 0–100 (`"40"`, `"40%"`, `"40 percent"`).
-   Vague answers ("about half") are not accepted, the same as the parser.
+5. `start_soc_pct`: accept exactly one explicit number with `%` or the word `percent` (`"40%"`,
+   `"40 percent"`). For an ambiguous/vague battery answer, a bare number such as `"40"` is
+   intentionally rejected because it could be mistaken for a selectable clarification hint. The
+   question tells the driver to include the marker. Vague answers ("about half") are not accepted,
+   the same as the parser.
 6. Accepted: set the field and remove it from `missing_fields` and `ambiguous_fields`.
    Not accepted: return the parse unchanged (the pipeline re-asks).
 7. `request_id` and `raw_text` stay as they were: `raw_text` is the driver's original message,
