@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from .rules_parser import RulesParser
 from .voyager_client import chat
 
 _LOG = logging.getLogger(__name__)
-_PROMPT_PATH = Path(__file__).with_name("prompts") / "extract_v1.txt"
+_PROMPT_PATH = Path(__file__).with_name("prompts") / "extract_v2.txt"
 _ALLOWED_FIELDS = {
     "origin", "destination", "vehicle", "start_soc_pct", "arrival_soc_pct_min",
     "max_detour_min", "min_power_kw", "amenities", "connectors",
@@ -151,14 +152,20 @@ class LLMParser:
         return [{"role": "system", "content": system_message}, {"role": "user", "content": user_message}]
 
     def _call(self, text: str, repair_error: str | None = None) -> str:
+        model_env = self.llm_cfg.get("model_env", "VOYAGER_MODEL")
         model_name = self.llm_cfg.get("model")
         if not model_name or model_name == "CHANGE_ME":
-            raise RuntimeError("LLM model is not configured")
+            model_name = os.environ.get(model_env)
+        if not model_name:
+            raise RuntimeError(f"LLM model is not configured; set llm.model or {model_env}")
         return chat(
             self._messages(text, repair_error),
             model=model_name,
             temperature=float(self.llm_cfg.get("temperature", 0.0)),
             timeout_s=float(self.llm_cfg.get("timeout_s", 60.0)),
+            base_url_env=self.llm_cfg.get("base_url_env", "VOYAGER_BASE_URL"),
+            api_key_env=self.llm_cfg.get("api_key_env", "VOYAGER_API_KEY"),
+            think=bool(self.llm_cfg.get("think", False)),
         )
 
     def _log_raw(self, request_id: str, raw_response: str) -> None:

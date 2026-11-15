@@ -13,7 +13,8 @@ components:
 llm:
   base_url_env: VOYAGER_BASE_URL
   api_key_env: VOYAGER_API_KEY
-  model: CHANGE_ME           # fix one model + temperature 0 for all experiments
+  model: qwen3:8b        # pinned Config B/C model; Ollama digest 500a1f067a9f, Q4_K_M
+  think: false           # keep extraction latency and output deterministic
   temperature: 0
 data:
   source: fixtures

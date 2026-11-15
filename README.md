@@ -57,3 +57,4 @@ Open this route in Google Maps? (approval required)
 2. `docs/ARCHITECTURE.md` — pipeline, config wiring, dependency rules
 3. `docs/TRADEOFFS.md` — response to the TA's trade-off feedback
 4. `CONTRIBUTING.md` — how to work without stepping on each other
+5. `docs/VOYAGER_LOCAL.md` — local Qwen setup and model comparison
