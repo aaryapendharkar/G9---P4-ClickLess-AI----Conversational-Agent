@@ -42,6 +42,7 @@ from .metrics.request_understanding import (
     silent_assumption_rate,
     understanding_cis,
 )
+from .metrics.tradeoffs import tradeoff_metrics
 from .oracle.label_setting import LabelSettingOracle
 from .schema import load_items
 
@@ -210,6 +211,7 @@ def run(
     by_id = {r.request_id: r for r in results}
     done = [i for i in items if i.id in by_id]
     ordered = [by_id[i.id] for i in done]
+    oracle = build_oracle(cfg, pipe)
     metrics = {
         "extraction": _safe(extraction_prf, done, ordered),
         "extraction_city_level": _safe(city_level_place_prf, done, ordered),
@@ -219,8 +221,10 @@ def run(
         "bootstrap_ci95": _safe(understanding_cis, done, ordered, n_boot),
         "grounding": _safe(claim_support, ordered),  # each result's own evidence only (ADR 0015)
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
-        "planning": _safe(planning_metrics, done, ordered, build_oracle(cfg, pipe)),
-        # TODO(Ian): tradeoffs, handoff, latency p50/p95
+        "planning": _safe(planning_metrics, done, ordered, oracle),
+        "tradeoffs": _safe(tradeoff_metrics, done, ordered, oracle, cfg["tradeoffs"]),
+        # nDCG@3 (metrics.planning.ndcg_at_k) is wired once graded relevance labels exist.
+        # TODO(Ian): handoff, latency p50/p95
     }
     # Planner/oracle disagreements are findings, reported on their own (docs/EVALUATION_ORACLE.md).
     findings = metrics["planning"].pop("findings", []) if isinstance(metrics["planning"], dict) else []
