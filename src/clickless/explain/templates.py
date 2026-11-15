@@ -17,6 +17,24 @@ class TemplateExplainer:
         self.store = store
         self.provenance_labels = provenance_labels
 
+    def _connector_infeasibility(self, result: PlanResult) -> str | None:
+        """Explain a connector dead-end using only the grounded vehicle record."""
+        request = result.request
+        if request is None or not request.vehicle_id or not request.connectors_override:
+            return None
+        vehicle = self.store.vehicle(request.vehicle_id)
+        requested = {connector.value for connector in request.connectors_override}
+        supported = {connector.value for connector in vehicle.supported_connectors()}
+        if requested & supported:
+            return None
+        vehicle_name = self.store.vehicle_label(request.vehicle_id)
+        requested_text = ", ".join(sorted(requested))
+        supported_text = ", ".join(sorted(supported)) or "none listed"
+        return (
+            f"{vehicle_name} cannot use the requested connector(s): {requested_text}. "
+            f"This vehicle supports: {supported_text}. Try one of the supported connectors."
+        )
+
     def explain(self, result: PlanResult) -> tuple[str, list[Claim]]:
         if result.status == "needs_clarification" and result.clarification:
             question = result.clarification.question
@@ -30,7 +48,11 @@ class TemplateExplainer:
             missing = ", ".join(result.notes) or "some trip details"
             return f"I can't plan this safely yet -- missing: {missing}.", []
         if result.status == "infeasible":
-            text = "I couldn't find a plan that meets all your requirements with this vehicle and data."
+            connector_reason = self._connector_infeasibility(result)
+            if connector_reason:
+                text = connector_reason
+            else:
+                text = "I couldn't find a plan that meets all your requirements with this vehicle and data."
             if result.relaxation:
                 text += " If you allow: " + "; ".join(result.relaxation.changes) + ", a plan exists."
             return text, []

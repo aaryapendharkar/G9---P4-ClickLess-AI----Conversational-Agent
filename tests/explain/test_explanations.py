@@ -39,3 +39,27 @@ def test_clarification_options_are_visible_in_template_output(pipe_a, demo_text)
 
     assert explanation == "Which vehicle did you mean?\n1. Vehicle A\n2. Vehicle B"
     assert claims == []
+
+
+def test_infeasible_connector_request_explains_vehicle_support(store):
+    from clickless.contracts import Connector, PlanResult, TripRequest
+    from clickless.explain.templates import TemplateExplainer
+
+    request = TripRequest(
+        request_id="connector-infeasible",
+        raw_text="Use CHAdeMO in my Comet",
+        vehicle_id="fixture-comet-awd-2026",
+        connectors_override=[Connector.CHADEMO],
+    )
+    result = PlanResult(
+        request_id=request.request_id,
+        config="A",
+        status="infeasible",
+        request=request,
+    )
+
+    explanation, claims = TemplateExplainer(store).explain(result)
+
+    assert "cannot use the requested connector(s): CHADEMO" in explanation
+    assert "CCS1" in explanation and "NACS" in explanation
+    assert claims == []
