@@ -21,7 +21,7 @@ def _imports(path: Path) -> set[str]:
 
 
 def test_oracle_is_independent_of_planner_and_ranking():
-    forbidden = ("clickless.planning", "clickless.ranking", "clickless.pipeline")
+    forbidden = ("clickless.planning", "clickless.ranking", "clickless.retrieval", "clickless.pipeline")
     for f in (ROOT / "src/evaluation/oracle").glob("*.py"):
         bad = [m for m in _imports(f) if m.startswith(forbidden)]
         assert not bad, f"{f.name} imports {bad}: the oracle must be implemented independently"

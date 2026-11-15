@@ -33,6 +33,7 @@ from clickless.config import load_config, repo_path
 from clickless.pipeline import build_pipeline
 
 from .metrics.grounding import claim_support, freshness_mislabel_rate
+from .metrics.planning import planning_metrics
 from .metrics.request_understanding import (
     city_level_place_prf,
     clarification_prf,
@@ -41,6 +42,7 @@ from .metrics.request_understanding import (
     silent_assumption_rate,
     understanding_cis,
 )
+from .oracle.label_setting import LabelSettingOracle
 from .schema import load_items
 
 NA = "n/a"
@@ -165,6 +167,13 @@ def run_metadata(
 # --------------------------------------------------------------------------- run
 
 
+def build_oracle(cfg: Mapping[str, Any], pipe) -> LabelSettingOracle:
+    """Oracle on the pipeline's frozen data. In OSRM mode the pipeline's router supplies ROUTES only
+    (data access through the contracts Router protocol); detours always come from the oracle's own model."""
+    osrm = cfg.get("routing", {}).get("mode") == "osrm"
+    return LabelSettingOracle.from_config(cfg, store=pipe.store, route_source=pipe.router.route if osrm else None)
+
+
 def run(
     config: str = "A",
     split: str = "dev",
@@ -206,14 +215,18 @@ def run(
         "bootstrap_ci95": _safe(understanding_cis, done, ordered, n_boot),
         "grounding": _safe(claim_support, ordered),  # each result's own evidence only (ADR 0015)
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
-        # TODO(Ian): planning (oracle), tradeoffs, handoff, latency p50/p95
+        "planning": _safe(planning_metrics, done, ordered, build_oracle(cfg, pipe)),
+        # TODO(Ian): tradeoffs, handoff, latency p50/p95
     }
+    # Planner/oracle disagreements are findings, reported on their own (docs/EVALUATION_ORACLE.md).
+    findings = metrics["planning"].pop("findings", []) if isinstance(metrics["planning"], dict) else []
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     label = "items" if items_paths else split
     out = repo_path(out_dir) / f"{cfg['name']}_{label}_{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"config": cfg["name"], "split": None if items_paths else split, "items": source,
-                               "n": len(items), "run_metadata": meta, "metrics": metrics, "rows": rows},
+                               "n": len(items), "run_metadata": meta, "metrics": metrics, "findings": findings,
+                               "rows": rows},
                               indent=2, default=str))
     return out
 
