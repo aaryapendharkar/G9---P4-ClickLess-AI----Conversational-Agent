@@ -151,3 +151,4 @@ def test_parser_uses_environment_model_when_config_is_placeholder(parser, monkey
 
     assert captured["model"] == "qwen3:8b"
     assert captured["temperature"] == 0.0
+    assert captured["think"] is False

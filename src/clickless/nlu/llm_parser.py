@@ -165,6 +165,7 @@ class LLMParser:
             timeout_s=float(self.llm_cfg.get("timeout_s", 60.0)),
             base_url_env=self.llm_cfg.get("base_url_env", "VOYAGER_BASE_URL"),
             api_key_env=self.llm_cfg.get("api_key_env", "VOYAGER_API_KEY"),
+            think=bool(self.llm_cfg.get("think", False)),
         )
 
     def _log_raw(self, request_id: str, raw_response: str) -> None:

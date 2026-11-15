@@ -30,7 +30,7 @@ VOYAGER_BASE_URL=http://localhost:11434/v1
 VOYAGER_API_KEY=
 ```
 
-The pinned demo model is `qwen3:8b` in both Config B and Config C. A hosted OpenAI-compatible endpoint can replace the local URL, but the same model should be used for both configurations.
+The pinned demo model is `qwen3:8b` in both Config B and Config C, using Ollama digest `500a1f067a9f` with Q4_K_M quantization and thinking disabled. A hosted OpenAI-compatible endpoint can replace the local URL, but the same model should be used for both configurations.
 
 ## Compare candidates before pinning
 
