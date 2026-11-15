@@ -562,5 +562,29 @@ def _strictly_beaten(point, plans, tol: float) -> bool:
     return bool(strictly_dominating(point, plans, tol))
 
 
+# --------------------------------------------------------------------------- nDCG
+
+
+def dcg_at_k(relevances: Sequence[float], k: int = 3, base: float = 2.0) -> float:
+    """Discounted cumulated gain, Jarvelin & Kekalainen (2002), graded relevance used as gain.
+
+    DCG[i] = G[i] for ranks i < b, and DCG[i-1] + G[i] / log_b(i) for i >= b (b = 2). With b = 2 the
+    first two ranks are undiscounted; this is the original J&K form, not the later
+    rel_i / log2(i + 1) variant.
+    """
+    total = 0.0
+    for i, gain in enumerate(relevances[:k], start=1):
+        total += gain if i < base else gain / (math.log(i) / math.log(base))
+    return total
+
+
+def ndcg_at_k_single(relevances: Sequence[float], k: int = 3) -> float:
+    """nDCG@k of one ranked list. The ideal ranking sorts ALL judged relevances; NaN if its DCG is 0."""
+    ideal = dcg_at_k(sorted(relevances, reverse=True), k)
+    return math.nan if ideal == 0 else dcg_at_k(relevances, k) / ideal
+
+
 def ndcg_at_k(ranked_relevances: list[list[float]], k: int = 3) -> float:
-    raise NotImplementedError("TODO(Ian): nDCG@k (Jarvelin & Kekalainen)")
+    """Mean nDCG@k over ranked lists, skipping lists whose ideal DCG is 0 (NaN if none remain)."""
+    values = [v for v in (ndcg_at_k_single(r, k) for r in ranked_relevances) if not math.isnan(v)]
+    return sum(values) / len(values) if values else math.nan
