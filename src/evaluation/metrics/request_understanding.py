@@ -21,7 +21,9 @@ Normalization (`normalize_field`):
     two-letter code, e.g. "Flagstaff, Arizona" == "Flagstaff, AZ" -- becomes its code; the rest is
     compared case-, whitespace- and punctuation-insensitively. After a comma the state is matched
     case-insensitively; without a comma a full name ("Bend Oregon") is always recognized, a
-    two-letter code only when written in capitals ("Bend OR", not "downtown la").
+    two-letter code only when written in capitals ("Bend OR"), or, in a prediction, in lower case
+    when it equals the gold's state code ("phoenix az" vs gold "Phoenix, AZ"). "downtown la" is
+    therefore never read as Louisiana unless the gold place is in Louisiana.
     Strict match (primary): city and state both equal, so "Phoenix" != "Phoenix, AZ".
     City-level match (secondary, `level="city"`, reported separately by city_level_place_prf):
     cities equal and the states equal or either one missing; two different states never match.
@@ -93,18 +95,31 @@ def _enum_value(v: Any) -> Any:
     return getattr(v, "value", v)
 
 
-def _state(words: list[str], allow_lower_code: bool) -> str | None:
-    """Two-letter code if `words` (original case) spell a US state name or code, else None."""
+def _state(words: list[str], allow_lower_code: bool, state_hint: str | None = None) -> str | None:
+    """Two-letter code if `words` (original case) spell a US state name or code, else None.
+
+    A lower-case code counts when `allow_lower_code`, or when it equals `state_hint`.
+    """
     joined = " ".join(words).casefold()
     if joined in US_STATES:
         return US_STATES[joined]
-    if len(words) == 1 and words[0].upper() in _STATE_CODES and (allow_lower_code or words[0].isupper()):
-        return words[0].upper()
+    if len(words) == 1 and (code := words[0].upper()) in _STATE_CODES:
+        if allow_lower_code or words[0].isupper() or code == state_hint:
+            return code
     return None
 
 
-def parse_place(text: Any) -> PlaceKey | None:
-    """(city, state) for a place string; None if it has no letters or digits. See module docstring."""
+def _place_text(value: Any) -> Any:
+    return value.get("text") if isinstance(value, dict) else getattr(value, "text", value)
+
+
+def parse_place(text: Any, state_hint: str | None = None) -> PlaceKey | None:
+    """(city, state) for a place string; None if it has no letters or digits. See module docstring.
+
+    `state_hint` (the gold's state code when parsing a prediction) lets a trailing lower-case
+    two-letter token without a comma count as a state, but only when it equals the hint:
+    "phoenix az" with hint "AZ" -> ("phoenix", "AZ"); "downtown la" with hint "CA" stays a city.
+    """
     if text is None:
         return None
     text = str(text)
@@ -116,7 +131,7 @@ def parse_place(text: Any) -> PlaceKey | None:
             city_words = _WORD.findall(head)
     if state is None:
         for k in (3, 2, 1):  # longest state name first ("district of columbia", "new york")
-            if len(city_words) > k and (state := _state(city_words[-k:], allow_lower_code=False)):
+            if len(city_words) > k and (state := _state(city_words[-k:], False, state_hint)):
                 city_words = city_words[:-k]
                 break
     city = "".join(city_words).casefold()
@@ -139,8 +154,7 @@ def normalize_field(name: str, value: Any) -> Any:
     if value is None:
         return None
     if name in PLACE_FIELDS:
-        text = value.get("text") if isinstance(value, dict) else getattr(value, "text", value)
-        return parse_place(text)
+        return parse_place(_place_text(value))
     if name in NUMERIC_FIELDS:
         return float(value)
     if name == "vehicle_id":
@@ -189,7 +203,11 @@ def field_counts(name: str, gold: Any, pred: Any, level: str = "strict") -> Coun
 
     level="city" applies city_level_match to origin/destination (ignored for other fields).
     """
-    g, p = normalize_field(name, gold), normalize_field(name, pred)
+    g = normalize_field(name, gold)
+    if name in PLACE_FIELDS:  # the gold's state lets a lower-case "az" suffix count (see parse_place)
+        p = parse_place(_place_text(pred), state_hint=g[1] if g else None) if pred is not None else None
+    else:
+        p = normalize_field(name, pred)
     if name in _SET_VALUED:
         g, p = g or frozenset(), p or frozenset()
         return len(g & p), len(p - g), len(g - p)

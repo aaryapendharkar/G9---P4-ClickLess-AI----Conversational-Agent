@@ -212,3 +212,19 @@ def test_city_level_place_prf_reported_separately():
     assert (city["places.tp"], city["places.fp"], city["places.fn"]) == (2, 1, 2)
     assert city["places.f1"] == pytest.approx(4 / 7)
     assert city["n"] == 2
+
+
+def test_lowercase_state_code_uses_gold_hint():
+    # a lower-case trailing code counts as the state only when it equals the gold's state code
+    assert parse_place("phoenix az", state_hint="AZ") == ("phoenix", "AZ")
+    assert parse_place("phoenix az") == ("phoenixaz", None)
+    assert field_counts("origin", "Phoenix, AZ", "phoenix az") == (1, 0, 0)
+    assert field_counts("origin", "Phoenix, AZ", Place(text="phoenix az")) == (1, 0, 0)
+    # "la" is never Louisiana when the gold is in California: no state is inferred, city text differs
+    assert parse_place("downtown la", state_hint="CA") == ("downtownla", None)
+    assert field_counts("origin", "Downtown Los Angeles, CA", "downtown la") == (0, 1, 1)
+    assert field_counts("origin", "Downtown Los Angeles, CA", "downtown la", level="city") == (0, 1, 1)
+    # a mismatching lower-case code stays part of the city text rather than becoming a wrong state
+    assert field_counts("origin", "Bend, OR", "bend wa", level="city") == (0, 1, 1)
+    # gold without a state gives no hint
+    assert field_counts("origin", "Phoenix", "phoenix az") == (0, 1, 1)
