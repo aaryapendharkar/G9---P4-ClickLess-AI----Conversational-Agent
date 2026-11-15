@@ -28,13 +28,9 @@ The local values are:
 ```text
 VOYAGER_BASE_URL=http://localhost:11434/v1
 VOYAGER_API_KEY=
-VOYAGER_MODEL=qwen3:8b
 ```
 
-The parser reads `VOYAGER_MODEL` when `configs/config_b.yaml` or `configs/config_c.yaml` still has
-`model: CHANGE_ME`. This keeps the model choice outside source code while allowing the team to pin
-one exact model for both configurations. A hosted OpenAI-compatible endpoint can replace the local
-URL without changing the parser.
+The pinned demo model is `qwen3:8b` in both Config B and Config C. A hosted OpenAI-compatible endpoint can replace the local URL, but the same model should be used for both configurations.
 
 ## Compare candidates before pinning
 

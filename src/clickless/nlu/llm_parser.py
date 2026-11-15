@@ -22,7 +22,7 @@ from .rules_parser import RulesParser
 from .voyager_client import chat
 
 _LOG = logging.getLogger(__name__)
-_PROMPT_PATH = Path(__file__).with_name("prompts") / "extract_v1.txt"
+_PROMPT_PATH = Path(__file__).with_name("prompts") / "extract_v2.txt"
 _ALLOWED_FIELDS = {
     "origin", "destination", "vehicle", "start_soc_pct", "arrival_soc_pct_min",
     "max_detour_min", "min_power_kw", "amenities", "connectors",
