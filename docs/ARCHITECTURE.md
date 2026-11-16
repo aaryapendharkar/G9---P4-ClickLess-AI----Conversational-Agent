@@ -24,6 +24,9 @@ text ─► RequestParser ─► ParseResult ──missing?──► reject (A,B
                               ▼
          TradeoffSelector (ranking/tradeoffs)     ─► [Alternative] (Recommended + Pareto alts)
                               ▼
+         ResultEvidenceSelector (planning/result_evidence)
+                                                    ─► PlanResult.evidence (C only)
+                              ▼
          Explainer (explain/templates | grounded) ─► text + claims
                               ▼
    user approves ─► Pipeline.approve ─► GoogleMapsHandoff ─► URL(s)  (+ audit log)
@@ -63,7 +66,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 
 | Component | Status |
 |---|---|
-| contracts, configs, fixtures, DataStore, geo utils | done (contracts v0.4) |
+| contracts, configs, fixtures, DataStore, geo utils | done (contracts v0.5) |
 | rules parser, template clarifier, priority phrases | placeholder (fixture phrasings) |
 | corridor retrieval | placeholder (brute force) |
 | TF-IDF matcher | placeholder (category gate only: 1.0 inside the requested category, ADR 0013) |
@@ -82,12 +85,21 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
 | AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
-| KG build + enrichment (C) | v0.1: rdflib graph of the store (ontology v0.2), built on first use; fills `Candidate.evidence` (ADR 0015) |
+| KG build + enrichment (C) | v0.2: rdflib graph fills `Candidate.evidence`; the pipeline copies only facts for displayed normal or relaxed alternatives into `PlanResult.evidence` (ADR 0015) |
 | LLM parser, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification
 responsibility so each behavior has a focused place to evolve.
+
+KG enrichment attaches facts to the same candidate objects that continue
+through filtering and planning. After trade-off selection,
+`planning/result_evidence.py` narrows that larger working set to facts about
+stops and amenities that the driver is actually shown. It preserves
+alternative, stop, and producer fact order while deduplicating by
+`evidence_id`. The same boundary is used for the first successful relaxation;
+facts from rejected candidates and failed relaxation attempts are not stored
+in `PlanResult`.
 
 Planner implementation responsibilities are also separated: `planner.py`
 orchestrates nominal/robust runs and forward stop search,
