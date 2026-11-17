@@ -17,7 +17,7 @@ for spec in "$@"; do
   if [[ -s "data/raw/osm/extract_${name}.json" ]]; then echo "== $name: already matched, skipped"; continue; fi
   url="https://download.geofabrik.de/north-america/${region}-latest.osm.pbf"
   echo "== $name: downloading $url"
-  if ! curl -fSL --retry 5 --retry-delay 30 -o "$work/region.osm.pbf" "$url"; then
+  if ! curl -fsSL --show-error --retry 5 --retry-delay 30 -o "$work/region.osm.pbf" "$url"; then
     if $optional; then echo "   not available, skipped"; continue; fi
     exit 1
   fi
