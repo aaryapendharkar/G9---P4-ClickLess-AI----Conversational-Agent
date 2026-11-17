@@ -1,10 +1,12 @@
 """Harness run metadata: Config A is n/a, LLM configs record endpoint + digest, never the key."""
 
 import json
+from pathlib import Path
 
 import pytest
 
 from clickless.config import load_config
+from clickless.nlu import llm_parser
 from evaluation.harness import expected_digest, run_metadata
 
 FULL = "500a1f067a9f" + "0" * 52
@@ -61,7 +63,7 @@ def test_llm_config_records_digest_from_config_comment():
     assert meta["endpoint_host"] == "localhost:11434"
     assert meta["model_digest"] == FULL and meta["expected_digest"] == "500a1f067a9f"
     assert meta["digest_check"] == "match"
-    assert meta["prompt_version"] == "extract_v1"
+    assert meta["prompt_version"] == Path(llm_parser._PROMPT_PATH).stem  # the prompt the parser loads
     assert [u for u, _ in calls] == ["http://localhost:11434/api/version", "http://localhost:11434/api/tags"]
     dumped = json.dumps(meta)
     assert "sk-secret-key" not in dumped and "pw" not in dumped
