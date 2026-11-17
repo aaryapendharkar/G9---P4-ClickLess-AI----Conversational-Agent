@@ -23,6 +23,7 @@ from evaluation.metrics.tradeoffs import (
     plan_cost,
     priority_phrase_accuracy,
     profile_weights,
+    tradeoff_metrics,
     weight_sensitivity,
 )
 from evaluation.schema import BenchmarkItem
@@ -120,7 +121,7 @@ WEIGHT_RESULT = ranked("w1", [plan(141, 20, 2, sid="P1"), plan(145, 25, 6, food=
 
 def test_weight_sensitivity_across_profiles_and_pm20():
     m = weight_sensitivity([bench("w1")], [WEIGHT_RESULT], TRADEOFFS)
-    assert m["n_items"] == 1
+    assert m["scope"] == "displayed_plans_only" and m["n_items"] == 1
     assert m["kendall_tau_balanced_vs_fastest"] == -1.0 and m["flip_rate_balanced_vs_fastest"] == 1.0
     assert m["kendall_tau_balanced_vs_comfort"] == 1.0 and m["flip_rate_balanced_vs_comfort"] == 0.0
     assert m["kendall_tau_fastest_vs_comfort"] == -1.0 and m["flip_rate_fastest_vs_comfort"] == 1.0
@@ -142,6 +143,7 @@ def test_charge_time_sensitivity_excludes_leaf():
     c2 = ranked("c2", [plan(150, 10, 2, sid="P3"), plan(120, 44, 2, sid="P4")])
     leaf = ranked("c3", [plan(150, 10, 2), plan(120, 44, 2)], vehicle_id="nissan-leaf-sv-plus-2024")
     m = charge_time_sensitivity([bench("w1"), bench("c2"), bench("c3")], [WEIGHT_RESULT, c2, leaf], TRADEOFFS)
+    assert m["scope"] == "displayed_plans_only"
     assert m["n_items"] == 2 and m["n_leaf_excluded_from_charge_time"] == 1
     assert m["kendall_tau_x0.75"] == 0.0 and m["flip_rate_x0.75"] == 0.5
     assert m["kendall_tau_x1.25"] == 1.0 and m["flip_rate_x1.25"] == 0.0
@@ -150,6 +152,12 @@ def test_charge_time_sensitivity_excludes_leaf():
 def test_single_plan_results_are_not_ranked():
     one = ranked("s", [plan(100, 10, 2)])
     assert weight_sensitivity([bench("s")], [one], TRADEOFFS)["n_items"] == 0
+
+
+def test_sensitivity_output_keys_name_the_displayed_plan_scope():
+    m = tradeoff_metrics([], [], pareto_world(), TRADEOFFS)
+    assert "displayed_plan_weight_sensitivity" in m and "displayed_plan_charge_time_sensitivity" in m
+    assert "weight_sensitivity" not in m and "charge_time_sensitivity" not in m
 
 
 # --------------------------------------------------------------------------- Pareto validity
@@ -183,7 +191,9 @@ def test_pareto_validity_without_amenities():
     res = PlanResult(request_id="p1", config="A", status="ok", alternatives=[alt(i) for i in shown])
     m = pareto_validity([bench("p1")], [res], pareto_world())
     assert (m["n_shown"], m["n_valid"], m["n_dominated"], m["n_infeasible"]) == (3, 1, 1, 1)
-    assert m["pareto_validity_rate"] == pytest.approx(1 / 3)
+    assert m["n_buffer_only"] == 0
+    assert m["strict_pareto_validity_rate"] == pytest.approx(1 / 3)
+    assert m["policy_adjusted_pareto_validity_rate"] == pytest.approx(1 / 3)  # no buffer-only cases to drop
     dominated = next(d for d in m["not_valid"] if d["category"] == "dominated")
     assert sorted(dominated["dominated_by"]) == [["F"], ["S"]]
 
@@ -198,7 +208,59 @@ def test_pareto_validity_amenity_tradeoff_reported_separately():
     res = PlanResult(request_id="p2", config="A", status="ok", alternatives=[alt(i) for i in shown])
     m = pareto_validity([bench("p2", amenities=[{"category": "food"}])], [res], pareto_world())
     assert (m["n_amenity_tradeoff"], m["n_dominated"], m["n_valid"]) == (1, 1, 0)
-    assert m["pareto_validity_rate"] == 0.0  # amenity trade-offs are not in the denominator
+    assert m["strict_pareto_validity_rate"] == 0.0  # amenity trade-offs are not in the denominator
+
+
+# The front's S plan departs S at exactly 76 % (what the next leg strictly needs); objectives
+# (155.0, 2.0, 33.0). The planner adds charge_buffer_soc_pct = 2 (configs/energy.yaml) on top.
+# Under the oracle's charging model, S departing at 78 % costs (156.2, 2.0, 34.2): same stations and
+# detour, +1.2 charge minutes, which is more than pareto_tol_min = 0.5, so S strictly dominates it.
+
+
+def test_pareto_validity_buffer_only_is_separate_from_dominated():
+    shown = [
+        itinerary(stop("S", arrive=26, depart=76)),  # on the front -> valid
+        itinerary(stop("S", arrive=26, depart=78)),  # +2 %: exactly the buffer -> buffer_only
+        itinerary(stop("S", arrive=26, depart=79)),  # +3 % > buffer + soc_tol (2.5) -> dominated
+        itinerary(stop("D", detour=6, arrive=D_ARRIVE, depart=D_NEED)),  # other route -> dominated
+        itinerary(stop("S", arrive=26, depart=75)),  # arrives with 19 % -> infeasible
+    ]
+    res = PlanResult(request_id="b1", config="A", status="ok", alternatives=[alt(i) for i in shown])
+    m = pareto_validity([bench("b1")], [res], pareto_world())
+
+    assert m["charge_buffer_soc_pct"] == 2.0  # read from the oracle's energy config
+    counts = ("n_valid", "n_buffer_only", "n_dominated", "n_amenity_tradeoff", "n_infeasible", "n_unpriceable")
+    assert tuple(m[k] for k in counts) == (1, 1, 2, 0, 1, 0)
+    # strict: valid / (valid + buffer_only + dominated + infeasible) = 1 / 5
+    assert m["strict_pareto_validity_rate"] == pytest.approx(1 / 5, rel=1e-6)
+    # policy-adjusted: drops only the buffer_only case -> 1 / 4
+    assert m["policy_adjusted_pareto_validity_rate"] == pytest.approx(1 / 4, rel=1e-6)
+
+    buffered = next(d for d in m["not_valid"] if d["category"] == "buffer_only")
+    assert buffered["dominated_by"] == [["S"]]
+    assert buffered["buffer_baseline_objectives"] == [155.0, 2.0, 33.0]
+    # extra charging time caused by the buffer: 34.2 - 33.0 = 1.2 min
+    assert buffered["extra_charge_min"] == pytest.approx(1.2, rel=1e-6)
+    assert m["buffer_only_extra_charge_min_total"] == pytest.approx(1.2, rel=1e-6)
+    assert m["buffer_only_extra_charge_min_mean"] == pytest.approx(1.2, rel=1e-6)
+
+
+def test_buffer_value_comes_from_energy_config():
+    import dataclasses
+
+    oracle = pareto_world()
+    oracle.cfg = dataclasses.replace(oracle.cfg, energy={**oracle.cfg.energy, "charge_buffer_soc_pct": 0})
+    res = PlanResult(
+        request_id="b2",
+        config="A",
+        status="ok",
+        alternatives=[alt(itinerary(stop("S", arrive=26, depart=78)))],
+    )
+    m = pareto_validity([bench("b2")], [res], oracle)
+    # with no documented buffer, departing 2 % above the strict need is plain domination
+    assert (m["charge_buffer_soc_pct"], m["n_buffer_only"], m["n_dominated"]) == (0.0, 0, 1)
+    assert m["buffer_only_extra_charge_min_total"] == 0
+    assert m["buffer_only_extra_charge_min_mean"] is None
 
 
 # --------------------------------------------------------------------------- delta faithfulness
