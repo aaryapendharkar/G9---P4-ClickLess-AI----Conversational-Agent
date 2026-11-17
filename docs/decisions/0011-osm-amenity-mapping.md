@@ -1,10 +1,17 @@
 # ADR 0011: OpenStreetMap amenity mapping
 
-- Status: proposed — category list to confirm with Deepti (parser) and Manas (matching)
-- Date: 2026-11-03
+- Status: accepted (2 approvals: Deepti 2026-11-09, Manas 2026-11-14)
+- Date: 2026-11-03 (accepted 2026-11-14, issue #44)
 - Owner: Aarya
 - Approvers: Deepti, Manas
 
+## Approvals
+| Approver | Scope | Date | Record |
+|---|---|---|---|
+| Deepti | Parser categories and wheelchair/restroom rules | 2026-11-09 | [issue #44 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/issues/44#issuecomment-6742677715) |
+| Manas | Retrieval/matching: categories, 400 m radius, accessibility tags | 2026-11-14 | [issue #44 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/issues/44#issuecomment-6882515614) |
+
+Pre-freeze follow-up from Manas's approval: skip OSM elements (and their `#toilets` restroom) whose `access` is `private` or `no`.
 ## Context
 Proposal §II: OSM supplies food, restrooms, wheelchair tags and opening hours, linked to
 stations within 400 m; a missing accessibility tag means unknown, never accessible. The parser
