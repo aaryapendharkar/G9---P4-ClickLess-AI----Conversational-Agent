@@ -7,11 +7,11 @@ Ontology adequacy = share of these 20 questions answerable by a SPARQL query ove
 | # | Question | Query file | Status |
 |---|---|---|---|
 | 1 | Which stations have a port vehicle V can use, and at what power? | cq01_compatible_stations.rq | draft |
-| 2 | Which compatible stations have a food amenity within 400 m? | cq02_compatible_stations_with_food.rq | draft (Aarya) |
-| 3 | Which amenities near station S are tagged wheelchair-accessible (and which are unknown)? | cq03_amenity_wheelchair_status.rq | draft (Aarya) |
-| 4 | What is the source and retrieval time of the power value of station S's DC port? | cq04_dc_power_provenance.rq | draft (Aarya) |
-| 5 | Which connectors does vehicle V support only through an adapter? | cq05_adapter_only_connectors.rq | draft (Aarya) |
-| 6 | Which stations' records were updated at the source more than N days before retrieval? | cq06_stale_station_records.rq | draft (Aarya) |
+| 2 | Which compatible stations have a food amenity within 400 m? | cq02_compatible_stations_with_food.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
+| 3 | Which amenities near station S are tagged wheelchair-accessible (and which are unknown)? | cq03_amenity_wheelchair_status.rq | tested on the fixture KG (Aarya; `test_kg_enrichment.py`) |
+| 4 | What is the source and retrieval time of the power value of station S's DC port? | cq04_dc_power_provenance.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
+| 5 | Which connectors does vehicle V support only through an adapter? | cq05_adapter_only_connectors.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
+| 6 | Which stations' records were updated at the source more than N days before retrieval? | cq06_stale_station_records.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
 | 7 | Which network operates station S? | | Manas |
 | 8 | Which stations offer ≥ P kW for connector C? | | Manas |
 | 9 | Which claims in explanation E are supported by which sources? | | Manas |
