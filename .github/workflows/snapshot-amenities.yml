@@ -1,0 +1,99 @@
+# Adds OpenStreetMap amenities to the stations-only snapshot on GitHub's servers and publishes the
+# result as a pre-release (issue #36). Owner: Aarya. Run it from the Actions tab: "snapshot amenities"
+# -> "Run workflow". No API key is needed: stations come from the published stations-only release.
+name: snapshot amenities
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_release:
+        description: "Release with the stations-only snapshot zip"
+        default: snapshot-v1-draft-stations
+        required: true
+      target_release:
+        description: "Release to publish the snapshot with amenities to"
+        default: snapshot-v1-draft
+        required: true
+
+permissions:
+  contents: write  # publish the release
+
+concurrency:
+  group: snapshot-amenities
+  cancel-in-progress: false
+
+jobs:
+  amenities:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e .
+
+      - name: Download the stations-only snapshot
+        run: |
+          gh release download "${{ inputs.source_release }}" --pattern '*.zip' --dir downloaded
+          mkdir -p data/snapshot
+          unzip -o downloaded/*.zip -d data/snapshot
+          python -m clickless.data.snapshot_report --verify-only
+
+      # Saved Overpass batches survive a failed or cancelled run, so re-running resumes.
+      - name: Restore saved OSM batches
+        uses: actions/cache/restore@v4
+        with:
+          path: data/raw/osm
+          key: osm-batches-${{ github.run_id }}
+          restore-keys: osm-batches-
+
+      - name: Fetch OSM amenities (main Overpass server, then the public mirror)
+        run: python -m clickless.data.add_amenities --dir data/snapshot
+
+      - name: Save OSM batches
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/raw/osm
+          key: osm-batches-${{ github.run_id }}
+
+      - name: Report and zip
+        run: |
+          python -m clickless.data.snapshot_report --pack "results/${{ inputs.target_release }}.zip" --out results/snapshot-report.md
+          {
+            echo "**Draft snapshot with amenities. Not frozen.** Issue #36."
+            echo
+            echo "Built by the \`snapshot amenities\` workflow (run ${{ github.run_id }}) from \`${{ inputs.source_release }}\` + OpenStreetMap amenities (\`python -m clickless.data.add_amenities\`). Stations, vehicles and places are unchanged from \`${{ inputs.source_release }}\`."
+            echo
+            echo "Use: unzip into \`data/snapshot/\`, run \`make snapshot-verify\` (expect \`[] (intact)\`), then run with \`CLICKLESS_DATA_SOURCE=snapshot\`."
+            echo
+            echo "zip SHA-256: \`$(sha256sum "results/${{ inputs.target_release }}.zip" | cut -d' ' -f1)\`"
+            echo
+            sed 's/^## Snapshot report/### Snapshot report/' results/snapshot-report.md
+          } > results/release-notes.md
+
+      - name: Publish the release
+        run: |
+          tag="${{ inputs.target_release }}"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" "results/$tag.zip" results/snapshot-report.md --clobber
+            gh release edit "$tag" --notes-file results/release-notes.md
+          else
+            gh release create "$tag" "results/$tag.zip" results/snapshot-report.md \
+              --prerelease --target "${{ github.sha }}" \
+              --title "Snapshot v1 draft (stations + amenities)" --notes-file results/release-notes.md
+          fi
+
+      - name: Keep the report with the run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-report
+          path: results/*.md
+          if-no-files-found: ignore
