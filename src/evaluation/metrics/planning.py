@@ -565,17 +565,14 @@ def _strictly_beaten(point, plans, tol: float) -> bool:
 # --------------------------------------------------------------------------- nDCG
 
 
-def dcg_at_k(relevances: Sequence[float], k: int = 3, base: float = 2.0) -> float:
-    """Discounted cumulated gain, Jarvelin & Kekalainen (2002), graded relevance used as gain.
+def dcg_at_k(relevances: Sequence[float], k: int = 3) -> float:
+    """Discounted cumulative gain with graded relevance: sum over ranks i = 1..k of rel_i / log2(i + 1).
 
-    DCG[i] = G[i] for ranks i < b, and DCG[i-1] + G[i] / log_b(i) for i >= b (b = 2). With b = 2 the
-    first two ranks are undiscounted; this is the original J&K form, not the later
-    rel_i / log2(i + 1) variant.
+    Every rank after the first is discounted (rank 1: /1, rank 2: /1.585, rank 3: /2), so putting the
+    most relevant plan first always scores higher. The original Jarvelin & Kekalainen (2002) form with
+    b = 2 leaves ranks 1 and 2 undiscounted, which would score [0, 1] the same as [1, 0].
     """
-    total = 0.0
-    for i, gain in enumerate(relevances[:k], start=1):
-        total += gain if i < base else gain / (math.log(i) / math.log(base))
-    return total
+    return sum(gain / math.log2(i + 1) for i, gain in enumerate(relevances[:k], start=1))
 
 
 def ndcg_at_k_single(relevances: Sequence[float], k: int = 3) -> float:

@@ -1,14 +1,28 @@
 """Trade-off metrics (TA feedback). Owner: Ian. See docs/TRADEOFFS.md section 5.
 
   * pareto_validity: shown alternatives must be non-dominated among the ORACLE's feasible plans on
-    (total time, detour, charge time), within the oracle's pareto_tol_min. An alternative dominated
-    on those three but possibly better on amenities is reported separately, not counted invalid
-    (docs/EVALUATION_ORACLE.md gap 12).
+    (total time, detour, charge time), within the oracle's pareto_tol_min. The oracle stays strict
+    (it never adds the planner's charge buffer). Each shown alternative is counted in exactly one of
+    valid / buffer_only / dominated / amenity_tradeoff / infeasible / unpriceable:
+      - buffer_only: dominated only because of the documented charge_buffer_soc_pct
+        (configs/energy.yaml, read through the oracle's energy config, never planner code): some
+        dominating oracle plan uses the same stations with the same detour, departs each stop at
+        most charge_buffer_soc_pct lower, and is itself non-dominated. Its extra charging minutes
+        are reported per case and in total.
+      - amenity_tradeoff: dominated on those three but possibly better on amenities
+        (docs/EVALUATION_ORACLE.md gap 12).
+    strict_pareto_validity_rate counts buffer_only as not valid; policy_adjusted_pareto_validity_rate
+    removes only the buffer_only cases from the denominator. Amenity trade-offs and unpriceable
+    plans are in neither denominator.
   * delta_faithfulness: every number in an alternative's sentence must equal the matching
     Alternative.deltas value (up to the presenter's whole-minute rounding); mismatches per claim.
   * weight_sensitivity: Kendall tau-b of plan rankings across the three profiles and under +-20 %
     weights, plus the Recommended-flip rate.
   * charge_time_sensitivity: the same with charge minutes x0.75 / x1.25 (LEAF excluded, ADR 0009).
+    Both sensitivities cover the DISPLAYED plans only: they re-rank the alternatives kept in
+    PlanResult, not every verified plan the system considered before selection, so a flip means
+    "the order of what the driver saw would change". The output keys say so
+    (displayed_plan_weight_sensitivity, displayed_plan_charge_time_sensitivity, and a scope field).
   * priority_phrase_accuracy: predicted vs gold tradeoff_profile on priority_tradeoff items.
 
 Rankings use the cost formula of docs/TRADEOFFS.md section 2 with configs/tradeoffs.yaml, written
@@ -35,6 +49,9 @@ PROFILES = ("balanced", "fastest", "comfort")
 WEIGHT_FACTORS = (0.8, 1.2)
 CHARGE_FACTORS = (0.75, 1.25)
 SCALAR_WEIGHTS = ("drive_min_weight", "charge_min_weight", "detour_extra_weight", "stop_overhead_min")
+# Sensitivity metrics re-rank PlanResult.alternatives only (what the driver saw), never the full set
+# of verified plans considered before selection.
+DISPLAYED_SCOPE = "displayed_plans_only"
 
 
 def _rate(num: int, den: int) -> float | None:
@@ -63,11 +80,55 @@ def _amenity_tradeoff(request: TripRequest, itin: Itinerary, dominating: list[Or
     return not any(satisfying <= set(p.station_ids) for p in dominating)
 
 
-def pareto_validity(items, results: Sequence[PlanResult], oracle: LabelSettingOracle) -> dict[str, Any]:
+def _buffer_only_baseline(
+    itin: Itinerary,
+    objectives: tuple[float, float, float],
+    dominating: list[OraclePlan],
+    front: list[OraclePlan],
+    buffer_pct: float,
+    soc_tol: float,
+    tol: float,
+) -> OraclePlan | None:
+    """The oracle plan the alternative would match without the planner's charge buffer, if any.
+
+    It must be one of the dominating plans, use the same stations in the same order, have the same
+    total detour (within tol), depart every stop between 0 and buffer_pct lower (within soc_tol),
+    and be non-dominated itself, so removing the buffer would make the alternative valid. With
+    several candidates, the one charging longest is used (the smallest extra charge is attributed).
+    """
+    stations = tuple(s.station_id for s in itin.stops)
+    if not stations:
+        return None
+    candidates = []
+    for plan in dominating:
+        if plan.station_ids != stations or abs(plan.objectives[1] - objectives[1]) > tol:
+            continue
+        gaps = [s.depart_soc_pct - p.depart_soc_pct for s, p in zip(itin.stops, plan.stops, strict=True)]
+        if all(-soc_tol <= g <= buffer_pct + soc_tol for g in gaps) and not strictly_dominating(
+            plan.objectives, front, tol
+        ):
+            candidates.append(plan)
+    return max(candidates, key=lambda p: (p.objectives[2], p.objectives), default=None)
+
+
+def pareto_validity(
+    items,
+    results: Sequence[PlanResult],
+    oracle: LabelSettingOracle,
+    charge_buffer_soc_pct: float | None = None,
+) -> dict[str, Any]:
+    """Strict Pareto validity of shown alternatives, with buffer-only cases classified separately.
+
+    charge_buffer_soc_pct defaults to the oracle's energy config (configs/energy.yaml).
+    """
     by_id = {r.request_id: r for r in results}
     tol = oracle.cfg.pareto_tol_min
+    buffer_pct = float(
+        oracle.cfg.energy["charge_buffer_soc_pct"] if charge_buffer_soc_pct is None else charge_buffer_soc_pct
+    )
     counts: Counter[str] = Counter()
     details: list[dict[str, Any]] = []
+    buffer_extra: list[float] = []
     for item in items:
         req, res = request_from_item(item), by_id.get(item.id)
         if req is None or res is None or res.status != "ok" or not res.alternatives:
@@ -83,39 +144,55 @@ def pareto_validity(items, results: Sequence[PlanResult], oracle: LabelSettingOr
                 counts["unpriceable"] += 1
                 continue
             dominating: list[OraclePlan] = []
+            baseline: OraclePlan | None = None
             if not rep.ok:
                 category = "infeasible"
             elif rep.objectives is None:
                 category = "unpriceable"
             else:
                 dominating = strictly_dominating(rep.objectives, front, tol)
+                if dominating:
+                    baseline = _buffer_only_baseline(
+                        alt.itinerary, rep.objectives, dominating, front, buffer_pct, oracle.cfg.soc_tol_pct, tol
+                    )
                 if not dominating:
                     category = "valid"
+                elif baseline is not None:
+                    category = "buffer_only"
                 elif _amenity_tradeoff(req, alt.itinerary, dominating):
                     category = "amenity_tradeoff"
                 else:
                     category = "dominated"
             counts[category] += 1
             if category != "valid":
-                details.append(
-                    {
-                        "item_id": item.id,
-                        "label": alt.label,
-                        "category": category,
-                        "objectives": None if rep.objectives is None else [round(x, 2) for x in rep.objectives],
-                        "dominated_by": [list(p.station_ids) for p in dominating],
-                        "violations": [v.code for v in rep.violations],
-                    }
-                )
-    judged = counts["valid"] + counts["dominated"] + counts["infeasible"]
+                detail = {
+                    "item_id": item.id,
+                    "label": alt.label,
+                    "category": category,
+                    "objectives": None if rep.objectives is None else [round(x, 2) for x in rep.objectives],
+                    "dominated_by": [list(p.station_ids) for p in dominating],
+                    "violations": [v.code for v in rep.violations],
+                }
+                if baseline is not None:
+                    extra = rep.objectives[2] - baseline.objectives[2]
+                    buffer_extra.append(extra)
+                    detail["buffer_baseline_objectives"] = [round(x, 2) for x in baseline.objectives]
+                    detail["extra_charge_min"] = round(extra, 2)
+                details.append(detail)
+    strict_den = counts["valid"] + counts["buffer_only"] + counts["dominated"] + counts["infeasible"]
     return {
         "n_shown": sum(counts.values()),
         "n_valid": counts["valid"],
+        "n_buffer_only": counts["buffer_only"],  # dominated only because of charge_buffer_soc_pct
         "n_dominated": counts["dominated"],
+        "n_amenity_tradeoff": counts["amenity_tradeoff"],  # reported separately, in neither rate
         "n_infeasible": counts["infeasible"],
-        "n_amenity_tradeoff": counts["amenity_tradeoff"],  # reported separately, not counted invalid
         "n_unpriceable": counts["unpriceable"],
-        "pareto_validity_rate": _rate(counts["valid"], judged),
+        "strict_pareto_validity_rate": _rate(counts["valid"], strict_den),
+        "policy_adjusted_pareto_validity_rate": _rate(counts["valid"], strict_den - counts["buffer_only"]),
+        "buffer_only_extra_charge_min_total": sum(buffer_extra),
+        "buffer_only_extra_charge_min_mean": _mean(buffer_extra),
+        "charge_buffer_soc_pct": buffer_pct,
         "tolerance_min": tol,
         "not_valid": details,
     }
@@ -281,6 +358,11 @@ def _costs(req, itins, evidence, weights, charge_scale=1.0) -> list[float]:
 
 
 def weight_sensitivity(items, results: Sequence[PlanResult], tradeoffs_cfg: Mapping[str, Any]) -> dict[str, Any]:
+    """Displayed-plan weight sensitivity: re-ranks only the alternatives shown in each PlanResult.
+
+    It does not see the verified plans dropped by selection, so it measures how stable the order of
+    what the driver saw is, not how stable the system's full choice set is.
+    """
     profile_tau: dict[str, list[float]] = defaultdict(list)
     profile_flip: dict[str, list[int]] = defaultdict(list)
     pert_tau, pert_flip, item_flip = [], [], []
@@ -305,7 +387,7 @@ def weight_sensitivity(items, results: Sequence[PlanResult], tradeoffs_cfg: Mapp
                 pert_flip.append(int(flip))
                 flipped |= flip
         item_flip.append(int(flipped))
-    out: dict[str, Any] = {"n_items": n}
+    out: dict[str, Any] = {"scope": DISPLAYED_SCOPE, "n_items": n}
     for pair in profile_tau:
         out[f"kendall_tau_{pair}"] = _mean(profile_tau[pair])
         out[f"flip_rate_{pair}"] = _rate(sum(profile_flip[pair]), len(profile_flip[pair]))
@@ -319,6 +401,7 @@ def weight_sensitivity(items, results: Sequence[PlanResult], tradeoffs_cfg: Mapp
 def charge_time_sensitivity(
     items, results: Sequence[PlanResult], tradeoffs_cfg: Mapping[str, Any], factors: Sequence[float] = CHARGE_FACTORS
 ) -> dict[str, Any]:
+    """Displayed-plan charge-time sensitivity: re-ranks only the alternatives shown in each PlanResult."""
     taus: dict[float, list[float]] = defaultdict(list)
     flips: dict[float, list[int]] = defaultdict(list)
     n = leaf = 0
@@ -333,7 +416,7 @@ def charge_time_sensitivity(
             costs = _costs(req, itins, ev, w, charge_scale=f)
             taus[f].append(kendall_tau_b(base, costs))
             flips[f].append(int(_top(costs) != _top(base)))
-    out: dict[str, Any] = {"n_items": n, "n_leaf_excluded_from_charge_time": leaf}
+    out: dict[str, Any] = {"scope": DISPLAYED_SCOPE, "n_items": n, "n_leaf_excluded_from_charge_time": leaf}
     for f in factors:
         out[f"kendall_tau_x{f:g}"] = _mean(taus[f])
         out[f"flip_rate_x{f:g}"] = _rate(sum(flips[f]), len(flips[f]))
@@ -369,7 +452,7 @@ def tradeoff_metrics(items, results, oracle: LabelSettingOracle, tradeoffs_cfg: 
     return {
         "pareto_validity": pareto_validity(items, results, oracle),
         "delta_faithfulness": delta_faithfulness(results),
-        "weight_sensitivity": weight_sensitivity(items, results, tradeoffs_cfg),
-        "charge_time_sensitivity": charge_time_sensitivity(items, results, tradeoffs_cfg),
+        "displayed_plan_weight_sensitivity": weight_sensitivity(items, results, tradeoffs_cfg),
+        "displayed_plan_charge_time_sensitivity": charge_time_sensitivity(items, results, tradeoffs_cfg),
         "priority_phrases": priority_phrase_accuracy(items, results),
     }
