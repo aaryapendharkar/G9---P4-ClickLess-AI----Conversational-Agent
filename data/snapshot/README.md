@@ -70,3 +70,17 @@ cannot route real snapshot trips. To plan on the snapshot:
 
 OSRM answers are cached in `data/cache/osrm/` (git-ignored) by the cache-first router, not in
 `routes/`. Details: ADR 0010 (stations, places) and ADR 0011 (amenities).
+
+## Add amenities to a stations-only snapshot (issue #36)
+If OpenStreetMap is unreachable from your network, publish stations first
+(`make snapshot-build ARGS="--osm-scope none"`, then a release such as `snapshot-v1-draft-stations`)
+and add the amenities separately:
+
+- **On GitHub's servers (no laptop needed):** Actions tab → **snapshot amenities** → **Run workflow**.
+  It downloads the stations-only release, fetches the amenities (main Overpass server, then the
+  public mirror), and publishes the result as the `snapshot-v1-draft` pre-release. If it stops,
+  run it again: saved batches are restored from the cache.
+- **Locally:** unzip the stations-only release into `data/snapshot/`, then
+  `python -m clickless.data.add_amenities --dir data/snapshot`, then `make snapshot-report ARGS="--pack ..."`.
+
+Stations, vehicles and places are not changed; only `amenities.json` and `MANIFEST.json` are.
