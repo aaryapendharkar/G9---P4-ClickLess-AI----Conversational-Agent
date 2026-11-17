@@ -199,3 +199,36 @@ def test_feasible_iff_front_non_empty_and_every_front_plan_passes_the_check(case
         report = o.check_itinerary(r, from_plan(plan))
         assert report.ok, (case, scope, plan.station_ids, [v.detail for v in report.violations])
         assert report.objectives == pytest.approx(plan.objectives, abs=1e-6)
+
+
+# --------------------------------------------------------------------------- strict dominance helper
+
+
+def _plan(time_min: float, detour_min: float, charge_min: float):
+    from evaluation.oracle.label_setting import OraclePlan
+
+    return OraclePlan(
+        stops=(),
+        total_time_min=time_min,
+        total_detour_min=detour_min,
+        total_charge_min=charge_min,
+        arrival_soc_pct=20.0,
+        unknown_status_station_ids=(),
+    )
+
+
+def test_strictly_dominating_needs_a_gain_beyond_tolerance():
+    from evaluation.oracle.label_setting import dominated_by_front, strictly_dominating
+
+    point = (100.0, 5.0, 30.0)
+    better = _plan(90.0, 5.0, 30.0)  # 10 min faster, equal elsewhere
+    within_tol = _plan(99.5, 5.0, 30.0)  # only 0.5 min faster, inside tol = 1
+    equal = _plan(100.0, 5.0, 30.0)
+    trade_off = _plan(80.0, 9.0, 30.0)  # faster but a longer detour: not dominating
+
+    found = strictly_dominating(point, [better, within_tol, equal, trade_off], tol=1.0)
+
+    assert found == [better]
+    # weak dominance (dominated_by_front) also accepts ties; strict dominance does not
+    assert dominated_by_front(point, [equal], tol=1.0)
+    assert strictly_dominating(point, [equal], tol=1.0) == []

@@ -711,3 +711,13 @@ def _pricing_port(ports, claimed_kw: float | None):
 def dominated_by_front(point: tuple[float, float, float], plans: list[OraclePlan], tol: float) -> bool:
     """True when some oracle plan is at least as good as `point` on every objective (within tol)."""
     return any(_weakly_dominates(plan.objectives, point, tol) for plan in plans)
+
+
+def strictly_dominating(point: tuple[float, float, float], plans: list[OraclePlan], tol: float) -> list[OraclePlan]:
+    """Oracle plans no worse than `point` on every objective and better by more than tol on one."""
+
+    def beats(objectives) -> bool:
+        pairs = list(zip(objectives, point, strict=True))
+        return all(a <= b + tol for a, b in pairs) and any(a < b - tol for a, b in pairs)
+
+    return [p for p in plans if beats(p.objectives)]
