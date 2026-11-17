@@ -2,7 +2,12 @@
 
 from datetime import datetime, timezone
 
+import pytest
+
+from clickless.config import load_config
 from clickless.contracts import DataStatus, Evidence, PlanResult, Provenance
+from clickless.pipeline import build_pipeline
+from clickless.retrieval.kg.enrich import KGEnricher
 
 
 class _StationNameEnricher:
@@ -42,6 +47,17 @@ def _shown_station_ids(alternatives):
             if stop.station_id not in station_ids:
                 station_ids.append(stop.station_id)
     return station_ids
+
+
+def _shown_subject_ids(alternatives):
+    """Return every station and amenity id visible in the alternatives."""
+
+    subject_ids = set()
+    for alternative in alternatives:
+        for stop in alternative.itinerary.stops:
+            subject_ids.add(stop.station_id)
+            subject_ids.update(stop.amenity_ids)
+    return subject_ids
 
 
 def test_normal_plan_carries_evidence_only_for_shown_stations(pipe_a, demo_text):
@@ -93,3 +109,48 @@ def test_failed_solution_does_not_leak_candidate_evidence(pipe_a, demo_text):
     assert result.status == "infeasible"
     assert result.relaxation is None
     assert result.evidence == []
+
+
+def test_real_kg_evidence_is_limited_to_displayed_plan_subjects(
+    pipe_a,
+    store,
+    demo_text,
+):
+    """Exercise the real KG producer through the complete planning boundary.
+
+    The core local environment may omit the optional KG dependency. CI installs
+    it, so this test runs there instead of replacing KG facts with a stand-in.
+    """
+
+    pytest.importorskip("rdflib")
+    config_c = load_config("C")
+    pipe_a.enricher = KGEnricher(store, config_c["kg"])
+
+    result = pipe_a.run(demo_text, request_id="real-kg-result-evidence")
+
+    assert result.status == "ok"
+    assert result.evidence
+
+    evidence_ids = [fact.evidence_id for fact in result.evidence]
+    assert len(evidence_ids) == len(set(evidence_ids))
+
+    shown_subject_ids = _shown_subject_ids(result.alternatives)
+    assert {fact.subject_id for fact in result.evidence} <= shown_subject_ids
+
+    result_evidence_ids = set(evidence_ids)
+    for claim in result.claims:
+        cited_kg_ids = {
+            evidence_id
+            for evidence_id in claim.supported_by
+            if evidence_id.startswith("kg:")
+        }
+        assert cited_kg_ids <= result_evidence_ids
+
+
+@pytest.mark.parametrize("config_name", ["A", "B"])
+def test_configs_without_kg_do_not_build_enricher(config_name, store):
+    """Configurations A and B must preserve their empty-evidence boundary."""
+
+    pipeline = build_pipeline(load_config(config_name), store)
+
+    assert pipeline.enricher is None
