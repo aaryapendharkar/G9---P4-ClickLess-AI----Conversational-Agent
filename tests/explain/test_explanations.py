@@ -98,9 +98,56 @@ def test_grounded_explanation_cites_plan_evidence_when_present(pipe_a, store, de
 
     _, claims = GroundedLLMExplainer(store, {}).explain(grounded_result)
 
-    assert claims[0].supported_by[:3] == [
+    assert claims[0].supported_by[0] == "verified:evidence-1:stop:0"
+    assert set(claims[0].supported_by[1:]) == {
         f"kg:{stop.station_id}:name",
         f"kg:{stop.station_id}:ports[0].connector",
         f"kg:{stop.station_id}:ports[0].power_kw",
+    }
+
+
+def test_kg_connector_and_power_citations_share_port_index(store):
+    from clickless.contracts import Evidence
+    from clickless.explain.grounded import GroundedLLMExplainer
+
+    station = store.station("FIX-ST-004")
+    evidence = [
+        Evidence(
+            evidence_id="kg:FIX-ST-004:ports[0].connector",
+            subject_id="FIX-ST-004",
+            field="ports[0].connector",
+            value="CCS1",
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id="kg:FIX-ST-004:ports[0].power_kw",
+            subject_id="FIX-ST-004",
+            field="ports[0].power_kw",
+            value=50.0,
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id="kg:FIX-ST-004:ports[1].connector",
+            subject_id="FIX-ST-004",
+            field="ports[1].connector",
+            value="CCS1",
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id="kg:FIX-ST-004:ports[1].power_kw",
+            subject_id="FIX-ST-004",
+            field="ports[1].power_kw",
+            value=150.0,
+            provenance=station.provenance,
+        ),
     ]
-    assert "verified:evidence-1:stop:0" in claims[0].supported_by
+    # Use a tiny result-shaped object only to exercise the pure port-fact selector.
+    pipeline_result = type("EvidenceResult", (), {"evidence": evidence})()
+    selected = GroundedLLMExplainer(store, {})._port_fact_ids(
+        pipeline_result, "FIX-ST-004", "CCS1", 150.0
+    )
+
+    assert selected == [
+        "kg:FIX-ST-004:ports[1].connector",
+        "kg:FIX-ST-004:ports[1].power_kw",
+    ]
