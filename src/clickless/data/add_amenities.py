@@ -18,6 +18,7 @@ import argparse
 import json
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from ..config import repo_path
@@ -38,7 +39,10 @@ def add_amenities(
     radius_m: int = 400,
     batch_size: int = 100,
     raw_dir: str = "data/raw/osm",
+    from_raw: list[str] | None = None,
 ) -> int:
+    """from_raw: use these saved element files (e.g. extract_*.json from clickless.data.osm_extract)
+    instead of querying Overpass."""
     root = repo_path(snapshot_dir)
     manifest_path = root / "MANIFEST.json"
     if not manifest_path.is_file():
@@ -59,6 +63,20 @@ def add_amenities(
 
     paths: list[str] | None = None
     used: list[str] = []
+    extract_sources: list[dict[str, Any]] = []
+    if from_raw is not None:
+        paths = sorted(str(p) for p in from_raw)
+        if not paths:
+            print("no extract files given", file=sys.stderr)
+            return 1
+        for path in paths:
+            meta = json.loads(Path(path).read_text(encoding="utf-8"))["_meta"]
+            if meta.get("radius_m") != radius_m or meta.get("scope") != scope:
+                print(f"{path}: radius/scope {meta.get('radius_m')}/{meta.get('scope')} "
+                      f"!= {radius_m}/{scope}", file=sys.stderr)
+                return 1
+            extract_sources.append({k: meta.get(k) for k in ("endpoint", "retrieved_at", "match_stats")})
+        servers = []
     for i, server in enumerate(servers):
         used.append(server)
         print(f"  Overpass server: {server}", flush=True)
@@ -95,8 +113,9 @@ def add_amenities(
 
     sources = dict(manifest.get("sources") or {})
     sources["osm"] = {
-        "endpoint": used[-1],
+        "endpoint": used[-1] if used else "geofabrik extracts",
         "servers_tried": used,  # each batch file records the server that answered it
+        "extracts": extract_sources,
         "scope": scope,
         "stations_queried": len(targets),
         "radius_m": radius_m,
@@ -132,6 +151,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--radius-m", type=int, default=400)
     p.add_argument("--osm-batch-size", type=int, default=100)
     p.add_argument("--raw-dir", default="data/raw/osm")
+    p.add_argument(
+        "--from-raw",
+        nargs="+",
+        default=None,
+        help="use these saved element files (from clickless.data.osm_extract match) instead of Overpass",
+    )
     args = p.parse_args(argv)
     return add_amenities(
         args.dir,
@@ -140,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         radius_m=args.radius_m,
         batch_size=args.osm_batch_size,
         raw_dir=args.raw_dir,
+        from_raw=args.from_raw,
     )
 
 
