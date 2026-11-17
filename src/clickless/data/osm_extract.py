@@ -23,6 +23,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
+import sys
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -37,6 +39,75 @@ from .osm_amenities import CATEGORY_TAGS
 _CELL_DEG = 0.01  # grid cell for the station index (~1.1 km of latitude)
 _MAX_VERTICES = 400  # vertices checked per feature (plus its center); enough for any building
 _TYPES = {"n": "node", "w": "way", "r": "relation"}
+
+# Geofabrik publishes the exact download URL of every extract in this index ("urls" -> "pbf").
+GEOFABRIK_INDEX = "https://download.geofabrik.de/index-v1-nogeom.json"
+# Used only if the index cannot be read: the US state/territory extracts (north-america/us/<slug>).
+US_EXTRACT_SLUGS: tuple[str, ...] = (
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut", "delaware",
+    "district-of-columbia", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
+    "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan", "minnesota",
+    "mississippi", "missouri", "montana", "nebraska", "nevada", "new-hampshire", "new-jersey",
+    "new-mexico", "new-york", "north-carolina", "north-dakota", "ohio", "oklahoma", "oregon",
+    "pennsylvania", "rhode-island", "south-carolina", "south-dakota", "tennessee", "texas", "utah",
+    "vermont", "virginia", "washington", "west-virginia", "wisconsin", "wyoming", "puerto-rico",
+    "us-virgin-islands",
+)  # fmt: skip
+_CENSUS_REGIONS = {"us-midwest", "us-northeast", "us-pacific", "us-south", "us-west"}
+
+
+def extract_name(url: str) -> str:
+    """'.../us/new-york-latest.osm.pbf' -> 'new-york'."""
+    return url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".osm.pbf").removesuffix("-latest")
+
+
+_US_EXTRACT_URL = re.compile(r"^https?://download\.geofabrik\.de/north-america/us/([a-z0-9-]+)-latest\.osm\.pbf$")
+
+
+def _pbf_links(value: Any) -> Iterator[str]:
+    """Every string ending in .osm.pbf anywhere inside an index entry (the link is under urls.pbf)."""
+    if isinstance(value, str):
+        if value.endswith(".osm.pbf"):
+            yield value
+    elif isinstance(value, dict):
+        for v in value.values():
+            yield from _pbf_links(v)
+    elif isinstance(value, list):
+        for v in value:
+            yield from _pbf_links(v)
+
+
+def us_extract_urls(index: dict[str, Any]) -> list[str]:
+    """Download links of every US state/territory extract in Geofabrik's index, selected by the link
+    itself: north-america/us/<name>-latest.osm.pbf, one level below us/ (so not sub-state extracts
+    such as us/california/norcal), and not the census regions, which overlap the states."""
+    urls = set()
+    for feature in index.get("features") or []:
+        for url in _pbf_links(feature.get("properties") or {}):
+            m = _US_EXTRACT_URL.match(url)
+            if m and m.group(1) not in _CENSUS_REGIONS:
+                urls.add(url)
+    return sorted(urls)
+
+
+def index_sample(index: dict[str, Any], n: int = 3) -> str:
+    """A short look at the index for error messages: entry keys and a few US-looking entries."""
+    feats = index.get("features") if isinstance(index, dict) else None
+    if not isinstance(feats, list):
+        return f"top-level keys: {sorted(index)[:10] if isinstance(index, dict) else type(index).__name__}"
+    us = [f.get("properties") for f in feats if "/us/" in json.dumps(f)][:n]
+    first = (feats[0] or {}).get("properties") if feats else None
+    return f"{len(feats)} entries; first: {json.dumps(first)[:300]}; US-looking: {json.dumps(us)[:600]}"
+
+
+def fallback_us_extract_urls() -> list[str]:
+    return [f"https://download.geofabrik.de/north-america/us/{s}-latest.osm.pbf" for s in US_EXTRACT_SLUGS]
+
+
+def split_into_groups(urls: list[str], n_groups: int) -> list[list[str]]:
+    """Round-robin over the alphabetical list, so big states spread over the groups."""
+    n = max(1, min(n_groups, len(urls)))
+    return [g for g in (sorted(urls)[i::n] for i in range(n)) if g]
 
 
 def filter_expressions() -> list[str]:
@@ -197,6 +268,10 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("filters", help="print the osmium tags-filter expressions, space-separated")
+    r = sub.add_parser("regions", help="print a GitHub Actions matrix of US extract URLs (JSON)")
+    r.add_argument("--index", default=GEOFABRIK_INDEX, help="index URL or a saved index file")
+    r.add_argument("--groups", type=int, default=8)
+    r.add_argument("--min-count", type=int, default=50, help="fail if the index lists fewer extracts")
     m = sub.add_parser("match", help="keep exported features near snapshot stations")
     m.add_argument("--dir", default="data/snapshot")
     m.add_argument("--geojsonseq", required=True)
@@ -209,6 +284,29 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     if args.cmd == "filters":
         print(" ".join(filter_expressions()))
+        return 0
+    if args.cmd == "regions":
+        try:
+            if args.index.startswith("http"):
+                import requests
+
+                resp = requests.get(args.index, timeout=120)
+                resp.raise_for_status()
+                index = resp.json()
+            else:
+                index = json.loads(Path(args.index).read_text(encoding="utf-8"))
+            urls = us_extract_urls(index)
+        except Exception as e:  # noqa: BLE001 - any failure: fall back to the known list, loudly
+            print(f"::warning title=Geofabrik index::could not read {args.index} ({type(e).__name__}: {e}); "
+                  "using the built-in list of US extracts", file=sys.stderr)
+            urls = fallback_us_extract_urls()
+        if len(urls) < args.min_count:
+            sample = index_sample(index) if "index" in locals() else "index not read"
+            print(f"::error title=Geofabrik index::only {len(urls)} US extracts found (expected at least "
+                  f"{args.min_count}). {sample}", file=sys.stderr)
+            return 1
+        groups = split_into_groups(urls, args.groups)
+        print(json.dumps({"include": [{"group": str(i + 1), "urls": " ".join(g)} for i, g in enumerate(groups)]}))
         return 0
     path, stats = write_extract_raw(
         args.dir, args.geojsonseq, name=args.name, source=args.source, timestamp=args.timestamp,

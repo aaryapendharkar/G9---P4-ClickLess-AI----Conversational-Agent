@@ -77,18 +77,17 @@ If OpenStreetMap is unreachable from your network, publish stations first
 and add the amenities separately:
 
 - **On GitHub's servers (no laptop needed):** Actions tab → **snapshot amenities** → **Run workflow**.
-  It downloads the stations-only release, fetches the amenities (main Overpass server, then the
-  public mirror), and publishes the result as the `snapshot-v1-draft` pre-release. If it stops,
-  run it again: saved batches are restored from the cache.
-- **Locally:** unzip the stations-only release into `data/snapshot/`, then
+  It downloads the stations-only release, adds the amenities from Geofabrik's US extracts (see below)
+  and publishes the result as the `snapshot-v1-draft` pre-release.
+- **Locally (Overpass, small areas only):** unzip the stations-only release into `data/snapshot/`, then
   `python -m clickless.data.add_amenities --dir data/snapshot`, then `make snapshot-report ARGS="--pack ..."`.
 
 Stations, vehicles and places are not changed; only `amenities.json` and `MANIFEST.json` are.
 
-**Where the amenities come from (default).** The workflow's `method: extract` downloads Geofabrik's US
-census-region `.osm.pbf` files (plus Puerto Rico and the US Virgin Islands when available), keeps only
-the tags the Overpass query asks for (`osmium tags-filter`), exports them (`osmium export`), and matches
-them to the target stations within 400 m (`python -m clickless.data.osm_extract match`). The result goes
-through the same normalization as Overpass answers (`add_amenities --from-raw`). The data date is each
-extract's replication timestamp, recorded in `MANIFEST.json` under `sources.osm.extracts`.
-`method: overpass` is kept for small updates.
+**Where the amenities come from.** The workflow reads Geofabrik's index for the exact download link of
+every US state and territory extract (`python -m clickless.data.osm_extract regions`), splits them over
+8 parallel jobs, keeps only the tags the Overpass query asks for (`osmium tags-filter`), exports them
+(`osmium export`) and matches them to the target stations within 400 m (`osm_extract match`). The
+publish job merges all matches through the same normalization as Overpass answers
+(`add_amenities --from-raw`). Each extract's replication timestamp (the data date) is recorded in
+`MANIFEST.json` under `sources.osm.extracts`. If one job fails, use "Re-run failed jobs".
