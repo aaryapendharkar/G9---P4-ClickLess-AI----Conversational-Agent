@@ -21,6 +21,9 @@ def test_harness_smoke(tmp_path):
         assert "not_implemented" not in metrics[key]
     assert 0.0 <= metrics["extraction"]["micro_f1"] <= 1.0
     assert payload["run_metadata"]["config"] == "A" and payload["run_metadata"]["model_digest"] == "n/a"
+    # Config A: no KG evidence, no provenance labels; the grounding metrics run and report counts
+    assert metrics["grounding"]["n_results_without_evidence"] == metrics["grounding"]["n_results"]
+    assert metrics["freshness"]["n_labels"] == 0
 
 
 def test_harness_explicit_items(tmp_path):

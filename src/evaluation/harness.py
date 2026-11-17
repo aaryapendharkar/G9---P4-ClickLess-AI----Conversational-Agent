@@ -32,6 +32,7 @@ import requests
 from clickless.config import load_config, repo_path
 from clickless.pipeline import build_pipeline
 
+from .metrics.grounding import claim_support, freshness_mislabel_rate
 from .metrics.request_understanding import (
     city_level_place_prf,
     clarification_prf,
@@ -203,7 +204,9 @@ def run(
         "missing_fields": _safe(missing_field_match, done, ordered),
         "silent_assumption": _safe(silent_assumption_rate, done, ordered),
         "bootstrap_ci95": _safe(understanding_cis, done, ordered, n_boot),
-        # TODO(Ian): planning (oracle), grounding, tradeoffs, handoff, latency p50/p95
+        "grounding": _safe(claim_support, ordered),  # each result's own evidence only (ADR 0015)
+        "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
+        # TODO(Ian): planning (oracle), tradeoffs, handoff, latency p50/p95
     }
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     label = "items" if items_paths else split
