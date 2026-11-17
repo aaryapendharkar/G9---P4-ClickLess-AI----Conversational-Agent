@@ -64,26 +64,20 @@ class OverpassError(RuntimeError):
     pass
 
 
-def _key_regex() -> str:
-    return "^(" + "|".join(k for k, _ in CATEGORY_TAGS) + ")$"
-
-
-def _value_regex() -> str:
-    values = sorted({v for _, m in CATEGORY_TAGS for v in m})
-    return "^(" + "|".join(values) + ")$"
-
-
 def build_overpass_query(stations: list[Station], radius_m: int = 400, timeout_s: int = 180) -> str:
     if not stations:
         raise ValueError("no stations to query around")
     if radius_m <= 0:
         raise ValueError("radius_m must be positive")
-    kv = f'[~"{_key_regex()}"~"{_value_regex()}"]'
+    # One exact-key filter per tag key (e.g. ["amenity"~"^(cafe|...)$"]). A regex on the key itself
+    # ([~"^(amenity|shop|tourism)$"~...]) makes Overpass test every tag of every object and timed out
+    # on the public servers; anything only that broader filter matched was dropped later as OTHER.
+    filters = [f'["{key}"~"^({"|".join(sorted(values))})$"]' for key, values in CATEGORY_TAGS]
+    filters.append('["toilets"="yes"]')
     lines = [f"[out:json][timeout:{timeout_s}];", "("]
     for s in stations:
         around = f"around:{radius_m},{s.lat:.6f},{s.lon:.6f}"
-        lines.append(f"  nwr({around}){kv};")
-        lines.append(f'  nwr({around})["toilets"="yes"];')
+        lines.extend(f"  nwr({around}){f};" for f in filters)
     lines += [");", "out meta center;"]
     return "\n".join(lines)
 

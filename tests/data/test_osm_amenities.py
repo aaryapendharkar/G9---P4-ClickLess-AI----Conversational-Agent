@@ -108,7 +108,8 @@ def test_query_has_one_around_per_station_and_no_polyline(store):
     stations = list(store.stations.values())[:3]
     q = osm.build_overpass_query(stations, 400)
     assert q.startswith("[out:json][timeout:180];") and q.rstrip().endswith("out meta center;")
-    assert q.count("around:400,") == 2 * len(stations)
+    assert q.count("around:400,") == (len(osm.CATEGORY_TAGS) + 1) * len(stations)
+    assert '[~"' not in q  # no regex on tag keys: too slow for the public Overpass servers
     for line in (ln for ln in q.splitlines() if "around:" in ln):
         assert line.split("around:")[1].split(")")[0].count(",") == 2  # radius,lat,lon only
     assert '["toilets"="yes"]' in q and "restaurant" in q and "supermarket" in q
@@ -277,3 +278,30 @@ def test_build_has_an_overpass_url_option():
     finally:
         build_snapshot.build = orig
     assert seen == [osm.OVERPASS_URL, osm.OVERPASS_MIRROR_URL]
+
+
+def _old_filter_matches(tags):
+    """The previous query: any key in the key regex with any value in the value regex, or toilets=yes."""
+    keys = {k for k, _ in osm.CATEGORY_TAGS}
+    values = {v for _, m in osm.CATEGORY_TAGS for v in m}
+    return any(k in keys and v in values for k, v in tags.items()) or tags.get("toilets") == "yes"
+
+
+def _new_filter_matches(tags):
+    return any(tags.get(k) in m for k, m in osm.CATEGORY_TAGS) or tags.get("toilets") == "yes"
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [
+        {"amenity": "restaurant"}, {"amenity": "cafe", "cuisine": "coffee_shop"}, {"shop": "coffee"},
+        {"shop": "supermarket", "toilets": "yes"}, {"tourism": "motel"}, {"amenity": "fuel", "toilets": "yes"},
+        {"shop": "restaurant"}, {"tourism": "cafe"}, {"amenity": "hotel"}, {"amenity": "toilets"},
+        {"shop": "convenience", "amenity": "fuel"}, {"amenity": "fuel"}, {"tourism": "museum"},
+    ],
+)
+def test_exact_key_query_keeps_the_same_amenities_as_the_regex_query(tags):
+    """Everything the old regex filter fetched but the new one does not, was dropped as OTHER anyway."""
+    def kept(match):
+        return match(tags) and osm.normalize_category(tags) != osm.AmenityCategory.OTHER
+    assert kept(_new_filter_matches) == kept(_old_filter_matches)

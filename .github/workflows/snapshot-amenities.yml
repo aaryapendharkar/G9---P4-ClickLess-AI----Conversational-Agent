@@ -14,6 +14,10 @@ on:
         description: "Release to publish the snapshot with amenities to"
         default: snapshot-v1-draft
         required: true
+      batch_size:
+        description: "Stations per Overpass request (smaller = quicker answers, more requests)"
+        default: "50"
+        required: true
 
 permissions:
   contents: write  # publish the release
@@ -53,8 +57,15 @@ jobs:
           key: osm-batches-${{ github.run_id }}
           restore-keys: osm-batches-
 
-      - name: Fetch OSM amenities (main Overpass server, then the public mirror)
-        run: python -m clickless.data.add_amenities --dir data/snapshot
+      # The mirror first: overpass-api.de refuses connections from GitHub's runners (run of 2026-11-17).
+      # The step stops before the job limit so the next step can still save the batches done so far.
+      - name: Fetch OSM amenities (public mirror, then the main Overpass server)
+        timeout-minutes: 320
+        run: >-
+          python -m clickless.data.add_amenities --dir data/snapshot
+          --osm-batch-size "${{ inputs.batch_size }}"
+          --overpass-url https://overpass.private.coffee/api/interpreter
+          --overpass-url https://overpass-api.de/api/interpreter
 
       - name: Save OSM batches
         if: always()
