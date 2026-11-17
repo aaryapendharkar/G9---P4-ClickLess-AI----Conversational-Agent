@@ -1,8 +1,12 @@
 # Adds OpenStreetMap amenities to the stations-only snapshot on GitHub's servers and publishes the
 # result as a pre-release (issue #36). Owner: Aarya. Run it from the Actions tab: "snapshot amenities"
 # -> "Run workflow". No API key is needed: stations come from the published stations-only release.
-# method "extract" (default) reads Geofabrik's US region files with osmium; "overpass" queries the
-# public Overpass servers, which could not serve the full-US query in November 2026.
+#
+# plan:    exact download links of every US state/territory extract, from Geofabrik's index
+# match:   8 machines in parallel, each downloads its extracts, keeps the amenity tags (osmium) and
+#          matches them to the stations (python -m clickless.data.osm_extract match)
+# publish: merges all matches into the snapshot (add_amenities --from-raw) and publishes the release
+# If one machine fails, use "Re-run failed jobs": finished groups keep their results.
 name: snapshot amenities
 
 on:
@@ -16,14 +20,9 @@ on:
         description: "Release to publish the snapshot with amenities to"
         default: snapshot-v1-draft
         required: true
-      method:
-        description: "Where the OSM data comes from"
-        type: choice
-        options: [extract, overpass]
-        default: extract
-      batch_size:
-        description: "Overpass only: stations per request"
-        default: "50"
+      groups:
+        description: "Machines working in parallel"
+        default: "8"
         required: true
 
 permissions:
@@ -33,76 +32,89 @@ concurrency:
   group: snapshot-amenities
   cancel-in-progress: false
 
+env:
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
-  amenities:
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
-    env:
-      GH_TOKEN: ${{ github.token }}
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - run: pip install -e .
+      - id: plan
+        name: List the US extracts
+        run: |
+          python -m clickless.data.osm_extract regions --groups "${{ inputs.groups }}" > matrix.json
+          python -c "import json; m = json.load(open('matrix.json')); print(sum(len(g['urls'].split()) for g in m['include']), 'extracts in', len(m['include']), 'groups')"
+          echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"
 
-      - name: Install
-        run: pip install -e .
-
+  match:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: match (group ${{ matrix.group }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Install osmium
+        run: sudo apt-get update -q && sudo apt-get install -y -q osmium-tool && osmium --version
       - name: Download the stations-only snapshot
         run: |
           gh release download "${{ inputs.source_release }}" --pattern '*.zip' --dir downloaded
-          mkdir -p data/snapshot
-          unzip -o downloaded/*.zip -d data/snapshot
+          mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
           python -m clickless.data.snapshot_report --verify-only
-
-      # Saved Overpass batches survive a failed or cancelled run, so re-running resumes.
-      - name: Restore saved OSM batches
-        uses: actions/cache/restore@v4
+      - name: Download, filter and match the extracts
+        run: .github/scripts/osm-extract-amenities.sh data/snapshot ${{ matrix.urls }}
+      - uses: actions/upload-artifact@v4
         with:
-          path: data/raw/osm
-          key: osm-batches-${{ github.run_id }}
-          restore-keys: osm-batches-
+          name: osm-extract-${{ matrix.group }}
+          path: data/raw/osm/extract_*.json
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Install osmium
-        if: inputs.method == 'extract'
-        run: sudo apt-get update -q && sudo apt-get install -y -q osmium-tool && osmium --version
-
-      # US census-region files, then the territories (optional). Matched regions are cached, so a
-      # re-run resumes. The step stops before the job limit so the cache can still be saved.
-      - name: Match OSM amenities from Geofabrik extracts
-        if: inputs.method == 'extract'
-        timeout-minutes: 320
+  publish:
+    needs: match
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Download the stations-only snapshot
         run: |
-          .github/scripts/osm-extract-amenities.sh data/snapshot \
-            us/us-midwest us/us-northeast us/us-pacific us/us-south us/us-west \
-            'us/puerto-rico?' 'us/us-virgin-islands?'
-          python -m clickless.data.add_amenities --dir data/snapshot --from-raw data/raw/osm/extract_*.json
-
-      # The mirror first: overpass-api.de refuses connections from GitHub's runners (run of 2026-11-17).
-      - name: Fetch OSM amenities (public mirror, then the main Overpass server)
-        if: inputs.method == 'overpass'
-        timeout-minutes: 320
-        run: >-
-          python -m clickless.data.add_amenities --dir data/snapshot
-          --osm-batch-size "${{ inputs.batch_size }}"
-          --overpass-url https://overpass.private.coffee/api/interpreter
-          --overpass-url https://overpass-api.de/api/interpreter
-
-      - name: Save OSM batches
-        if: always()
-        uses: actions/cache/save@v4
+          gh release download "${{ inputs.source_release }}" --pattern '*.zip' --dir downloaded
+          mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
+          python -m clickless.data.snapshot_report --verify-only
+      - uses: actions/download-artifact@v4
         with:
+          pattern: osm-extract-*
           path: data/raw/osm
-          key: osm-batches-${{ github.run_id }}
-
+          merge-multiple: true
+      - name: Add the amenities to the snapshot
+        run: |
+          echo "$(ls data/raw/osm/extract_*.json | wc -l) extracts matched"
+          python -m clickless.data.add_amenities --dir data/snapshot --from-raw data/raw/osm/extract_*.json
       - name: Report and zip
         run: |
           python -m clickless.data.snapshot_report --pack "results/${{ inputs.target_release }}.zip" --out results/snapshot-report.md
           {
             echo "**Draft snapshot with amenities. Not frozen.** Issue #36."
             echo
-            echo "Built by the \`snapshot amenities\` workflow (run ${{ github.run_id }}, method: ${{ inputs.method }}) from \`${{ inputs.source_release }}\` + OpenStreetMap amenities. Stations, vehicles and places are unchanged from \`${{ inputs.source_release }}\`. OSM data © OpenStreetMap contributors, ODbL."
+            echo "Built by the \`snapshot amenities\` workflow (run ${{ github.run_id }}) from \`${{ inputs.source_release }}\` + OpenStreetMap amenities from Geofabrik's US state extracts (osmium). Stations, vehicles and places are unchanged from \`${{ inputs.source_release }}\`. OSM data © OpenStreetMap contributors, ODbL."
             echo
             echo "Use: unzip into \`data/snapshot/\`, run \`make snapshot-verify\` (expect \`[] (intact)\`), then run with \`CLICKLESS_DATA_SOURCE=snapshot\`."
             echo
@@ -110,7 +122,6 @@ jobs:
             echo
             sed 's/^## Snapshot report/### Snapshot report/' results/snapshot-report.md
           } > results/release-notes.md
-
       - name: Publish the release
         run: |
           tag="${{ inputs.target_release }}"
@@ -122,11 +133,4 @@ jobs:
               --prerelease --target "${{ github.sha }}" \
               --title "Snapshot v1 draft (stations + amenities)" --notes-file results/release-notes.md
           fi
-
-      - name: Keep the report with the run
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: snapshot-report
-          path: results/*.md
-          if-no-files-found: ignore
+          echo "::notice title=Snapshot published::https://github.com/${{ github.repository }}/releases/tag/$tag"

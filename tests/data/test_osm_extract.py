@@ -120,3 +120,69 @@ def test_extract_with_other_radius_is_refused(stations_only, tmp_path):
 def test_cli_filters_prints_one_line(capsys):
     assert ox.main(["filters"]) == 0
     assert capsys.readouterr().out.strip() == " ".join(ox.filter_expressions())
+
+
+def _index(*entries):
+    """A Geofabrik index (index-v1-nogeom.json shape): (id, parent, pbf url)."""
+    return {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "properties": {"id": i, "parent": p, "urls": {"pbf": u} if u else {}}}
+        for i, p, u in entries]}
+
+
+GF = "https://download.geofabrik.de"
+
+
+def test_us_extracts_are_the_states_and_territories_only():
+    index = _index(
+        ("us", "north-america", f"{GF}/north-america/us-latest.osm.pbf"),
+        ("us/alabama", "us", f"{GF}/north-america/us/alabama-latest.osm.pbf"),
+        ("us/georgia", "us", f"{GF}/north-america/us/georgia-latest.osm.pbf"),
+        ("georgia", "europe", f"{GF}/europe/georgia-latest.osm.pbf"),           # the country
+        ("us-midwest", "us", f"{GF}/north-america/us/us-midwest-latest.osm.pbf"),  # overlaps states
+        ("us/california/norcal", "us/california", f"{GF}/north-america/us/california/norcal-latest.osm.pbf"),
+        ("us/puerto-rico", "us", f"{GF}/north-america/us/puerto-rico-latest.osm.pbf"),
+        ("us/us-virgin-islands", "us", f"{GF}/north-america/us/us-virgin-islands-latest.osm.pbf"),
+        ("us/nowhere", "us", None),
+    )
+    assert [ox.extract_name(u) for u in ox.us_extract_urls(index)] == [
+        "alabama", "georgia", "puerto-rico", "us-virgin-islands"]
+
+
+def test_fallback_list_covers_every_state_dc_and_territories():
+    urls = ox.fallback_us_extract_urls()
+    assert len(urls) == 53 and len(set(urls)) == 53
+    assert all(u.startswith(f"{GF}/north-america/us/") and u.endswith("-latest.osm.pbf") for u in urls)
+    assert f"{GF}/north-america/us/delaware-latest.osm.pbf" in urls  # the link the smoke test downloaded
+
+
+def test_groups_cover_every_url_once():
+    urls = ox.fallback_us_extract_urls()
+    groups = ox.split_into_groups(urls, 8)
+    assert len(groups) == 8 and sorted(u for g in groups for u in g) == sorted(urls)
+    assert max(map(len, groups)) - min(map(len, groups)) <= 1
+    assert ox.split_into_groups(urls[:3], 8) == [[u] for u in sorted(urls[:3])]
+
+
+def test_regions_cli_prints_a_matrix_from_an_index_file(tmp_path, capsys):
+    states = [(f"us/s{i}", "us", f"{GF}/north-america/us/s{i:02d}-latest.osm.pbf") for i in range(52)]
+    path = tmp_path / "index.json"
+    path.write_text(json.dumps(_index(*states)), encoding="utf-8")
+    assert ox.main(["regions", "--index", str(path), "--groups", "4"]) == 0
+    matrix = json.loads(capsys.readouterr().out)
+    assert [g["group"] for g in matrix["include"]] == ["1", "2", "3", "4"]
+    assert sum(len(g["urls"].split()) for g in matrix["include"]) == 52
+
+
+def test_regions_cli_falls_back_when_the_index_is_unreadable(tmp_path, capsys):
+    assert ox.main(["regions", "--index", str(tmp_path / "missing.json"), "--groups", "8"]) == 0
+    out = capsys.readouterr()
+    assert "::warning" in out.err
+    assert sum(len(g["urls"].split()) for g in json.loads(out.out)["include"]) == 53
+
+
+def test_regions_cli_refuses_a_short_list(tmp_path, capsys):
+    path = tmp_path / "index.json"
+    path.write_text(json.dumps(_index(("us/alabama", "us", f"{GF}/north-america/us/alabama-latest.osm.pbf"))),
+                    encoding="utf-8")
+    assert ox.main(["regions", "--index", str(path)]) == 1
+    assert "::error" in capsys.readouterr().err
