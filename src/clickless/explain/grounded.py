@@ -69,13 +69,24 @@ class GroundedLLMExplainer:
         return None
 
     @staticmethod
-    def _amenity_name_ids(result: PlanResult, amenity_ids: list[str]) -> list[str]:
-        requested = set(amenity_ids)
-        return [
-            evidence.evidence_id
+    def _amenity_name_pairs(
+        result: PlanResult,
+        amenity_ids: list[str],
+        amenities_by_id: dict[str, object],
+    ) -> list[tuple[str, str]]:
+        """Return only displayed amenity names backed by matching evidence values."""
+        evidence_by_subject = {
+            evidence.subject_id: evidence
             for evidence in result.evidence
-            if evidence.subject_id in requested and evidence.field == "name"
-        ]
+            if evidence.field == "name"
+        }
+        pairs: list[tuple[str, str]] = []
+        for amenity_id in amenity_ids:
+            amenity = amenities_by_id.get(amenity_id)
+            evidence = evidence_by_subject.get(amenity_id)
+            if amenity is not None and amenity.name and evidence and evidence.value == amenity.name:
+                pairs.append((amenity.name, evidence.evidence_id))
+        return pairs
 
     def _claims_for_success(self, result: PlanResult) -> list[Claim]:
         if not result.alternatives or result.request is None:
@@ -102,17 +113,13 @@ class GroundedLLMExplainer:
             )
             claims.append(Claim(text=claim_text, supported_by=support_ids))
 
-            amenity_names = [
-                amenity.name
-                for amenity in self.store.amenities
-                if amenity.amenity_id in stop.amenity_ids and amenity.name
-            ]
-            amenity_ids = self._amenity_name_ids(result, stop.amenity_ids)
-            if amenity_names and amenity_ids:
+            amenities_by_id = {amenity.amenity_id: amenity for amenity in self.store.amenities}
+            amenity_pairs = self._amenity_name_pairs(result, stop.amenity_ids, amenities_by_id)
+            if amenity_pairs:
                 claims.append(
                     Claim(
-                        text="Nearby (requested): " + ", ".join(amenity_names) + ".",
-                        supported_by=amenity_ids,
+                        text="Nearby (requested): " + ", ".join(name for name, _ in amenity_pairs) + ".",
+                        supported_by=[evidence_id for _, evidence_id in amenity_pairs],
                     )
                 )
 

@@ -151,3 +151,37 @@ def test_kg_connector_and_power_citations_share_port_index(store):
         "kg:FIX-ST-004:ports[1].connector",
         "kg:FIX-ST-004:ports[1].power_kw",
     ]
+
+
+def test_grounded_amenity_claim_omits_unbacked_displayed_amenity(pipe_a, store, demo_text):
+    from clickless.contracts import Evidence
+
+    result = pipe_a.run(demo_text, request_id="evidence-partial")
+    stop = result.alternatives[0].itinerary.stops[0]
+    amenities_by_id = {amenity.amenity_id: amenity for amenity in store.amenities}
+    named_amenity_ids = [
+        amenity_id for amenity_id in stop.amenity_ids if amenities_by_id[amenity_id].name
+    ]
+    first_amenity = amenities_by_id[named_amenity_ids[0]]
+    evidence = Evidence(
+        evidence_id=f"kg:{first_amenity.amenity_id}:name",
+        subject_id=first_amenity.amenity_id,
+        field="name",
+        value=first_amenity.name,
+        provenance=first_amenity.provenance,
+    )
+    grounded_result = result.model_copy(update={"evidence": [evidence]})
+
+    _, claims = GroundedLLMExplainer(store, {}).explain(grounded_result)
+    amenity_claims = [claim.text for claim in claims if claim.text.startswith("Nearby (requested):")]
+
+    assert len(amenity_claims) == 1
+    assert first_amenity.name in amenity_claims[0]
+    assert all(
+        amenities_by_id[amenity_id].name in amenity_claims[0]
+        for amenity_id in named_amenity_ids[:1]
+    )
+    assert all(
+        amenities_by_id[amenity_id].name not in amenity_claims[0]
+        for amenity_id in named_amenity_ids[1:]
+    )
