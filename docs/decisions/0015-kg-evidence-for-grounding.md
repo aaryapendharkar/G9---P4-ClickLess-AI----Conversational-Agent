@@ -1,7 +1,7 @@
 # ADR 0015: KG evidence for Config C grounded explanations (issue #52)
 
-- Status: proposed — needs the approvals listed under Approvals
-- Date: 2026-11-14
+- Status: accepted — approvals recorded below
+- Date: 2026-11-14 (accepted 2026-11-15)
 - Owner: Manas (retrieval / KG)
 - Approvers: Deepti (explainer reads the evidence), Hriday (`PlanResult` owner; integration captain
   from Nov 16), Ian (grounding metric resolves the ids)
@@ -63,10 +63,10 @@ data-status label directly. A distance is computed by us, so it is `source="DERI
 `source_record_id="haversine(<station_id>,<amenity_id>)"`, `retrieved_at` = the later of the two
 records, status = the less static of the two (runtime > cached > static).
 
-### 5. Boundary to the explainer: `PlanResult.evidence` (needs approval: contracts v0.5)
-`PlanResult` does not carry candidates, so `Candidate.evidence` cannot reach `explain()` today.
-Proposal: an additive, optional contract field, filled by the pipeline in a follow-up PR after
-this ADR is approved and PR #58 has merged (both touch `pipeline.py`):
+### 5. Boundary to the explainer: `PlanResult.evidence` (contracts v0.5)
+`PlanResult` previously did not carry candidates, so `Candidate.evidence` could not reach
+`explain()`. The accepted boundary adds an optional contract field; the pipeline wiring is
+implemented separately after PR #58:
 
 ```python
 class PlanResult(BaseModel):
@@ -84,9 +84,13 @@ class PlanResult(BaseModel):
   `["kg:FIX-ST-004:name", "kg:FIX-ST-004:ports[0].connector", "kg:FIX-ST-004:ports[0].power_kw"]`.
   With `evidence == []` (Configs A/B, or the C-without-KG ablation) it keeps today's
   verified-only claims.
-- **Grounding metric (Ian):** `evidence_lookup = {e.evidence_id: e for e in result.evidence}`; a
-  claim that cites a `kg:` id missing from it is unsupported. Saved result JSON carries the
-  evidence, so the metric runs offline.
+- **Grounding metric (Ian):** build
+  `evidence_lookup = {e.evidence_id: e for e in result.evidence}` for each result. A `kg:` id
+  supports a claim only when it appears in that result's evidence list. A `verified:` id resolves
+  against the same `PlanResult`: the request id must match, stop and alternative indexes must
+  exist, and arrival/cost claims require a recommendation. Empty or unresolvable evidence is
+  unsupported. Unknown power cannot support a stated power value, and `wheelchair: "unknown"`
+  cannot support an accessibility claim.
 - Configs A and B have no enricher, so their `PlanResult.evidence` is empty and no reported number
   moves.
 
@@ -116,8 +120,8 @@ class PlanResult(BaseModel):
 - CI installs the `kg` extra (rdflib, pure Python), so the KG tests and the six competency-query
   parse tests run in CI instead of being skipped.
 - Fixture graph: 436 triples, about 20 ms to build. The full snapshot is not measured yet.
-- When the field lands: `CONTRACTS_VERSION` 0.4.0 → 0.5.0, an additive change, so nothing has to be
-  re-run.
+- This follow-up bumps `CONTRACTS_VERSION` from 0.4.0 to 0.5.0. The field has an empty default, so
+  results written under earlier contract versions remain loadable and Configs A/B do not change.
 
 ## Approvals
 Each approver records approval here (name, date, PR comment or sync) before the status changes to
@@ -125,6 +129,6 @@ accepted.
 
 | Approver | Decision they approve | Required | Status |
 |---|---|---|---|
-| Deepti (explainer) | Sections 2–4 are the facts `GroundedLLMExplainer` cites; claims list `kg:` ids from `PlanResult.evidence`; empty evidence keeps verified-only claims | yes | pending |
-| Hriday (`PlanResult`, integration) | Optional `PlanResult.evidence` (v0.5), filled by the pipeline with facts about shown stops only (section 5) | yes | pending |
-| Ian (grounding metric) | `claim_support` resolves `kg:` ids through `result.evidence` | for section 5 | pending |
+| Deepti (explainer) | Sections 2–4 are the facts `GroundedLLMExplainer` cites; claims list `kg:` ids from `PlanResult.evidence`; empty evidence keeps verified-only claims | yes | approved 2026-11-14 — [PR #66 review](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/66#pullrequestreview-5906869412) |
+| Hriday (`PlanResult`, integration) | Optional `PlanResult.evidence` (v0.5), filled by the pipeline with facts about shown stops only (section 5) | yes | approved 2026-11-14 — [PR #66 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/66#issuecomment-6884062515) |
+| Ian (grounding metric) | `claim_support` resolves `kg:` ids through `result.evidence` | for section 5 | approved 2026-11-15 — [PR #66 review](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/66#pullrequestreview-5909097798) |

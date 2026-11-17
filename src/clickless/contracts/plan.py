@@ -13,7 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .data import Connector
-from .provenance import Claim
+from .provenance import Claim, Evidence
 from .request import ClarificationQuestion, TripRequest
 
 
@@ -126,6 +126,11 @@ class PlanResult(BaseModel):
     relaxation: Relaxation | None = None
     clarification: ClarificationQuestion | None = None
     verification: VerificationReport | None = None
+
+    # Config C stores only KG facts associated with plans shown to the driver.
+    # Configs A/B and the C-without-KG ablation leave this list empty.
+    evidence: list[Evidence] = Field(default_factory=list)
+
     explanation: str = ""
     claims: list[Claim] = Field(default_factory=list)
     handoff_urls: list[str] = Field(default_factory=list)  # empty until the user approves

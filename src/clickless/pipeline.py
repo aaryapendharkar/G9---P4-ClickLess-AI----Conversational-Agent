@@ -17,6 +17,7 @@ from .config import repo_path
 from .contracts import (
     Alternative,
     ClarificationQuestion,
+    Evidence,
     ParseResult,
     PlanResult,
     Route,
@@ -35,6 +36,7 @@ from .nlu.spacy_parser import SpacyParser
 from .planning.filters import DefaultHardConstraintFilter
 from .planning.planner import ItineraryPlanner
 from .planning.relaxation import MinCostRelaxer
+from .planning.result_evidence import collect_shown_evidence
 from .planning.route_cache import OSRMRouteCache
 from .planning.route_measurement import (
     GeometricRouteMeasurer,
@@ -324,8 +326,8 @@ class Pipeline:
         vehicle: Vehicle,
         route: Route,
         lap=lambda _name: None,
-    ) -> tuple[list[Alternative], list[str]]:
-        """Return feasible alternatives and notes about rejected stations.
+    ) -> tuple[list[Alternative], list[str], list[Evidence]]:
+        """Return alternatives, rejection notes, and their displayed evidence.
 
         This is the shared solving path for both the original request and,
         later, each request modification proposed by the relaxer. Keeping the
@@ -405,7 +407,7 @@ class Pipeline:
         lap("plan+verify")
 
         if not verified_itineraries:
-            return [], planning_notes
+            return [], planning_notes, []
 
         ranked_itineraries = self.ranker.rank(
             verified_itineraries,
@@ -415,10 +417,14 @@ class Pipeline:
             ranked_itineraries,
             request,
         )
+        selected_evidence = collect_shown_evidence(
+            alternatives,
+            candidates,
+        )
 
         lap("rank")
 
-        return alternatives, planning_notes
+        return alternatives, planning_notes, selected_evidence
 
     def plan_request(
         self, req: TripRequest, result: PlanResult, lap=lambda _n: None
@@ -432,7 +438,11 @@ class Pipeline:
         self._routes[req.request_id] = route
         lap("route")
 
-        result.alternatives, planning_notes = self._solve_request(
+        (
+            result.alternatives,
+            planning_notes,
+            result.evidence,
+        ) = self._solve_request(
             req,
             vehicle,
             route,
@@ -442,6 +452,7 @@ class Pipeline:
 
         if not result.alternatives:
             result.status = "infeasible"
+            successful_relaxation_evidence: list[Evidence] = []
 
             def solve_relaxed_request(
                 relaxed_request: TripRequest,
@@ -454,17 +465,30 @@ class Pipeline:
                 attempt.
                 """
 
-                alternatives, _planning_notes = self._solve_request(
+                nonlocal successful_relaxation_evidence
+
+                (
+                    alternatives,
+                    _planning_notes,
+                    selected_evidence,
+                ) = self._solve_request(
                     relaxed_request,
                     vehicle,
                     route,
                 )
+                if alternatives:
+                    # MinCostRelaxer stops at the first feasible attempt. Only
+                    # that attempt is shown, so failed attempts cannot leak
+                    # their candidate evidence into the final result.
+                    successful_relaxation_evidence = selected_evidence
                 return alternatives
 
             result.relaxation = self.relaxer.find(
                 req,
                 solve_relaxed_request,
             )
+            if result.relaxation is not None:
+                result.evidence = successful_relaxation_evidence
             return self._finish(result)
 
         if getattr(self.ranker, "fallback_used", False):

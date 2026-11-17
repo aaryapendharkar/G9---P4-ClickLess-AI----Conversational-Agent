@@ -35,12 +35,6 @@ def test_vehicle_supported_connectors(store):
 # ---- contracts v0.4 (ADR 0009): THIRD_PARTY source, backward compatible ----
 
 
-def test_contracts_version_is_0_4():
-    from clickless.contracts import CONTRACTS_VERSION
-
-    assert CONTRACTS_VERSION == "0.4.0"
-
-
 def test_provenance_sources_v03_still_valid_and_third_party_added():
     from datetime import datetime, timezone
 
@@ -54,3 +48,56 @@ def test_provenance_sources_v03_still_valid_and_third_party_added():
         assert Provenance(source=source, retrieved_at=now, status=DataStatus.STATIC).source == source
     with pytest.raises(pydantic.ValidationError):
         Provenance(source="WIKIPEDIA", retrieved_at=now, status=DataStatus.STATIC)
+
+
+# ---- contracts v0.5 (ADR 0015): additive PlanResult evidence ----
+
+
+def test_contracts_version_is_0_5():
+    from clickless.contracts import CONTRACTS_VERSION
+
+    assert CONTRACTS_VERSION == "0.5.0"
+
+
+def test_plan_result_evidence_is_optional_and_round_trips():
+    from datetime import datetime, timezone
+
+    from clickless.contracts import (
+        DataStatus,
+        Evidence,
+        PlanResult,
+        Provenance,
+    )
+
+    # Results saved before contract v0.5 do not contain an evidence field.
+    # They must remain loadable and receive the new empty default.
+    legacy_payload = {
+        "request_id": "legacy-result",
+        "config": "A",
+        "status": "error",
+    }
+    legacy_result = PlanResult.model_validate(legacy_payload)
+
+    assert legacy_result.evidence == []
+
+    station_name_evidence = Evidence(
+        evidence_id="kg:FIX-ST-004:name",
+        subject_id="FIX-ST-004",
+        field="name",
+        value="Fixture Camp Verde Hub",
+        provenance=Provenance(
+            source="SYNTHETIC",
+            source_record_id="FIX-ST-004",
+            retrieved_at=datetime(2026, 11, 15, tzinfo=timezone.utc),
+            status=DataStatus.STATIC,
+        ),
+    )
+    result_with_evidence = legacy_result.model_copy(
+        update={"evidence": [station_name_evidence]}
+    )
+
+    restored_result = PlanResult.model_validate_json(
+        result_with_evidence.model_dump_json()
+    )
+
+    assert restored_result.evidence == [station_name_evidence]

@@ -31,7 +31,7 @@ def test_solver_returns_ranked_alternatives_and_rejection_notes(pipe_a, demo_tex
     )
     completed_phases: list[str] = []
 
-    alternatives, rejection_notes = pipe_a._solve_request(
+    alternatives, rejection_notes, selected_evidence = pipe_a._solve_request(
         request,
         vehicle,
         route,
@@ -43,6 +43,7 @@ def test_solver_returns_ranked_alternatives_and_rejection_notes(pipe_a, demo_tex
     assert alternatives[0].itinerary.request_id == request.request_id
     assert completed_phases == ["retrieve", "plan+verify", "rank"]
     assert "skipped FIX-ST-008: access:restricted" in rejection_notes
+    assert selected_evidence == []
 
 
 def test_solver_returns_no_alternatives_when_power_requirement_is_impossible(
@@ -61,7 +62,7 @@ def test_solver_returns_no_alternatives_when_power_requirement_is_impossible(
     )
     completed_phases: list[str] = []
 
-    alternatives, rejection_notes = pipe_a._solve_request(
+    alternatives, rejection_notes, selected_evidence = pipe_a._solve_request(
         impossible_request,
         vehicle,
         route,
@@ -69,6 +70,7 @@ def test_solver_returns_no_alternatives_when_power_requirement_is_impossible(
     )
 
     assert alternatives == []
+    assert selected_evidence == []
     assert completed_phases == ["retrieve", "plan+verify"]
     assert any(note.endswith(": power") for note in rejection_notes)
 
