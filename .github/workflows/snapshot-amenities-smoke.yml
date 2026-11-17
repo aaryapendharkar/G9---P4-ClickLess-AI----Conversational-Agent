@@ -1,0 +1,62 @@
+# Smoke test for the Geofabrik extract path of "snapshot amenities" (issue #36): on pull requests that
+# change it, process one small state end to end against the published stations-only snapshot and
+# post the counts as a PR comment. Publishes nothing.
+name: snapshot amenities smoke
+
+on:
+  pull_request:
+    paths:
+      - src/clickless/data/osm_extract.py
+      - src/clickless/data/add_amenities.py
+      - .github/scripts/osm-extract-amenities.sh
+      - .github/workflows/snapshot-amenities*.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - run: sudo apt-get update -q && sudo apt-get install -y -q osmium-tool && osmium --version
+      - name: Download the stations-only snapshot
+        run: |
+          gh release download snapshot-v1-draft-stations --pattern '*.zip' --dir downloaded
+          mkdir -p data/snapshot && unzip -o downloaded/*.zip -d data/snapshot
+          python -m clickless.data.snapshot_report --verify-only
+      - name: Delaware end to end
+        run: |
+          .github/scripts/osm-extract-amenities.sh data/snapshot us/delaware 2>&1 | tee smoke.log
+          python -m clickless.data.add_amenities --dir data/snapshot --from-raw data/raw/osm/extract_*.json 2>&1 | tee -a smoke.log
+          python -m clickless.data.snapshot_report --dir data/snapshot > report.md
+          python - <<'PY' >> smoke.log
+          import json
+          from collections import Counter
+          from clickless.data.loaders import DataStore
+          s = DataStore.from_dir("data/snapshot")
+          print("amenities by category:", dict(Counter(a.category.value for a in s.amenities)))
+          print("restrooms wheelchair:", dict(Counter(a.wheelchair for a in s.amenities if a.category.value == "restroom")))
+          print("sample:", [(a.amenity_id, a.name, a.category.value) for a in s.amenities[:5]])
+          raw = json.load(open("data/raw/osm/extract_delaware.json"))["_meta"]
+          print("extract meta:", {k: raw[k] for k in ("retrieved_at", "endpoint", "match_stats")})
+          PY
+      - name: Comment the result on the PR
+        if: always()
+        run: |
+          {
+            echo "**snapshot amenities smoke test** (run ${{ github.run_id }}, ${{ job.status }}): Delaware via Geofabrik + osmium"
+            echo '```'
+            tail -n 40 smoke.log 2>/dev/null || echo "no log"
+            echo '```'
+            grep -E "verify_manifest|amenities \||Blocking|Warnings" report.md 2>/dev/null || true
+          } > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md

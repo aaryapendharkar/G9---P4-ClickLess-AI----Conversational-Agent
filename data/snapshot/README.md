@@ -84,3 +84,11 @@ and add the amenities separately:
   `python -m clickless.data.add_amenities --dir data/snapshot`, then `make snapshot-report ARGS="--pack ..."`.
 
 Stations, vehicles and places are not changed; only `amenities.json` and `MANIFEST.json` are.
+
+**Where the amenities come from (default).** The workflow's `method: extract` downloads Geofabrik's US
+census-region `.osm.pbf` files (plus Puerto Rico and the US Virgin Islands when available), keeps only
+the tags the Overpass query asks for (`osmium tags-filter`), exports them (`osmium export`), and matches
+them to the target stations within 400 m (`python -m clickless.data.osm_extract match`). The result goes
+through the same normalization as Overpass answers (`add_amenities --from-raw`). The data date is each
+extract's replication timestamp, recorded in `MANIFEST.json` under `sources.osm.extracts`.
+`method: overpass` is kept for small updates.

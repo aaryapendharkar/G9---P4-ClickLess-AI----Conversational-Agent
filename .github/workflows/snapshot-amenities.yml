@@ -1,6 +1,8 @@
 # Adds OpenStreetMap amenities to the stations-only snapshot on GitHub's servers and publishes the
 # result as a pre-release (issue #36). Owner: Aarya. Run it from the Actions tab: "snapshot amenities"
 # -> "Run workflow". No API key is needed: stations come from the published stations-only release.
+# method "extract" (default) reads Geofabrik's US region files with osmium; "overpass" queries the
+# public Overpass servers, which could not serve the full-US query in November 2026.
 name: snapshot amenities
 
 on:
@@ -14,8 +16,13 @@ on:
         description: "Release to publish the snapshot with amenities to"
         default: snapshot-v1-draft
         required: true
+      method:
+        description: "Where the OSM data comes from"
+        type: choice
+        options: [extract, overpass]
+        default: extract
       batch_size:
-        description: "Stations per Overpass request (smaller = quicker answers, more requests)"
+        description: "Overpass only: stations per request"
         default: "50"
         required: true
 
@@ -57,9 +64,24 @@ jobs:
           key: osm-batches-${{ github.run_id }}
           restore-keys: osm-batches-
 
+      - name: Install osmium
+        if: inputs.method == 'extract'
+        run: sudo apt-get update -q && sudo apt-get install -y -q osmium-tool && osmium --version
+
+      # US census-region files, then the territories (optional). Matched regions are cached, so a
+      # re-run resumes. The step stops before the job limit so the cache can still be saved.
+      - name: Match OSM amenities from Geofabrik extracts
+        if: inputs.method == 'extract'
+        timeout-minutes: 320
+        run: |
+          .github/scripts/osm-extract-amenities.sh data/snapshot \
+            us/us-midwest us/us-northeast us/us-pacific us/us-south us/us-west \
+            'us/puerto-rico?' 'us/us-virgin-islands?'
+          python -m clickless.data.add_amenities --dir data/snapshot --from-raw data/raw/osm/extract_*.json
+
       # The mirror first: overpass-api.de refuses connections from GitHub's runners (run of 2026-11-17).
-      # The step stops before the job limit so the next step can still save the batches done so far.
       - name: Fetch OSM amenities (public mirror, then the main Overpass server)
+        if: inputs.method == 'overpass'
         timeout-minutes: 320
         run: >-
           python -m clickless.data.add_amenities --dir data/snapshot
@@ -80,7 +102,7 @@ jobs:
           {
             echo "**Draft snapshot with amenities. Not frozen.** Issue #36."
             echo
-            echo "Built by the \`snapshot amenities\` workflow (run ${{ github.run_id }}) from \`${{ inputs.source_release }}\` + OpenStreetMap amenities (\`python -m clickless.data.add_amenities\`). Stations, vehicles and places are unchanged from \`${{ inputs.source_release }}\`."
+            echo "Built by the \`snapshot amenities\` workflow (run ${{ github.run_id }}, method: ${{ inputs.method }}) from \`${{ inputs.source_release }}\` + OpenStreetMap amenities. Stations, vehicles and places are unchanged from \`${{ inputs.source_release }}\`. OSM data © OpenStreetMap contributors, ODbL."
             echo
             echo "Use: unzip into \`data/snapshot/\`, run \`make snapshot-verify\` (expect \`[] (intact)\`), then run with \`CLICKLESS_DATA_SOURCE=snapshot\`."
             echo
