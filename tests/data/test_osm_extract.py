@@ -143,9 +143,10 @@ def test_us_extracts_are_the_states_and_territories_only():
         ("us/puerto-rico", "us", f"{GF}/north-america/us/puerto-rico-latest.osm.pbf"),
         ("us/us-virgin-islands", "us", f"{GF}/north-america/us/us-virgin-islands-latest.osm.pbf"),
         ("us/nowhere", "us", None),
+        ("delaware", "united-states", f"{GF}/north-america/us/delaware-latest.osm.pbf"),  # any parent label
     )
     assert [ox.extract_name(u) for u in ox.us_extract_urls(index)] == [
-        "alabama", "georgia", "puerto-rico", "us-virgin-islands"]
+        "alabama", "delaware", "georgia", "puerto-rico", "us-virgin-islands"]
 
 
 def test_fallback_list_covers_every_state_dc_and_territories():
@@ -186,3 +187,9 @@ def test_regions_cli_refuses_a_short_list(tmp_path, capsys):
                     encoding="utf-8")
     assert ox.main(["regions", "--index", str(path)]) == 1
     assert "::error" in capsys.readouterr().err
+
+
+def test_index_sample_explains_an_unexpected_index():
+    assert "top-level keys" in ox.index_sample({"type": "x"})
+    sample = ox.index_sample(_index(("us/alabama", "us", f"{GF}/north-america/us/alabama-latest.osm.pbf")))
+    assert "1 entries" in sample and "alabama" in sample
