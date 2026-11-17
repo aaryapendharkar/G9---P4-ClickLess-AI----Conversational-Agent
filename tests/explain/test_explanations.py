@@ -63,3 +63,44 @@ def test_infeasible_connector_request_explains_vehicle_support(store):
     assert "cannot use the requested connector(s): CHADEMO" in explanation
     assert "CCS1" in explanation and "NACS" in explanation
     assert claims == []
+
+
+def test_grounded_explanation_cites_plan_evidence_when_present(pipe_a, store, demo_text):
+    from clickless.contracts import Evidence
+
+    result = pipe_a.run(demo_text, request_id="evidence-1")
+    stop = result.alternatives[0].itinerary.stops[0]
+    station = store.station(stop.station_id)
+    evidence = [
+        Evidence(
+            evidence_id=f"kg:{stop.station_id}:name",
+            subject_id=stop.station_id,
+            field="name",
+            value=station.name,
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id=f"kg:{stop.station_id}:ports[0].connector",
+            subject_id=stop.station_id,
+            field="ports[0].connector",
+            value=stop.connector.value,
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id=f"kg:{stop.station_id}:ports[0].power_kw",
+            subject_id=stop.station_id,
+            field="ports[0].power_kw",
+            value=stop.port_power_kw,
+            provenance=station.provenance,
+        ),
+    ]
+    grounded_result = result.model_copy(update={"evidence": evidence})
+
+    _, claims = GroundedLLMExplainer(store, {}).explain(grounded_result)
+
+    assert claims[0].supported_by[:3] == [
+        f"kg:{stop.station_id}:name",
+        f"kg:{stop.station_id}:ports[0].connector",
+        f"kg:{stop.station_id}:ports[0].power_kw",
+    ]
+    assert "verified:evidence-1:stop:0" in claims[0].supported_by
