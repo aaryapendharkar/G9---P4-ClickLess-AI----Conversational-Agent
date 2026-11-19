@@ -10,7 +10,7 @@ caller. No strategy trusts values copied into a planner-produced itinerary.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from ..common.geo import nearest_on_polyline, polyline_length_km
@@ -56,6 +56,21 @@ class ItineraryRouteMeasurement:
         """Return the total estimated detour across all charging stops."""
 
         return sum(self.stop_detour_min)
+
+
+@dataclass
+class _GeometricRouteCache:
+    """Measurements reused while planning several itineraries on one route."""
+
+    route_signature: tuple
+    geometry: tuple[tuple[float, float], ...]
+    geometry_distance_km: float
+    road_distance_scale: float
+    minutes_per_km: float
+    station_projections: dict[
+        tuple[str, float, float],
+        tuple[float, int, float],
+    ] = field(default_factory=dict)
 
 
 class ItineraryRouteMeasurer(Protocol):
@@ -136,22 +151,41 @@ class TemporaryFailureFallbackMeasurer:
 
 
 class GeometricRouteMeasurer:
-    """Deterministic Configuration A measurement strategy."""
+    """Deterministic Configuration A measurement strategy.
+
+    Planning evaluates several itineraries for the same request. Route geometry
+    and station projections do not change between those itineraries, so this
+    measurer keeps them for the active route and discards them when the route
+    changes.
+    """
 
     def __init__(self, energy_config: dict[str, Any]) -> None:
         self.energy_config = energy_config
+        self._route_cache: _GeometricRouteCache | None = None
 
     def measure(
         self,
         route: Route,
         stations: Sequence[Station],
     ) -> ItineraryRouteMeasurement:
-        """Measure from cached geometry and authoritative station records."""
+        """Measure using values cached for the active route and its stations."""
 
-        return measure_itinerary_route(
+        route_signature = _route_signature(route)
+
+        if (
+            self._route_cache is None
+            or self._route_cache.route_signature != route_signature
+        ):
+            self._route_cache = _build_geometric_route_cache(
+                route,
+                route_signature,
+            )
+
+        return _measure_itinerary_with_cache(
             route,
             stations,
             self.energy_config,
+            self._route_cache,
         )
 
 
@@ -291,38 +325,104 @@ class OSRMRouteMeasurer:
         )
 
 
-def measure_itinerary_route(
+def _route_signature(route: Route) -> tuple:
+    """Return the route values that determine every geometric measurement."""
+
+    geometry = tuple((point.lat, point.lon) for point in route.geometry)
+
+    return (
+        route.route_id,
+        geometry,
+        route.distance_km,
+        route.duration_min,
+    )
+
+
+def _build_geometric_route_cache(
     route: Route,
-    stations: Sequence[Station],
-    energy_config: dict[str, Any],
-) -> ItineraryRouteMeasurement:
-    """Measure a route through the supplied charging stations.
+    route_signature: tuple,
+) -> _GeometricRouteCache:
+    """Calculate route-wide values once for all candidate itineraries."""
 
-    Station order comes from the itinerary. Station positions and distances
-    come from authoritative station coordinates and cached route geometry.
-    """
-
-    # The polyline is the shape of the cached route. Its geometric length and
-    # the route's reported road length differ, so we calculate a scale below.
-    geometry = [(point.lat, point.lon) for point in route.geometry]
+    geometry = route_signature[1]
     geometry_distance_km = polyline_length_km(geometry)
 
     if geometry_distance_km <= 0:
         raise ValueError("route geometry must have a positive length")
 
-    # The cached route stores road distance, while the geometry length is a
-    # straight-line approximation. This scale converts positions along the
-    # geometry into approximate positions along the road.
-    road_distance_scale = route.distance_km / geometry_distance_km
+    if route.distance_km <= 0:
+        raise ValueError("route distance must be positive")
+
+    return _GeometricRouteCache(
+        route_signature=route_signature,
+        geometry=geometry,
+        geometry_distance_km=geometry_distance_km,
+        road_distance_scale=route.distance_km / geometry_distance_km,
+        minutes_per_km=route.duration_min / route.distance_km,
+    )
+
+
+def _station_projection(
+    cache: _GeometricRouteCache,
+    station: Station,
+) -> tuple[float, int, float]:
+    """Return one station projection, calculating it once per active route."""
+
+    station_key = (
+        station.station_id,
+        station.lat,
+        station.lon,
+    )
+
+    if station_key not in cache.station_projections:
+        cache.station_projections[station_key] = nearest_on_polyline(
+            station.lat,
+            station.lon,
+            cache.geometry,
+        )
+
+    return cache.station_projections[station_key]
+
+
+def measure_itinerary_route(
+    route: Route,
+    stations: Sequence[Station],
+    energy_config: dict[str, Any],
+) -> ItineraryRouteMeasurement:
+    """Measure one itinerary without retaining values between calls.
+
+    Pipeline code normally uses GeometricRouteMeasurer, which retains the
+    active-route cache. This function remains useful for isolated calculations
+    and tests where persistent state is unnecessary.
+    """
+
+    route_signature = _route_signature(route)
+    route_cache = _build_geometric_route_cache(
+        route,
+        route_signature,
+    )
+
+    return _measure_itinerary_with_cache(
+        route,
+        stations,
+        energy_config,
+        route_cache,
+    )
+
+
+def _measure_itinerary_with_cache(
+    route: Route,
+    stations: Sequence[Station],
+    energy_config: dict[str, Any],
+    route_cache: _GeometricRouteCache,
+) -> ItineraryRouteMeasurement:
+    """Build itinerary legs from cached route and station measurements."""
 
     detour_config = energy_config["placeholder_detour"]
     road_factor = detour_config["road_factor"]
     fixed_detour_min = detour_config["fixed_min"]
     offroute_speed_kmh = detour_config["offroute_speed_kmh"]
 
-    # Build one ordered list: origin, every charging station, destination.
-    # Keeping all three point types together makes consecutive leg creation
-    # straightforward and avoids special cases for one-stop or multi-stop trips.
     measured_points: list[MeasuredRoutePoint] = [
         MeasuredRoutePoint(
             label="route origin",
@@ -338,16 +438,23 @@ def measure_itinerary_route(
             straight_line_offroute_km,
             _nearest_segment_index,
             along_geometry_km,
-        ) = nearest_on_polyline(
-            station.lat,
-            station.lon,
-            geometry,
+        ) = _station_projection(
+            route_cache,
+            station,
         )
 
-        along_road_km = along_geometry_km * road_distance_scale
+        projected_along_road_km = along_geometry_km * route_cache.road_distance_scale
+
+        # A projection belongs to the closed interval from route origin to
+        # route destination. Different floating-point summation paths can put
+        # a point at the final geometry vertex a tiny fraction beyond the
+        # reported road length.
+        along_road_km = min(
+            max(projected_along_road_km, 0.0),
+            route.distance_km,
+        )
         offroute_road_km = straight_line_offroute_km * road_factor
 
-        # A complete stop detour includes leaving the route and returning to it.
         round_trip_offroute_km = 2 * offroute_road_km
         detour_min = (
             fixed_detour_min + 60.0 * round_trip_offroute_km / offroute_speed_kmh
@@ -373,14 +480,11 @@ def measure_itinerary_route(
         )
     )
 
-    # Adjacent points define legs. With N charging stops this produces N + 1
-    # legs, matching the structure checked by the verifier.
-    minutes_per_km = route.duration_min / route.distance_km
     measured_legs = tuple(
         _measure_leg(
             measured_points[index],
             measured_points[index + 1],
-            minutes_per_km,
+            route_cache.minutes_per_km,
         )
         for index in range(len(measured_points) - 1)
     )
