@@ -17,6 +17,7 @@ Steps
        paired.csv         A vs B, A vs C, B vs C, C vs C-noKG (when run): McNemar (success rates),
                           Wilcoxon (per-item scores)
        breakdown.csv      by author / category / route_type, with item counts
+       errors.csv         errored items by stage (parse / planning) and error type
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
        metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id,
                           LLM GPU share, keep-alive
@@ -28,8 +29,15 @@ its configs ran on different snapshots, or when run_all's record disagrees with 
 Metric sources (no metric is reimplemented here)
   * Request understanding (field F1, exact match, clarification F1, silent-assumption rate) is
     recomputed from the per-item rows with evaluation.metrics.request_understanding, and its CIs
-    with understanding_cis (percentile bootstrap, seed 573). Error rate (status "error" or
-    "not_implemented") uses evaluation.metrics.stats.bootstrap_ci.
+    with understanding_cis (percentile bootstrap, seed 573). Field F1 and exact match use
+    city-level place matching (primary); the "(strict)" columns also require the gold's state
+    suffix, which exists for geocoding (see that module's docstring). Every item with a parsed
+    request is scored, including items whose planning later failed.
+  * Errors (status "error" or "not_implemented") are split by stage: parse_error_rate (no parsed
+    request) and planning_error_rate (parsed, then failed, e.g. route not cached). The stage and
+    type come from the harness row ("error_stage", "error_type"), else from the result: a
+    request means planning, and a "no cached route" note means RouteNotCached. Rates are over
+    all items, with CIs from evaluation.metrics.stats.bootstrap_ci.
   * Plan feasibility / hard-violation rate (metrics.planning.feasibility), grounding
     (metrics.grounding.claim_support_rate) and freshness (metrics.freshness.
     freshness_mislabel_rate) are read from the harness's metric blocks. Their CI is taken from
@@ -70,7 +78,7 @@ from .metrics.request_understanding import (
     understanding_cis,
 )
 from .metrics.stats import bootstrap_ci, mcnemar, wilcoxon
-from .schema import BenchmarkItem, load_items
+from .schema import BenchmarkItem, FixtureItemsRefused, load_items
 from .snapshot_id import snapshot_info
 
 CONFIGS = ("A", "B", "C")
@@ -85,16 +93,21 @@ INPUTS_FILE = "report_inputs.json"
 NA = "n/a"
 _ERROR_STATUSES = ("error", "not_implemented")
 LLM_PARSED = ("llm", "rules_fallback")
+ERROR_STAGES = ("parse", "planning")
 _REPORT_FILES = {INPUTS_FILE}
 
 # (column, label, where the value comes from). "understanding" metrics are recomputed from rows;
-# ("block", path, key) metrics are read from the result JSON's metric blocks.
+# ("error_rate", stage) from the rows' error stages; ("block", path, key) metrics are read from
+# the result JSON's metric blocks.
 HEADLINE: tuple[tuple[str, str, tuple], ...] = (
     ("field_f1", "Field F1 (micro)", ("understanding", "micro_f1")),
+    ("field_f1_strict", "Field F1 (strict)", ("understanding", "micro_f1_strict")),
     ("exact_match", "Exact match", ("understanding", "exact_match")),
+    ("exact_match_strict", "Exact match (strict)", ("understanding", "exact_match_strict")),
     ("clarification_f1", "Clarification F1", ("understanding", "clarification_f1")),
     ("silent_assumption_rate", "Silent-assumption rate", ("understanding", "silent_assumption_rate")),
-    ("error_rate", "Error rate", ("error_rate",)),
+    ("parse_error_rate", "Parse error rate", ("error_rate", "parse")),
+    ("planning_error_rate", "Planning error rate", ("error_rate", "planning")),
     ("plan_feasibility_rate", "Plan feasibility", ("block", ("planning", "feasibility"), "plan_feasibility_rate")),
     ("hard_violation_rate", "Hard-violation rate", ("block", ("planning", "feasibility"), "hard_violation_rate")),
     ("claim_support_rate", "Grounding (claim support)", ("block", ("grounding",), "claim_support_rate")),
@@ -186,6 +199,8 @@ def run_all(
             inputs["snapshot_id"][config] = snapshot_id(config)
             out = runner(config, split, None, out_dir=rel_dir, items_paths=items_paths, n_boot=n_boot)
             inputs["outputs"][config] = Path(out).name
+        except FixtureItemsRefused:
+            raise  # wrong items for this data source: applies to every config, so stop
         except Exception as e:  # noqa: BLE001 - one failing config must not hide the others
             inputs["failed"][config] = f"{type(e).__name__}: {e}"
     (run_dir / INPUTS_FILE).write_text(json.dumps(inputs, indent=2), encoding="utf-8")
@@ -209,6 +224,7 @@ class ConfigRun:
         self.results: dict[str, PlanResult] = {}
         self.status: dict[str, str] = {}
         self.latency: dict[str, float] = {}
+        self.error: dict[str, tuple[str, str]] = {}  # item id -> (stage, type) for errored items
         for row in self.rows:
             item = items_by_id.get(row["id"])
             if item is None:
@@ -219,6 +235,8 @@ class ConfigRun:
                 self.latency[item.id] = float(row["latency_ms"])
             if row.get("result") is not None:
                 self.results[item.id] = PlanResult.model_validate(row["result"])
+            if self.errored(item.id):
+                self.error[item.id] = error_stage_and_type(row, self.results.get(item.id))
 
     def pairs(self, ids: Sequence[str] | None = None) -> tuple[list[BenchmarkItem], list[PlanResult]]:
         """(items, results) for item ids that produced a PlanResult, in id order."""
@@ -227,6 +245,25 @@ class ConfigRun:
 
     def errored(self, item_id: str) -> bool:
         return self.status.get(item_id) in _ERROR_STATUSES or item_id not in self.results
+
+    def errored_at(self, item_id: str, stage: str) -> bool:
+        return self.error.get(item_id, ("", ""))[0] == stage
+
+
+def error_stage_and_type(row: Mapping[str, Any], result: PlanResult | None) -> tuple[str, str]:
+    """(stage, type) of one errored row: the harness's error_stage / error_type when recorded,
+    else derived from the result (a parsed request means a planning error)."""
+    stage = row.get("error_stage") or ("planning" if result is not None and result.request is not None else "parse")
+    kind = row.get("error_type")
+    if not kind:
+        notes = " ".join(result.notes) if result is not None else ""
+        if "no cached route" in notes:
+            kind = "RouteNotCached"
+        elif row.get("status") == "not_implemented":
+            kind = "NotImplementedError"
+        else:
+            kind = "unknown"
+    return str(stage), str(kind)
 
 
 def _items_for(payload: Mapping[str, Any]) -> dict[str, BenchmarkItem]:
@@ -294,7 +331,9 @@ def _understanding(items, results, n_boot: int) -> dict[str, tuple[float | None,
     cis = understanding_cis(items, results, n=n_boot)
     return {
         "micro_f1": (_num(ext["micro_f1"]), _ci(cis.get("micro_f1"))),
+        "micro_f1_strict": (_num(ext["micro_f1_strict"]), _ci(cis.get("micro_f1_strict"))),
         "exact_match": (_num(ext["exact_match"]), _ci(cis.get("exact_match"))),
+        "exact_match_strict": (_num(ext["exact_match_strict"]), _ci(cis.get("exact_match_strict"))),
         "clarification_f1": (_num(clar["f1"]), _ci(cis.get("clarification_f1"))),
         "silent_assumption_rate": (_num(silent["silent_assumption_rate"]), _ci(cis.get("silent_assumption_rate"))),
     }
@@ -304,12 +343,12 @@ def headline(run: ConfigRun, n_boot: int = 10_000) -> dict[str, tuple[float | No
     """column -> (value or None, CI or None) for every HEADLINE metric."""
     items, results = run.pairs()
     und = _understanding(items, results, n_boot)
-    errors = [float(run.errored(i)) for i in sorted(run.items)]
     out: dict[str, tuple[float | None, tuple[float, float] | None]] = {}
     for column, _label, source in HEADLINE:
         if source[0] == "understanding":
             out[column] = und.get(source[1], (None, None))
         elif source[0] == "error_rate":
+            errors = [float(run.errored_at(i, source[1])) for i in sorted(run.items)]
             out[column] = (sum(errors) / len(errors), _ci(bootstrap_ci(errors, n=n_boot))) if errors else (None, None)
         else:
             block = _block(run.metrics, source[1])
@@ -332,7 +371,7 @@ def per_item(run: ConfigRun, item_id: str) -> dict[str, Any]:
             "field_f1": None,
             "latency_ms": run.latency.get(item_id),
         }
-    counts = item_field_counts(item, result)
+    counts = item_field_counts(item, result, level="city")  # primary, as in the headline
     f1 = prf(
         sum(c[0] for c in counts.values()), sum(c[1] for c in counts.values()), sum(c[2] for c in counts.values())
     )["f1"]
@@ -450,14 +489,35 @@ def breakdown(run: ConfigRun) -> list[dict[str, Any]]:
                     "group": group,
                     "n_items": len(ids),
                     "n_with_result": len(items),
-                    "error_rate": sum(run.errored(i) for i in ids) / len(ids),
+                    **{f"{s}_error_rate": sum(run.errored_at(i, s) for i in ids) / len(ids) for s in ERROR_STAGES},
                     "field_f1": _num(ext.get("micro_f1")),
+                    "field_f1_strict": _num(ext.get("micro_f1_strict")),
                     "exact_match": _num(ext.get("exact_match")),
+                    "exact_match_strict": _num(ext.get("exact_match_strict")),
                     "clarification_f1": _num(clar.get("f1")),
                     "silent_assumption_rate": _num(silent.get("silent_assumption_rate")),
                 }
             )
     return out
+
+
+def error_groups(run: ConfigRun) -> list[dict[str, Any]]:
+    """Errored items grouped by (stage, type), with counts, shares of all items and example ids."""
+    groups: dict[tuple[str, str], list[str]] = {}
+    for item_id in sorted(run.error):
+        groups.setdefault(run.error[item_id], []).append(item_id)
+    n = len(run.items)
+    return [
+        {
+            "config": run.config,
+            "stage": stage,
+            "error_type": kind,
+            "n": len(ids),
+            "share_of_items": len(ids) / n if n else None,
+            "example_ids": " ".join(ids[:5]),
+        }
+        for (stage, kind), ids in sorted(groups.items())
+    ]
 
 
 # --------------------------------------------------------------------------- step 2: write
@@ -586,13 +646,21 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "group",
         "n_items",
         "n_with_result",
-        "error_rate",
+        "parse_error_rate",
+        "planning_error_rate",
         "field_f1",
+        "field_f1_strict",
         "exact_match",
+        "exact_match_strict",
         "clarification_f1",
         "silent_assumption_rate",
     ]
     _write_csv(run_dir / "breakdown.csv", br_rows, br_fields)
+
+    # Errors by stage and type
+    err_rows = [r for c in configs if c in runs for r in error_groups(runs[c])]
+    err_fields = ["config", "stage", "error_type", "n", "share_of_items", "example_ids"]
+    _write_csv(run_dir / "errors.csv", err_rows, err_fields)
 
     # Findings
     find_rows = [
@@ -675,10 +743,19 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         lines += ["**Latency warning:**", ""] + [f"- {w}" for w in share_warnings] + [""]
     if failed:
         lines += ["**Failed configs:**", ""] + [f"- {c}: {msg}" for c, msg in sorted(failed.items())] + [""]
+    excluded = {c: list(r.payload.get("excluded_fixture_items") or []) for c, r in runs.items()}
+    if any(excluded.values()):
+        lines += [
+            "Fixture-world items skipped on snapshot data: "
+            + "; ".join(f"{c}: {', '.join(ids)}" for c, ids in sorted(excluded.items()) if ids),
+            "",
+        ]
     lines += [
         "## Headline",
         "",
         "Value [95 % CI]. n/a = metric block missing or not implemented; [CI n/a] = the metric block reports no CI.",
+        "Field F1 and exact match compare places at city level; (strict) also requires the gold's state, "
+        "which annotators add for geocoding. Parse / planning error rates are over all items.",
         "",
     ]
     lines += _md_table(["Config", "n"] + [label for _c, label, _s in HEADLINE], md_head)
@@ -725,6 +802,17 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
             ],
         )
     lines += [f"- {s}" for s in skipped_pairs]
+    lines += ["", "## Errors by stage and type", ""]
+    if err_rows:
+        lines += _md_table(
+            ["Config", "Stage", "Error type", "n", "Share of items", "Examples"],
+            [
+                [r["config"], r["stage"], r["error_type"], str(r["n"]), _fmt(r["share_of_items"]), r["example_ids"]]
+                for r in err_rows
+            ],
+        )
+    else:
+        lines.append("No errors.")
     lines += ["", "## Breakdowns", ""]
     for dim in BREAKDOWNS:
         rows = [r for r in br_rows if r["dimension"] == dim]
@@ -733,15 +821,19 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
             lines += [NA, ""]
             continue
         lines += _md_table(
-            ["Config", dim, "n", "Error rate", "Field F1", "Exact match", "Clarification F1", "Silent-assumption"],
+            ["Config", dim, "n", "Parse err", "Planning err", "Field F1", "F1 (strict)", "Exact match",
+             "EM (strict)", "Clarification F1", "Silent-assumption"],
             [
                 [
                     r["config"],
                     r["group"],
                     str(r["n_items"]),
-                    _fmt(r["error_rate"]),
+                    _fmt(r["parse_error_rate"]),
+                    _fmt(r["planning_error_rate"]),
                     _fmt(r["field_f1"]),
+                    _fmt(r["field_f1_strict"]),
                     _fmt(r["exact_match"]),
+                    _fmt(r["exact_match_strict"]),
                     _fmt(r["clarification_f1"]),
                     _fmt(r["silent_assumption_rate"]),
                 ]
@@ -820,7 +912,7 @@ def main(argv: list[str] | None = None) -> None:
             else run_all(args.configs, args.split, args.final, args.out, args.items, args.n_boot)
         )
         print(build_report(run_dir, n_boot=args.n_boot))
-    except (SplitRefused, MixedSnapshots) as e:
+    except (SplitRefused, MixedSnapshots, FixtureItemsRefused) as e:
         raise SystemExit(f"refused: {e}") from e
 
 
