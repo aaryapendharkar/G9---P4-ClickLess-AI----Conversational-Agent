@@ -38,6 +38,43 @@ class _StationNameEnricher:
         return candidates
 
 
+class _RecordingEvidenceRanker:
+    """Record which ranking path the pipeline selects, then rank normally."""
+
+    def __init__(self, wrapped_ranker):
+        self.wrapped_ranker = wrapped_ranker
+        self.standard_rank_calls = 0
+        self.evidence_rank_calls = 0
+        self.received_candidate_count = 0
+
+    def rank(self, itineraries, request):
+        """Record use of the ordinary Config A/B ranking interface."""
+
+        self.standard_rank_calls += 1
+        return self.wrapped_ranker.rank(
+            itineraries,
+            request,
+        )
+
+    def rank_with_evidence(
+        self,
+        itineraries,
+        request,
+        candidates,
+    ):
+        """Record Config C candidate delivery without changing rank results."""
+
+        self.evidence_rank_calls += 1
+        self.received_candidate_count = len(candidates)
+
+        # The dispatch test is about which method receives candidates.
+        # Evidence arithmetic is tested separately in test_evidence_coverage.py.
+        return self.wrapped_ranker.rank(
+            itineraries,
+            request,
+        )
+
+
 def _shown_station_ids(alternatives):
     """Return unique displayed station ids in alternative and stop order."""
 
@@ -154,3 +191,46 @@ def test_configs_without_kg_do_not_build_enricher(config_name, store):
     pipeline = build_pipeline(load_config(config_name), store)
 
     assert pipeline.enricher is None
+
+
+def test_pipeline_uses_evidence_aware_ranking_after_enrichment(
+    pipe_a,
+    demo_text,
+):
+    """An active KG enricher sends enriched candidates to the capable ranker."""
+
+    pipe_a.enricher = _StationNameEnricher()
+    recording_ranker = _RecordingEvidenceRanker(pipe_a.ranker)
+    pipe_a.ranker = recording_ranker
+
+    result = pipe_a.run(
+        demo_text,
+        request_id="evidence-ranking-dispatch",
+    )
+
+    assert result.status == "ok"
+    assert recording_ranker.evidence_rank_calls == 1
+    assert recording_ranker.standard_rank_calls == 0
+    assert recording_ranker.received_candidate_count > 0
+
+
+def test_pipeline_preserves_standard_ranking_without_enrichment(
+    pipe_a,
+    demo_text,
+):
+    """Configs without KG enrichment must not receive evidence credit."""
+
+    assert pipe_a.enricher is None
+
+    recording_ranker = _RecordingEvidenceRanker(pipe_a.ranker)
+    pipe_a.ranker = recording_ranker
+
+    result = pipe_a.run(
+        demo_text,
+        request_id="standard-ranking-dispatch",
+    )
+
+    assert result.status == "ok"
+    assert recording_ranker.standard_rank_calls == 1
+    assert recording_ranker.evidence_rank_calls == 0
+    assert recording_ranker.received_candidate_count == 0
