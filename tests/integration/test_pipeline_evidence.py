@@ -6,8 +6,17 @@ import pytest
 
 from clickless.config import load_config
 from clickless.contracts import DataStatus, Evidence, PlanResult, Provenance
+from clickless.explain.tradeoff_presenter import render_cost_breakdown
 from clickless.pipeline import build_pipeline
+from clickless.ranking.weighted_ranker import WeightedRanker
 from clickless.retrieval.kg.enrich import KGEnricher
+
+
+class _NoOpEnricher:
+    """Represent the Config C ablation where KG evidence is disabled."""
+
+    def enrich(self, candidates, _request):
+        return candidates
 
 
 class _StationNameEnricher:
@@ -46,6 +55,16 @@ class _RecordingEvidenceRanker:
         self.standard_rank_calls = 0
         self.evidence_rank_calls = 0
         self.received_candidate_count = 0
+
+    @property
+    def fallback_used(self) -> bool:
+        """Expose the wrapped ranker's fallback state like production code."""
+
+        return getattr(
+            self.wrapped_ranker,
+            "fallback_used",
+            False,
+        )
 
     def rank(self, itineraries, request):
         """Record use of the ordinary Config A/B ranking interface."""
@@ -208,10 +227,38 @@ def test_pipeline_uses_evidence_aware_ranking_after_enrichment(
         request_id="evidence-ranking-dispatch",
     )
 
+    assert (
+        "logreg ranker not trained yet -- fell back to weighted cost"
+        in result.notes
+    )
     assert result.status == "ok"
     assert recording_ranker.evidence_rank_calls == 1
     assert recording_ranker.standard_rank_calls == 0
     assert recording_ranker.received_candidate_count > 0
+
+
+def test_no_op_enricher_does_not_activate_evidence_credit(
+    pipe_a,
+    cfg_a,
+):
+    """The C-without-KG ablation keeps evidence ranking disabled."""
+
+    pipe_a.enricher = _NoOpEnricher()
+    pipe_a.ranker = WeightedRanker(
+        cfg_a["tradeoffs"],
+        use_evidence=True,
+    )
+
+    result = pipe_a.run(
+        "Phoenix to Flagstaff in my comet with 90%",
+        request_id="no-kg-evidence-ablation",
+    )
+
+    assert result.status == "ok"
+    assert result.evidence == []
+    assert result.alternatives[0].itinerary.stops == []
+    assert result.alternatives[0].cost.evidence_credit_min == 0.0
+    assert "verified evidence" not in result.explanation
 
 
 def test_pipeline_preserves_standard_ranking_without_enrichment(
@@ -233,4 +280,37 @@ def test_pipeline_preserves_standard_ranking_without_enrichment(
     assert result.status == "ok"
     assert recording_ranker.standard_rank_calls == 1
     assert recording_ranker.evidence_rank_calls == 0
-    assert recording_ranker.received_candidate_count == 0
+
+
+def test_real_kg_ranking_displays_complete_cost_arithmetic(
+    pipe_a,
+    store,
+    cfg_a,
+    demo_text,
+):
+    """Real KG evidence must affect cost and appear in its explanation."""
+
+    pytest.importorskip("rdflib")
+    config_c = load_config("C")
+    pipe_a.enricher = KGEnricher(
+        store,
+        config_c["kg"],
+    )
+    pipe_a.ranker = WeightedRanker(
+        cfg_a["tradeoffs"],
+        use_evidence=True,
+    )
+
+    result = pipe_a.run(
+        demo_text,
+        request_id="real-kg-evidence-ranking",
+    )
+
+    assert result.status == "ok"
+    assert result.evidence
+
+    recommended_cost = result.alternatives[0].cost
+
+    assert recommended_cost.evidence_credit_min > 0.0
+    assert render_cost_breakdown(recommended_cost) in result.explanation
+    assert "verified evidence" in result.explanation

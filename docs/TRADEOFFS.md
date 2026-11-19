@@ -33,7 +33,9 @@ cost = w_drive · drive_min                (includes detour driving)
   `unknown` never counts (proposal §II).
 * Config C evidence coverage is the supported share of displayed station-name, selected-connector,
   selected-power and amenity-name facts. Connector and power evidence must describe the same KG
-  port. Configs A/B and the C-without-KG ablation receive zero evidence credit.
+  port. A direct trip has full coverage because it displays no unsupported charging-stop facts,
+  but evidence credit is activated only when the request's candidates actually contain KG
+  evidence. Configs A/B and the C-without-KG ablation therefore receive zero evidence credit.
 * One-sentence explanation for the report: *"In the balanced profile we treat a lunch stop the
   driver asked for as worth up to 15 extra minutes, and an accessible restroom as worth 20."*
 

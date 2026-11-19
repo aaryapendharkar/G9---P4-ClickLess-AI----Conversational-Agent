@@ -418,7 +418,16 @@ class Pipeline:
             None,
         )
 
-        if self.enricher is not None and rank_with_evidence is not None:
+        has_candidate_evidence = any(
+            candidate.evidence
+            for candidate in candidates
+        )
+
+        if (
+            self.enricher is not None
+            and has_candidate_evidence
+            and rank_with_evidence is not None
+        ):
             ranked_itineraries = rank_with_evidence(
                 verified_itineraries,
                 request,

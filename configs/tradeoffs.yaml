@@ -52,7 +52,7 @@ profiles:
 
 # Config C ("weighted+evidence") adds this on top of the active profile.
 evidence:
-  evidence_credit_min: 5          # worth 5 min to pick a stop whose facts are fully sourced & fresh
+  evidence_credit_min: 5          # worth 5 min when displayed facts match the request's KG evidence
 
 presentation:
   max_alternatives: 3             # Recommended + up to 2 Pareto-optimal alternatives

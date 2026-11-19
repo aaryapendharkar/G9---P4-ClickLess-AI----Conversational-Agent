@@ -49,6 +49,15 @@ class WeightedRanker:
     ) -> list[tuple[Itinerary, PlanCost]]:
         """Rank Config C itineraries using their matching enriched candidates."""
 
+        # Config A/B rankers must ignore candidate evidence even if a pipeline
+        # wrapper calls this richer interface. This prevents a future nonzero
+        # profile default from leaking Config C's evidence credit into them.
+        if not self.use_evidence:
+            return self.rank(
+                itineraries,
+                request,
+            )
+
         coverage_by_itinerary_id = {
             itinerary.itinerary_id: itinerary_evidence_coverage(
                 itinerary,
@@ -72,7 +81,9 @@ class WeightedRanker:
         """Apply costs and deterministic tie-breaking to every itinerary."""
 
         evidence_credit_weight = (
-            self.cfg["evidence"]["evidence_credit_min"] if self.use_evidence else None
+            self.cfg["evidence"]["evidence_credit_min"]
+            if self.use_evidence
+            else 0.0
         )
 
         scored_itineraries = [

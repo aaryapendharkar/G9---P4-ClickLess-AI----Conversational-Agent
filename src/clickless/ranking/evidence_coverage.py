@@ -1,7 +1,7 @@
 """Measure how completely KG evidence supports an itinerary's displayed facts.
 
 Config C may prefer a well-supported charging plan over an otherwise similar
-plan whose displayed details have incomplete provenance. This module calculates
+plan whose displayed details have incomplete KG evidence. This module calculates
 that support independently from the ranking formula so it can be tested without
 changing itinerary costs.
 """
@@ -30,6 +30,12 @@ def itinerary_evidence_coverage(
     Returning zero for missing candidates or missing evidence means Config C
     never receives credit for unsupported information.
     """
+
+    # A direct itinerary displays no charging-stop facts, so it has nothing
+    # unsupported. Treat that empty set as fully covered rather than penalizing
+    # a driver for correctly needing no charging stop.
+    if not itinerary.stops:
+        return 1.0
 
     candidates_by_station_id = {
         candidate.station.station_id: candidate for candidate in candidates
@@ -70,16 +76,20 @@ def itinerary_evidence_coverage(
             # An amenity selected for display contributes one expected fact:
             # its readable name. Missing amenity data remains unsupported.
             displayed_fact_count += 1
-            if amenity is not None and _has_matching_evidence(
-                candidate.evidence,
-                subject_id=amenity_id,
-                field="name",
-                expected_value=amenity.name,
+            if (
+                amenity is not None
+                and amenity.name
+                and _has_matching_evidence(
+                    candidate.evidence,
+                    subject_id=amenity_id,
+                    field="name",
+                    expected_value=amenity.name,
+                )
             ):
                 supported_fact_count += 1
 
     if displayed_fact_count == 0:
-        return 0.0
+        return 1.0
 
     return supported_fact_count / displayed_fact_count
 
@@ -88,7 +98,12 @@ def _matching_port_support(
     evidence: list[Evidence],
     stop: ChargingStop,
 ) -> tuple[bool, bool]:
-    """Return support for connector and power from one matching KG port."""
+    """Return connector and power support from matching KG ports.
+
+    A station may expose the same connector at several power levels. Connector
+    support requires any matching port, while power support requires one port
+    whose connector and power both match the selected charging option.
+    """
 
     port_facts: dict[str, dict[str, Evidence]] = {}
 
@@ -104,25 +119,28 @@ def _matching_port_support(
         attribute = field_match.group("attribute")
         port_facts.setdefault(port_index, {})[attribute] = fact
 
+    connector_supported = False
+
     for facts_for_one_port in port_facts.values():
         connector_fact = facts_for_one_port.get("connector")
-        connector_matches = (
-            connector_fact is not None and connector_fact.value == stop.connector.value
-        )
 
-        if not connector_matches:
+        if (
+            connector_fact is None
+            or connector_fact.value != stop.connector.value
+        ):
             continue
 
+        connector_supported = True
         power_fact = facts_for_one_port.get("power_kw")
-        power_matches = (
+
+        if (
             power_fact is not None
             and stop.port_power_kw is not None
             and power_fact.value == stop.port_power_kw
-        )
+        ):
+            return True, True
 
-        return True, power_matches
-
-    return False, False
+    return connector_supported, False
 
 
 def _has_matching_evidence(
