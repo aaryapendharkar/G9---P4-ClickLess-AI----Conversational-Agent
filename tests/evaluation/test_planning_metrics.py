@@ -154,7 +154,10 @@ def test_corridor_buffer_diagnostic():
 def test_unknown_status_reliance():
     # U: fast but 6 min off-route, status unknown. K: slow, on route. Both are on the front.
     o = world([station("U", 60, off_for_detour(6), status="unknown"), station("K", 60, ports=[port(kw=50)])])
-    m = unknown_status_reliance([item("s1")], [result("s1", status="infeasible")], o)
+    m = unknown_status_reliance([item("s1")], [result("s1", itins=[itinerary(stop("K", depart=80))])], o)
     assert m["n_oracle_plans"] == 2 and m["oracle_plans_unknown_status"] == 1  # U (fast) and K (slow, on front)
     assert m["items_any_plan_unknown_status_share"] == 1.0
     assert m["items_all_plans_unknown_status_share"] == 0.0
+    # Front-based metrics only run where the planner returned a plan.
+    none = unknown_status_reliance([item("s1")], [result("s1", status="infeasible")], o)
+    assert none["n_oracle_plans"] == 0 and none["items_any_plan_unknown_status_share"] is None

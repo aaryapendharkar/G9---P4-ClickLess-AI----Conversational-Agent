@@ -51,7 +51,9 @@ itinerary break any hard constraint.
   `evaluable=False`.
 - `pareto_plans(request)`: label-setting over stations in route order, with dominance pruning on (time, SoC, detour, charge).
   Departure targets are the exact need of every later node plus a `soc_grid_step_pct` grid. Returns the non-dominated plans over
-  **(total time, detour, charge time)**. `complete=False` if `max_labels` is hit (never silently truncated).
+  **(total time, detour, charge time)**. `complete=False` (with `incomplete_reason`) if `max_labels` is hit or the search
+  runs past `pareto_time_budget_s` (`configs/evaluation.yaml`, default 60 s per search); never silently truncated.
+  Results are cached per (request, settings) and returned as copies; the cache never changes an answer.
   Tested invariant: `is_feasible ⇔ front non-empty`, under both detour scopes, and every front plan passes `check_itinerary`.
 - `check_itinerary(request, itinerary)` replays the plan with the oracle's own distances and lists **every** violation, using
   the contract codes `connector`, `power`, `detour`, `arrival_soc`, `reserve`, `status`, `access`, `departure_soc`, `continuity`,
@@ -63,13 +65,18 @@ plans checked against never-relaxed constraints), robust feasibility at +`effici
 re-run), unknown-power sensitivity (DC-fast fallback 25 and 100 kW vs 50, LEAF excluded), corridor-buffer diagnostic, and
 reliance on stations whose status is `UNKNOWN`.
 
+Front-based metrics (front membership, oracle-fastest changes, unknown-status reliance, `planner_plan_outside_oracle_front`)
+run only on oracle-feasible items where the planner returned a plan. An item whose search is incomplete is left out of all of
+them (never judged against a partial front), gets an `oracle_search_incomplete` finding, and is counted in the
+`oracle_search` block; the report lists the incomplete items per config.
+
 ## Disagreements are findings
 `planning_metrics` returns `findings`, and the harness writes them to the top level of the results JSON:
 - `oracle_feasible_planner_rejected`
 - `oracle_infeasible_plan_passes_check`
 - `planner_plan_outside_oracle_front` (a valid planner plan that no oracle plan matches within `pareto_tol_min`)
 - `verifier_disagreement` (planner verifier vs oracle check)
-- `oracle_search_incomplete`
+- `oracle_search_incomplete` (time budget or `max_labels` hit; the item is excluded from front-based metrics)
 - `itinerary_uncheckable`
 
 **Policy: never change the oracle to make it agree with the planner.** For each finding, first decide what the

@@ -11,6 +11,12 @@ The oracle judges the GOLD request of each benchmark item, so parser errors that
 plan count against the system. Every planner/oracle disagreement is returned as a finding
 (`findings`); it is never resolved by changing the oracle to match the planner
 (docs/EVALUATION_ORACLE.md). Must not import clickless.planning/ranking/retrieval/pipeline.
+
+Front-based metrics (the oracle's Pareto search: front membership, oracle-fastest changes, unknown-
+status reliance) run only on oracle-feasible items where the planner returned a plan. An item
+whose search stopped early (configs/evaluation.yaml pareto_time_budget_s, or max_labels) gets an
+`oracle_search_incomplete` finding, is counted in the `oracle_search` block, and is left out of
+every front-based metric rather than judged against a partial front.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from ..oracle.label_setting import (
     FeasibilityResult,
     LabelSettingOracle,
     OracleUnavailable,
+    ParetoResult,
     dominated_by_front,
 )
 
@@ -100,6 +107,52 @@ def evaluate(
     return evals, findings
 
 
+def _front_scope(evals: list[ItemEval]) -> list[ItemEval]:
+    """Items the Pareto search runs on: oracle-feasible, and the planner returned a plan."""
+    return [e for e in evals if e.feasibility.feasible and e.result.alternatives]
+
+
+def _complete_front(oracle: LabelSettingOracle, request: TripRequest) -> ParetoResult | None:
+    """The oracle front, or None when the search stopped early (excluded from front-based metrics)."""
+    front = oracle.pareto_plans(request)
+    return front if front.complete else None
+
+
+def _incomplete_detail(oracle: LabelSettingOracle, front: ParetoResult) -> str:
+    if front.incomplete_reason == "time_budget":
+        why = f"time budget of {oracle.cfg.pareto_time_budget_s:g} s hit"
+    else:
+        why = f"max_labels ({oracle.cfg.max_labels}) hit"
+    return f"{why}; {len(front.plans)} plan(s) found; excluded from front-based metrics"
+
+
+def oracle_search(items, results, oracle, evals: list[ItemEval] | None = None) -> dict[str, Any]:
+    """How many items' Pareto searches stopped early (they are excluded from front-based metrics)."""
+    evals = evals if evals is not None else evaluate(items, results, oracle)[0]
+    scope = _front_scope(evals)
+    fronts = {e.item_id: oracle.pareto_plans(e.request) for e in scope}
+    incomplete = sorted(i for i, f in fronts.items() if not f.complete)
+    return {
+        "n_items_searched": len(scope),
+        "n_incomplete": len(incomplete),
+        "items_incomplete": incomplete,
+        "incomplete_reasons": dict(sorted(Counter(fronts[i].incomplete_reason for i in incomplete).items())),
+        "pareto_time_budget_s": oracle.cfg.pareto_time_budget_s,
+        "max_labels": oracle.cfg.max_labels,
+    }
+
+
+def _incomplete_findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> list[dict]:
+    out = []
+    for e in _front_scope(evals):
+        front = oracle.pareto_plans(e.request)
+        if not front.complete:
+            out.append(
+                {"item_id": e.item_id, "kind": "oracle_search_incomplete", "detail": _incomplete_detail(oracle, front)}
+            )
+    return out
+
+
 def _findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> list[dict]:
     out = []
     for ev in evals:
@@ -131,9 +184,9 @@ def _findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> list[dict]:
                 }
             )
         if fr.feasible and any(r.ok and r.objectives for r in ev.reports):
-            front = oracle.pareto_plans(ev.request)
-            if not front.complete:
-                out.append({"item_id": ev.item_id, "kind": "oracle_search_incomplete", "detail": "max_labels hit"})
+            front = _complete_front(oracle, ev.request)
+            if front is None:  # reported once as oracle_search_incomplete (_incomplete_findings)
+                continue
             for k, r in enumerate(ev.reports):
                 if (
                     r.ok
@@ -223,29 +276,50 @@ def unknown_power_sensitivity(
             leaf += 1
             continue
         in_scope.append(e)
-    feasible = [e for e in evals if e.feasibility.feasible and not is_charge_time_excluded(e.request.vehicle_id)]
-    base_fastest = {e.item_id: _fastest(oracle, e.request) for e in feasible}
+    # Front-based parts: planner returned a plan, oracle-feasible, and the baseline search completed.
+    base_fronts = {
+        e.item_id: _complete_front(oracle, e.request)
+        for e in _front_scope(evals)
+        if not is_charge_time_excluded(e.request.vehicle_id)
+    }
+    base_fastest = {i: _fastest_of(f) for i, f in base_fronts.items() if f is not None}
     out: dict[str, Any] = {
         "n_items": len(in_scope),
         "n_leaf_excluded_from_charge_time": leaf,
         "baseline_dc_fast_kw": float(oracle.cfg.charging_model["unknown_power_kw"]["dc_fast"]),
+        "n_excluded_incomplete_search": sum(f is None for f in base_fronts.values()),
     }
     for kw in fallbacks:
         alt = oracle.with_overrides(unknown_power_kw={**(oracle.cfg.unknown_power_kw or {}), "dc_fast": float(kw)})
-        d_charge, on_front = [], 0
+        d_charge, on_front, on_front_n, incomplete = [], 0, 0, 0
         for e in in_scope:
             itin = e.result.alternatives[0].itinerary
             base, new = e.recommended.objectives, alt.check_itinerary(e.request, itin).objectives
             if base is None or new is None:
                 continue
             d_charge.append(new[2] - base[2])
-            on_front += not _strictly_beaten(new, alt.pareto_plans(e.request).plans, oracle.cfg.pareto_tol_min)
-        changed = sum(1 for e in feasible if _fastest(alt, e.request) != base_fastest[e.item_id])
+            if base_fronts.get(e.item_id) is None:
+                continue
+            alt_front = _complete_front(alt, e.request)
+            if alt_front is None:
+                incomplete += 1
+                continue
+            on_front_n += 1
+            on_front += not _strictly_beaten(new, alt_front.plans, oracle.cfg.pareto_tol_min)
+        changed = n_changed = 0
+        for item_id, fastest in base_fastest.items():
+            alt_front = _complete_front(alt, next(e.request for e in evals if e.item_id == item_id))
+            if alt_front is None:
+                incomplete += 1
+                continue
+            n_changed += 1
+            changed += _fastest_of(alt_front) != fastest
         tag = f"{kw:g}kw"
         out[f"mean_delta_charge_min_{tag}"] = sum(d_charge) / len(d_charge) if d_charge else None
         out[f"max_abs_delta_charge_min_{tag}"] = max((abs(d) for d in d_charge), default=None)
-        out[f"recommended_on_front_rate_{tag}"] = _rate(on_front, len(d_charge))
-        out[f"oracle_fastest_change_rate_{tag}"] = _rate(changed, len(feasible))
+        out[f"recommended_on_front_rate_{tag}"] = _rate(on_front, on_front_n)
+        out[f"oracle_fastest_change_rate_{tag}"] = _rate(changed, n_changed)
+        out[f"n_excluded_incomplete_search_{tag}"] = incomplete
     return out
 
 
@@ -265,9 +339,12 @@ def unknown_status_reliance(items, results, oracle, evals: list[ItemEval] | None
     evals = evals if evals is not None else evaluate(items, results, oracle)[0]
     plans = all_unknown = items_any = 0
     n_plans = 0
-    feasible = [e for e in evals if e.feasibility.feasible]
-    for e in feasible:
-        front = oracle.pareto_plans(e.request).plans
+    fronts = [(e, _complete_front(oracle, e.request)) for e in _front_scope(evals)]
+    feasible = [e for e, f in fronts if f is not None]
+    for _e, front_result in fronts:
+        if front_result is None:
+            continue
+        front = front_result.plans
         flags = [bool(p.unknown_status_station_ids) for p in front]
         n_plans += len(front)
         plans += sum(flags)
@@ -279,6 +356,7 @@ def unknown_status_reliance(items, results, oracle, evals: list[ItemEval] | None
         "oracle_plans_unknown_status_share": _rate(plans, n_plans),
         "items_any_plan_unknown_status_share": _rate(items_any, len(feasible)),
         "items_all_plans_unknown_status_share": _rate(all_unknown, len(feasible)),
+        "n_excluded_incomplete_search": sum(f is None for _e, f in fronts),
     }
 
 
@@ -292,12 +370,17 @@ def planning_metrics(items, results, oracle) -> dict[str, Any]:
         "unknown_power_sensitivity": unknown_power_sensitivity(items, results, oracle, evals=evals),
         "corridor_buffer": corridor_buffer_diagnostic(items, results, oracle, evals),
         "unknown_status": unknown_status_reliance(items, results, oracle, evals),
-        "findings": findings + _findings(evals, oracle),
+        "oracle_search": oracle_search(items, results, oracle, evals),
+        "findings": findings + _incomplete_findings(evals, oracle) + _findings(evals, oracle),
     }
 
 
 def _fastest(oracle: LabelSettingOracle, request: TripRequest) -> tuple[str, ...] | None:
-    plans = oracle.pareto_plans(request).plans
+    return _fastest_of(oracle.pareto_plans(request))
+
+
+def _fastest_of(front: ParetoResult) -> tuple[str, ...] | None:
+    plans = front.plans
     return min(plans, key=lambda p: p.total_time_min).station_ids if plans else None
 
 
