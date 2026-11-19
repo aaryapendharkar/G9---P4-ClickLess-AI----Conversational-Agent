@@ -129,6 +129,7 @@ def pareto_validity(
     counts: Counter[str] = Counter()
     details: list[dict[str, Any]] = []
     buffer_extra: list[float] = []
+    excluded_incomplete: list[str] = []
     for item in items:
         req, res = request_from_item(item), by_id.get(item.id)
         if req is None or res is None or res.status != "ok" or not res.alternatives:
@@ -136,7 +137,13 @@ def pareto_validity(
         fr = oracle.is_feasible(req)
         if not fr.evaluable:
             continue
-        front = oracle.pareto_plans(req).plans if fr.feasible else []
+        front = []
+        if fr.feasible:
+            search = oracle.pareto_plans(req)
+            if not search.complete:  # never judged against a partial front (oracle_search_incomplete)
+                excluded_incomplete.append(item.id)
+                continue
+            front = search.plans
         for alt in res.alternatives:
             try:
                 rep = oracle.check_itinerary(req, alt.itinerary)
@@ -195,6 +202,8 @@ def pareto_validity(
         "charge_buffer_soc_pct": buffer_pct,
         "tolerance_min": tol,
         "not_valid": details,
+        "n_items_excluded_incomplete_search": len(excluded_incomplete),
+        "items_excluded_incomplete_search": excluded_incomplete,
     }
 
 
