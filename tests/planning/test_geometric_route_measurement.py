@@ -130,6 +130,8 @@ def test_measurer_reuses_route_and_station_calculations(
 
     original_polyline_length = route_measurement.polyline_length_km
     original_nearest = route_measurement.nearest_on_polyline
+    original_route_signature = route_measurement._route_signature
+    route_signature_calls = 0
     polyline_length_calls = 0
     station_projection_calls = 0
 
@@ -143,6 +145,11 @@ def test_measurer_reuses_route_and_station_calculations(
         station_projection_calls += 1
         return original_nearest(lat, lon, geometry)
 
+    def count_route_signature(route_to_measure):
+        nonlocal route_signature_calls
+        route_signature_calls += 1
+        return original_route_signature(route_to_measure)
+
     monkeypatch.setattr(
         route_measurement,
         "polyline_length_km",
@@ -152,6 +159,12 @@ def test_measurer_reuses_route_and_station_calculations(
         route_measurement,
         "nearest_on_polyline",
         count_station_projection,
+    )
+
+    monkeypatch.setattr(
+        route_measurement,
+        "_route_signature",
+        count_route_signature,
     )
 
     measurer = route_measurement.GeometricRouteMeasurer(cfg_a["energy"])
@@ -169,6 +182,7 @@ def test_measurer_reuses_route_and_station_calculations(
         [first_station],
     )
 
+    assert route_signature_calls == 1
     assert polyline_length_calls == 1
     assert station_projection_calls == 2
     assert repeated_measurement == first_measurement

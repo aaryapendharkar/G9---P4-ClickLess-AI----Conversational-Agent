@@ -161,6 +161,7 @@ class GeometricRouteMeasurer:
 
     def __init__(self, energy_config: dict[str, Any]) -> None:
         self.energy_config = energy_config
+        self._active_route: Route | None = None
         self._route_cache: _GeometricRouteCache | None = None
 
     def measure(
@@ -170,16 +171,23 @@ class GeometricRouteMeasurer:
     ) -> ItineraryRouteMeasurement:
         """Measure using values cached for the active route and its stations."""
 
-        route_signature = _route_signature(route)
+        # Planning passes the same Route object while evaluating many stop
+        # sequences. Avoid rebuilding its full geometry signature each time.
+        # A different Route object is inspected before any cached values are
+        # reused, so changed route data still invalidates the cache.
+        if self._active_route is not route:
+            route_signature = _route_signature(route)
 
-        if (
-            self._route_cache is None
-            or self._route_cache.route_signature != route_signature
-        ):
-            self._route_cache = _build_geometric_route_cache(
-                route,
-                route_signature,
-            )
+            if (
+                self._route_cache is None
+                or self._route_cache.route_signature != route_signature
+            ):
+                self._route_cache = _build_geometric_route_cache(
+                    route,
+                    route_signature,
+                )
+
+            self._active_route = route
 
         return _measure_itinerary_with_cache(
             route,
