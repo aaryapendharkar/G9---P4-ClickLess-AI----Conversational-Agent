@@ -29,8 +29,12 @@
      Mammoth Lakes" → "Mammoth Lakes, CA").
    - **Don't add a state** when the city is genuinely ambiguous (Portland, Jackson, Rochester,
      Springfield, Columbus) and nothing in the text settles it. Write the place as stated
-     ("Rochester"); if the ambiguity is intended, set `clarification_required: true` and list the
-     field in `missing_safety_fields` (rule 2).
+     ("Rochester"), set `clarification_required: true` and list the field (`origin` or
+     `destination`) in `missing_safety_fields` (rule 2). This holds whether the ambiguity was
+     designed into the request or is accidental: an ambiguous place is never complete.
+   - **Name the place, not a part of it**: no terminals, gates, floors or entrances. The
+     geocoder must find the landmark itself ("Phoenix Sky Harbor International Airport, Phoenix,
+     AZ", not "... Terminal 4, Phoenix, AZ"). Keep any finer detail in `notes`.
    - Never resolve an ambiguous city from your own knowledge of the trip ("Rochester to Buffalo"
      does not make Rochester NY unless the text says so). If you are unsure whether a city is
      ambiguous, treat it as ambiguous and say why in `notes`.
