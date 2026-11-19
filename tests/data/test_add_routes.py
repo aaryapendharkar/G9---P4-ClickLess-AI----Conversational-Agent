@@ -40,7 +40,8 @@ def test_routes_are_checked_hashed_and_recorded(stations_only):
 
     after = json.loads((stations_only / "MANIFEST.json").read_text(encoding="utf-8"))
     assert verify_manifest(str(stations_only)) == []
-    assert {"routes/phoenix__flagstaff.json", "routes/phoenix-az__flagstaff-az.json", ar.REPORT_FILE} <= set(after["files"])
+    added = {"routes/phoenix__flagstaff.json", "routes/phoenix-az__flagstaff-az.json", ar.REPORT_FILE}
+    assert added <= set(after["files"])
     for name in ("stations.json", "vehicles.json", "places.json", "amenities.json"):
         assert after["files"][name] == before["files"][name]
     routes = after["sources"]["routes"]
@@ -66,7 +67,8 @@ def test_bad_route_files_are_refused_and_nothing_changes(stations_only):
     assert ar.add_routes(str(stations_only)) == 1
     assert (stations_only / "MANIFEST.json").read_text(encoding="utf-8") == before
     _, problems = ar.check_route_files(stations_only / "routes")
-    assert sorted(p.split(":")[0] for p in problems) == ["Phoenix to Flagstaff.json", "a__b.json.tmp", "tempe__mesa.json"]
+    assert sorted(p.split(":")[0] for p in problems) == [
+        "Phoenix to Flagstaff.json", "a__b.json.tmp", "tempe__mesa.json"]
 
 
 def test_refuses_empty_changed_or_frozen_snapshots(stations_only, tmp_path):
