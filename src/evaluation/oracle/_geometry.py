@@ -29,10 +29,22 @@ def _xy(p: Point, ref_lat: float) -> tuple[float, float]:
     return (math.radians(p[1]) * R_KM * math.cos(math.radians(ref_lat)), math.radians(p[0]) * R_KM)
 
 
+def project(p: Point, a: Point, b: Point) -> tuple[float, float]:
+    """(t, offroute_km): position of p's closest point on segment a-b (0..1) and the distance to it,
+    in the equirectangular projection around the segment's mid-latitude."""
+    ref = (a[0] + b[0]) / 2
+    (ax, ay), (bx, by), (px, py) = _xy(a, ref), _xy(b, ref), _xy(p, ref)
+    dx, dy = bx - ax, by - ay
+    den = dx * dx + dy * dy
+    t = 0.0 if den == 0 else min(1.0, max(0.0, ((px - ax) * dx + (py - ay) * dy) / den))
+    return t, math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
 def locate(p: Point, points: Sequence[Point]) -> tuple[float, float]:
     """(along_km, offroute_km) of the closest point on the polyline, both straight-line km.
 
-    along_km is measured along the polyline geometry; callers scale it to road km.
+    along_km is measured along the polyline geometry; callers scale it to road km. This is the
+    exhaustive reference; _corridor_index.RouteGeometry.locate gives the same numbers faster.
     """
     if len(points) < 2:
         raise ValueError("route geometry needs at least two points")
@@ -40,12 +52,7 @@ def locate(p: Point, points: Sequence[Point]) -> tuple[float, float]:
     for k in range(len(points) - 1):
         a, b = points[k], points[k + 1]
         seg = great_circle_km(a, b)
-        ref = (a[0] + b[0]) / 2
-        (ax, ay), (bx, by), (px, py) = _xy(a, ref), _xy(b, ref), _xy(p, ref)
-        dx, dy = bx - ax, by - ay
-        den = dx * dx + dy * dy
-        t = 0.0 if den == 0 else min(1.0, max(0.0, ((px - ax) * dx + (py - ay) * dy) / den))
-        off = math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+        t, off = project(p, a, b)
         if off < best_off:
             best_off, best_along = off, walked + t * seg
         walked += seg
