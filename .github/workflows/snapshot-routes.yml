@@ -1,0 +1,74 @@
+# Adds the OSRM route cache to a published snapshot and republishes it (issue #36). Owner: Aarya.
+# Actions tab -> "snapshot routes" -> Run workflow. Builds every benchmark origin -> destination route
+# with scripts/build_route_cache.py (public OSRM demo server, 1 request/s), checks the files and
+# re-hashes MANIFEST.json (python -m clickless.data.add_routes), then replaces the release's zip.
+name: snapshot routes
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Snapshot release to add the routes to"
+        default: snapshot-v1-draft
+        required: true
+      osrm_url:
+        description: "OSRM server"
+        default: https://router.project-osrm.org
+        required: true
+
+permissions:
+  contents: write  # update the release
+
+concurrency:
+  group: snapshot-release
+  cancel-in-progress: false
+
+jobs:
+  routes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Download the snapshot
+        run: |
+          gh release download "${{ inputs.release }}" --pattern '*.zip' --dir downloaded
+          mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
+          python -m clickless.data.snapshot_report --verify-only
+      - name: Build the route cache (OSRM)
+        run: python scripts/build_route_cache.py --snapshot-dir data/snapshot --osrm-url "${{ inputs.osrm_url }}"
+      - name: Check the routes and update the manifest
+        run: python -m clickless.data.add_routes --dir data/snapshot
+      - name: Report and zip
+        run: |
+          python -m clickless.data.snapshot_report --pack "results/${{ inputs.release }}.zip" --out results/snapshot-report.md
+          python - <<'PY' > results/routes.md
+          import json
+          r = json.load(open("data/snapshot/MANIFEST.json"))["sources"]["routes"]
+          print(f"- Routes: {r['files']} files ({r['distinct_routes']} distinct routes), OSRM {r['osrm_server']}, "
+                f"retrieved {r['retrieved_window'][0]} to {r['retrieved_window'][1]}; "
+                f"pairs failed: {r['pairs_failed'] or 'none'}; benchmark items skipped: {r['items_skipped']}")
+          PY
+          {
+            echo "**Draft snapshot: stations + amenities + routes. Not frozen.** Issue #36."
+            echo
+            echo "Routes added by the \`snapshot routes\` workflow (run ${{ github.run_id }}) with \`scripts/build_route_cache.py\` and \`python -m clickless.data.add_routes\`. Stations, vehicles, places and amenities are unchanged. OSM data © OpenStreetMap contributors, ODbL."
+            echo
+            cat results/routes.md
+            echo
+            echo "Use: unzip into \`data/snapshot/\`, run \`make snapshot-verify\` (expect \`[] (intact)\`), then run with \`CLICKLESS_DATA_SOURCE=snapshot\` (routing.mode: cache reads \`routes/\`)."
+            echo
+            echo "zip SHA-256: \`$(sha256sum "results/${{ inputs.release }}.zip" | cut -d' ' -f1)\`"
+            echo
+            sed 's/^## Snapshot report/### Snapshot report/' results/snapshot-report.md
+          } > results/release-notes.md
+      - name: Publish
+        run: |
+          gh release upload "${{ inputs.release }}" "results/${{ inputs.release }}.zip" results/snapshot-report.md --clobber
+          gh release edit "${{ inputs.release }}" --notes-file results/release-notes.md
+          echo "::notice title=Routes published::https://github.com/${{ github.repository }}/releases/tag/${{ inputs.release }}"
