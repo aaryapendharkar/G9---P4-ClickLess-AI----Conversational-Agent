@@ -1,0 +1,6 @@
+# Evaluation-only settings (owner: Ian). Read by src/evaluation, never by the system under test.
+oracle:
+  # Wall-clock limit per oracle Pareto search (one item, one settings variant). On expiry the search
+  # returns complete=False; the item gets an oracle_search_incomplete finding and is left out of
+  # the front-based metrics. null = no limit.
+  pareto_time_budget_s: 60

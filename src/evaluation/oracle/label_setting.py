@@ -22,6 +22,10 @@ Speed (OracleConfig.method): "indexed" (default) finds corridor stations through
 problem (context + candidate nodes), across is_feasible, pareto_plans and check_itinerary.
 "exhaustive" is the original path, locating every station on every segment with no caching; it
 is kept as the reference, and tests/evaluation assert both give identical results.
+
+pareto_plans results are cached per (request, settings) and shared with with_overrides copies
+(indexed only; callers get copies). The search stops at pareto_time_budget_s per call and returns
+complete=False with incomplete_reason="time_budget"; max_labels still applies ("max_labels").
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ import copy
 import dataclasses
 import json
 import math
+import time
 from collections import Counter, OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -75,6 +80,7 @@ DetourScope = Literal["stop", "total"]
 Method = Literal["indexed", "exhaustive"]
 METHODS = ("indexed", "exhaustive")
 MAX_CACHED_REQUESTS = 16
+MAX_CACHED_FRONTS = 512  # Pareto results kept (items x settings variants in one evaluation run)
 
 
 class OracleUnavailable(ValueError):
@@ -125,6 +131,7 @@ class OracleConfig:
     continuity_tol_km: float = 0.5
     pareto_tol_min: float = 0.5  # tolerance when comparing a planner plan with the oracle front
     max_labels: int = 200_000
+    pareto_time_budget_s: float | None = 60.0  # per pareto_plans call; None = no limit (configs/evaluation.yaml)
     method: Method = "indexed"  # speed only: "exhaustive" is the reference path, same results
 
     def __post_init__(self) -> None:
@@ -200,8 +207,9 @@ class OraclePlan:
 @dataclass
 class ParetoResult:
     plans: list[OraclePlan]
-    complete: bool  # False when max_labels was hit (the front may be missing plans)
+    complete: bool  # False when the search stopped early (the front may be missing plans)
     feasibility: FeasibilityResult | None = None  # set when the request was rejected before searching
+    incomplete_reason: str | None = None  # "time_budget" or "max_labels" when complete is False
 
 
 @dataclass
@@ -290,6 +298,7 @@ class LabelSettingOracle:
         route_source: RouteSource | None = None,
         *,
         _index: RouteIndex | None = None,
+        _fronts: OrderedDict | None = None,
     ) -> None:
         self.store = store
         # Backwards compatible with the stub signature LabelSettingOracle(store, energy_cfg).
@@ -298,6 +307,7 @@ class LabelSettingOracle:
         self._index = _index or RouteIndex()  # per-route work, shared with with_overrides copies
         self._requests: OrderedDict[str, Any] = OrderedDict()  # per-request context / problem
         self._requests_signature: tuple | None = None
+        self._fronts: OrderedDict = _fronts if _fronts is not None else OrderedDict()  # shared Pareto cache
 
     @property
     def energy_cfg(self) -> Mapping[str, Any]:
@@ -310,13 +320,22 @@ class LabelSettingOracle:
             from clickless.data.loaders import DataStore
 
             store = DataStore.from_config(dict(cfg))
-        oc = OracleConfig(energy=cfg["energy"], corridor_buffer_km=float(cfg["retrieval"]["corridor_buffer_km"]))
+        budget = (cfg.get("evaluation") or {}).get("oracle", {}).get("pareto_time_budget_s", 60.0)
+        oc = OracleConfig(
+            energy=cfg["energy"],
+            corridor_buffer_km=float(cfg["retrieval"]["corridor_buffer_km"]),
+            pareto_time_budget_s=None if budget is None else float(budget),
+        )
         return cls(store, dataclasses.replace(oc, **overrides), route_source)
 
     def with_overrides(self, **overrides) -> LabelSettingOracle:
         """Same store and routes, different model settings (robust / sensitivity / diagnostic runs)."""
         return LabelSettingOracle(
-            self.store, dataclasses.replace(self.cfg, **overrides), self.route_source, _index=self._index
+            self.store,
+            dataclasses.replace(self.cfg, **overrides),
+            self.route_source,
+            _index=self._index,
+            _fronts=self._fronts,
         )
 
     # ---------------------------------------------------------------- per-request cache (indexed only)
@@ -539,6 +558,27 @@ class LabelSettingOracle:
         return sorted(t for t in ts if arrive + EPS < t <= hi + EPS)
 
     def pareto_plans(self, request: TripRequest) -> ParetoResult:
+        """Non-dominated plans. Cached per (request, settings) on the indexed path; always a copy."""
+        if self.cfg.method == "exhaustive":
+            return self._pareto(request)
+        store = self.store
+        key = (
+            json.dumps(dataclasses.asdict(self.cfg), sort_keys=True, default=str),
+            request.model_dump_json(),
+            (id(store.stations), len(store.stations), id(store.vehicles), len(store.vehicles)),
+        )
+        found = self._fronts.get(key)
+        if found is None:
+            found = self._fronts[key] = self._pareto(request)
+            while len(self._fronts) > MAX_CACHED_FRONTS:
+                self._fronts.popitem(last=False)
+        else:
+            self._fronts.move_to_end(key)
+        return copy.deepcopy(found)
+
+    def _pareto(self, request: TripRequest) -> ParetoResult:
+        started = time.monotonic()
+        budget = self.cfg.pareto_time_budget_s
         p = self._problem(request)
         if isinstance(p, FeasibilityResult):
             return ParetoResult([], True, copy.deepcopy(p))
@@ -547,11 +587,14 @@ class LabelSettingOracle:
         total = request.max_detour_min if self.cfg.detour_scope == "total" else None
         fronts: list[list[_Label]] = [[] for _ in range(n)]
         fronts[0] = [_Label(0, 0.0, ctx.start, 0.0, 0.0, None, None)]
-        count, complete = 1, True
+        count, complete, reason = 1, True, None
         for i in range(n - 1):
             if not complete:
                 break
             for lab in list(fronts[i]):
+                if budget is not None and time.monotonic() - started >= budget:
+                    complete, reason = False, "time_budget"
+                    break
                 if i == 0:
                     deps = [(ctx.start, 0.0)]
                 else:
@@ -582,7 +625,7 @@ class LabelSettingOracle:
                         if _insert(fronts[j], new, _Label.key):
                             count += 1
                             if count > self.cfg.max_labels:
-                                complete = False
+                                complete, reason = False, "max_labels"
                                 break
                     if not complete:
                         break
@@ -592,7 +635,7 @@ class LabelSettingOracle:
         final: list[OraclePlan] = []
         for plan in sorted(plans, key=lambda x: x.objectives):
             _insert(final, plan, lambda x: x.objectives)
-        return ParetoResult(sorted(final, key=lambda x: x.objectives), complete)
+        return ParetoResult(sorted(final, key=lambda x: x.objectives), complete, incomplete_reason=reason)
 
     def _to_plan(self, p: _Problem, lab: _Label) -> OraclePlan:
         stops: list[OracleStop] = []

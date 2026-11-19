@@ -19,6 +19,7 @@ Steps
        breakdown.csv      by author / category / route_type, with item counts
        errors.csv         errored items by stage (parse / planning) and error type
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
+       oracle_search.csv  per config: items whose oracle Pareto search stopped early (budget / max_labels)
        metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id,
                           LLM GPU share, keep-alive
 
@@ -747,6 +748,26 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     ]
     _write_csv(run_dir / "findings.csv", find_rows, ["config", "item_id", "kind", "detail"])
 
+    # Oracle search: items left out of the front-based metrics because the Pareto search stopped early
+    search_fields = ["config", "n_items_searched", "n_incomplete", "incomplete_reasons", "pareto_time_budget_s",
+                     "items_incomplete"]
+    search_rows = []
+    for c in configs:
+        block = _block(runs[c].metrics, ("planning", "oracle_search")) if c in runs else None
+        if block is not None:
+            reasons = block.get("incomplete_reasons") or {}
+            search_rows.append(
+                {
+                    "config": c,
+                    "n_items_searched": block.get("n_items_searched"),
+                    "n_incomplete": block.get("n_incomplete"),
+                    "incomplete_reasons": ", ".join(f"{k}: {v}" for k, v in reasons.items()),
+                    "pareto_time_budget_s": block.get("pareto_time_budget_s"),
+                    "items_incomplete": " ".join(block.get("items_incomplete") or []),
+                }
+            )
+    _write_csv(run_dir / "oracle_search.csv", search_rows, search_fields)
+
     # Metadata
     shares = {c: gpu_share(runs[c]) for c in configs if c in runs}
     share_warnings = gpu_share_warnings(shares)
@@ -943,6 +964,31 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         )
     else:
         lines.append("None.")
+    lines += [
+        "",
+        "## Oracle search",
+        "",
+        "Items whose oracle Pareto search stopped early (time budget or max_labels). They get an "
+        "`oracle_search_incomplete` finding and are left out of the front-based metrics.",
+        "",
+    ]
+    if search_rows:
+        lines += _md_table(
+            ["Config", "Items searched", "Incomplete", "Reasons", "Budget (s)", "Items"],
+            [
+                [
+                    r["config"],
+                    str(r["n_items_searched"]),
+                    str(r["n_incomplete"]),
+                    r["incomplete_reasons"] or "-",
+                    "none" if r["pareto_time_budget_s"] is None else f"{r['pareto_time_budget_s']:g}",
+                    r["items_incomplete"] or "-",
+                ]
+                for r in search_rows
+            ],
+        )
+    else:
+        lines.append("None recorded (no planning block with an oracle_search block in these results).")
     lines += ["", "## Findings (planner/oracle disagreements)", ""]
     if find_rows:
         lines += _md_table(

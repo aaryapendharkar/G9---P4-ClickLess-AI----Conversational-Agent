@@ -24,3 +24,4 @@ includes:
   tradeoffs: configs/tradeoffs.yaml
   relaxation: configs/relaxation.yaml
   retrieval: configs/retrieval.yaml
+  evaluation: configs/evaluation.yaml

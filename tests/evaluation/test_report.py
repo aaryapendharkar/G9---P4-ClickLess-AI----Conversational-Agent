@@ -138,7 +138,15 @@ C_METRICS = {
             "plan_feasibility_rate": 0.9,
             "hard_violation_rate": 0.05,
             "ci95": {"plan_feasibility_rate": [0.8, 0.97]},
-        }
+        },
+        "oracle_search": {
+            "n_items_searched": 4,
+            "n_incomplete": 1,
+            "items_incomplete": ["i4"],
+            "incomplete_reasons": {"time_budget": 1},
+            "pareto_time_budget_s": 60.0,
+            "max_labels": 200000,
+        },
     },
     "grounding": {"claim_support_rate": 0.95},
 }
@@ -349,11 +357,13 @@ def test_build_report_writes_every_section_and_csv(run_dir):
         "### By author",
         "### By category",
         "### By route_type",
+        "## Oracle search",
         "## Findings",
         "## Run metadata",
     ):
         assert section in text
-    for name in ("headline.csv", "paired.csv", "breakdown.csv", "errors.csv", "findings.csv", "metadata.csv"):
+    for name in ("headline.csv", "paired.csv", "breakdown.csv", "errors.csv", "findings.csv", "oracle_search.csv",
+                 "metadata.csv"):
         assert (run_dir / name).is_file()
     assert "## Errors by stage and type" in text
     assert [(r["config"], r["stage"], r["error_type"], r["n"]) for r in read_csv(run_dir / "errors.csv")] == [
@@ -384,6 +394,14 @@ def test_build_report_writes_every_section_and_csv(run_dir):
     assert a_cat == {"incomplete": 2, "rural": 2, "urban": 2}
     a_route = {r["group"]: int(r["n_items"]) for r in br if r["config"] == "A" and r["dimension"] == "route_type"}
     assert a_route == {"mixed": 1, "rural": 3, "urban": 2}
+
+    # Incomplete oracle searches per config: only C has an oracle_search block (A none, B not implemented).
+    search = read_csv(run_dir / "oracle_search.csv")
+    assert [(r["config"], r["n_items_searched"], r["n_incomplete"], r["items_incomplete"]) for r in search] == [
+        ("C", "4", "1", "i4")
+    ]
+    assert search[0]["incomplete_reasons"] == "time_budget: 1"
+    assert "| C | 4 | 1 | time_budget: 1 | 60 | i4 |" in text
 
     findings = read_csv(run_dir / "findings.csv")
     assert [(f["config"], f["item_id"], f["kind"]) for f in findings] == [
