@@ -21,8 +21,11 @@ built later with `--from` knows which snapshot each config ran on.
 Errors: an exception from the pipeline no longer aborts the run. The row gets status "error"
 (or "not_implemented"), the exception text, `error_type` (the exception class) and
 `error_stage`: "parse" if it was raised inside the parser (no parsed request exists), else
-"planning". A PlanResult with status "error" (e.g. route not cached) is a planning error; the
-report derives its type from the result notes.
+"planning". For a planning exception the harness keeps the parsed request (it wraps the
+pipeline's parser in a ParseRecorder) and records a PlanResult with status "error" and that
+request, so the item counts as a planning error AND its parse is still scored for request
+understanding. A PlanResult with status "error" from the pipeline itself (e.g. route not cached)
+is a planning error too; the report derives its type from the result notes.
 
 Fixture items (gold vehicle from the fixture world, e.g. benchmark/requests/dev/fixture_smoke.jsonl)
 only make sense on fixture data. Split directories never load fixture_*.jsonl files (schema.load_items).
@@ -50,6 +53,7 @@ from urllib.parse import urlsplit
 import requests
 
 from clickless.config import load_config, repo_path
+from clickless.contracts import PlanResult
 from clickless.pipeline import build_pipeline
 
 from .llm_residency import LLMResidency
@@ -249,6 +253,23 @@ def select_items(
 # --------------------------------------------------------------------------- run
 
 
+class ParseRecorder:
+    """Wraps a parser and remembers its last result, so a request whose planning raises can still
+    be scored on what was parsed. Everything else is delegated to the wrapped parser."""
+
+    def __init__(self, parser: Any) -> None:
+        self._parser = parser
+        self.last: Any = None
+
+    def parse(self, *args: Any, **kwargs: Any) -> Any:
+        self.last = None
+        self.last = self._parser.parse(*args, **kwargs)
+        return self.last
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._parser, name)
+
+
 def exception_stage(exc: BaseException, parser: Any) -> str:
     """'parse' if the exception was raised inside `parser` (a frame whose self is the parser), else 'planning'."""
     frames = traceback.walk_tb(exc.__traceback__)
@@ -271,7 +292,9 @@ def run(
     meta = run_metadata(cfg, cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else "")
     pipe = build_pipeline(cfg)
     trace = ParserTrace(pipe.parser)
-    pipe.parser = trace
+    # The recorder sits outside the trace: it keeps the parse if planning raises, while the trace
+    # still sees the real parser (it patches the LLM parser's _fallback).
+    recorder = pipe.parser = ParseRecorder(trace)
     # LLM configs: warm the model up and keep it loaded, and record its GPU share per item, so
     # latency compares like with like (evaluation/llm_residency.py).
     residency = LLMResidency.from_config(cfg) if _uses_llm(cfg) else None
@@ -283,12 +306,21 @@ def run(
             gpu = residency.before_item() if residency is not None else {}
             t0 = time.perf_counter()
             trace.last = trace.empty()
+            recorder.last = None
             try:
                 res = pipe.run(item.text, request_id=item.id)
             except Exception as e:  # noqa: BLE001 - one failing item must not abort the run; recorded per row
+                stage = exception_stage(e, recorder)
                 status = "not_implemented" if isinstance(e, NotImplementedError) else "error"
-                rows.append({"id": item.id, "status": status, "error": f"{type(e).__name__}: {e}", "error_type": type(e).__name__,
-                             "error_stage": exception_stage(e, trace), **trace.last, **gpu})
+                row = {"id": item.id, "status": status, "error": f"{type(e).__name__}: {e}",
+                       "error_type": type(e).__name__, "error_stage": stage, **trace.last, **gpu}
+                parsed = getattr(recorder.last, "request", None) if stage == "planning" else None
+                if parsed is not None:  # planning failed after a successful parse: still score the parse
+                    res = PlanResult(request_id=item.id, config=cfg["name"], status="error", request=parsed,
+                                     notes=[row["error"]])
+                    results.append(res)
+                    row.update(latency_ms=(time.perf_counter() - t0) * 1000, result=json.loads(res.model_dump_json()))
+                rows.append(row)
                 continue
             results.append(res)
             rows.append({"id": item.id, "status": res.status, "latency_ms": (time.perf_counter() - t0) * 1000,
