@@ -94,17 +94,28 @@ def test_indexed_equals_brute_force_on_fixture_routes(store, max_candidates):
         assert expected  # the fixture corridor is not empty, so the comparison means something
 
 
-def test_indexed_equals_brute_force_on_adversarial_world(store):
+# (lat, lon): mid-latitude desert, high latitude (wide longitude cells), tropics, far north-east
+ADVERSARIAL_CENTERS = {
+    "phoenix": (34.1, -111.8),
+    "anchorage": (61.2, -149.9),
+    "honolulu": (21.3, -157.9),
+    "northern-maine": (46.9, -68.0),
+}
+
+
+@pytest.mark.parametrize("center", sorted(ADVERSARIAL_CENTERS))
+def test_indexed_equals_brute_force_on_adversarial_world(store, center):
     """Jittered copies of the fixture stations near the buffer edge, exact duplicates (ties in
-    along_route_km), stations on route vertices, and a route with repeated points."""
-    rng = random.Random(94)
+    along_route_km), stations on route vertices, and a route with repeated points, at several latitudes."""
+    lat0, lon0 = ADVERSARIAL_CENTERS[center]
+    rng = random.Random(f"94-{center}")
     base = list(store.stations.values())
-    route = _route([(33.40, -112.10), (33.60, -112.00), (33.60, -112.00), (34.00, -111.90), (34.30, -111.40),
-                    (34.30, -111.40), (34.80, -111.70)])
+    offsets = [(-0.7, -0.3), (-0.5, -0.2), (-0.5, -0.2), (-0.1, -0.1), (0.2, 0.4), (0.2, 0.4), (0.7, 0.1)]
+    route = _route([(lat0 + a, lon0 + b) for a, b in offsets])
     stations = []
     for k in range(600):
-        lat = rng.uniform(33.3, 34.9)
-        lon = rng.uniform(-112.3, -111.2)
+        lat = lat0 + rng.uniform(-0.8, 0.8)
+        lon = lon0 + rng.uniform(-0.6, 0.6)
         if k % 5 == 0:  # on a vertex
             lat, lon = (route.geometry[k % len(route.geometry)].lat, route.geometry[k % len(route.geometry)].lon)
         stations.append(base[k % len(base)].model_copy(update={"station_id": f"adv-{k}", "lat": lat, "lon": lon}))
@@ -117,6 +128,29 @@ def test_indexed_equals_brute_force_on_adversarial_world(store):
     for buffer_km in (0.5, 8.0, 25.0):
         expected = _assert_identical(world, route, buffer_km=buffer_km, max_candidates=10_000)
         assert expected and any(c["amenities"] for c in expected)
+
+
+def test_single_point_route_matches_brute_force(store):
+    route = _route([(35.0, -111.7)])
+    assert _assert_identical(store, route) == []  # no segment, so no station is within the corridor
+
+
+def test_index_rebuilt_when_the_store_changes(store):
+    world = DataStore(list(store.stations.values()), list(store.vehicles.values()), list(store.amenities),
+                      dict(store.places), store.routes_dir)
+    payload = json.loads(repo_path("data/fixtures/routes/phoenix__flagstaff.json").read_text(encoding="utf-8"))
+    payload.pop("_meta", None)
+    route = Route.model_validate(payload)
+    fast = CorridorRetriever(world, 8.0, 400.0, 60)
+    before = fast.candidates(route, None)
+    first = before[0].station
+    # replace the station collection: the first candidate's station moves far off the route
+    moved = first.model_copy(update={"lat": first.lat + 3.0})
+    world.stations = {sid: (moved if sid == first.station_id else st) for sid, st in world.stations.items()}
+    world.amenities = world.amenities[:1]  # and the amenity list shrinks
+    after = fast.candidates(route, None)
+    assert first.station_id not in {c.station.station_id for c in after}
+    assert _dump(after) == _dump(_pair(world)[0].candidates(route, None))
 
 
 def _snapshot_subset(tmp_path: Path, route: Route, pad_deg: float = 0.2) -> DataStore:

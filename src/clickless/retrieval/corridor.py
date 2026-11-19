@@ -83,11 +83,12 @@ class CorridorRetriever:
         self.amenity_radius_m = amenity_radius_m
         self.max_candidates = max_candidates
         self.method = method
-        self._station_grid: dict[Cell, list[int]] | None = None  # built lazily, once per store
+        self._station_grid: dict[Cell, list[int]] | None = None  # built lazily, rebuilt if the store changes
         self._stations: list = []
         self._amenity_grid: dict[Cell, list[int]] | None = None
         self._amenity_links: dict[str, list[tuple[int, float]]] = {}  # station_id -> [(amenity idx, m)]
         self._route_scans: dict[tuple, list[tuple[float, int, int, float]]] = {}  # insertion-ordered memo
+        self._store_signature: tuple | None = None  # what the grids and memos were built from
 
     def candidates(self, route: Route, request: TripRequest) -> list[Candidate]:
         if self.method == "brute_force":
@@ -133,7 +134,19 @@ class CorridorRetriever:
                     grid[(ci, cj)].append(i)
         return grid
 
+    def _check_store(self) -> None:
+        """Drop the grids and memos if the store's station or amenity collections were replaced or
+        resized since they were built (nothing does this today; it keeps the index honest if it does)."""
+        signature = (id(self.store.stations), len(self.store.stations), id(self.store.amenities),
+                     len(self.store.amenities))
+        if signature != self._store_signature:
+            self._station_grid, self._stations, self._amenity_grid = None, [], None
+            self._amenity_links.clear()
+            self._route_scans.clear()
+            self._store_signature = signature
+
     def _candidates_indexed(self, route: Route) -> list[Candidate]:
+        self._check_store()
         poly = [(p.lat, p.lon) for p in route.geometry]
         if len(poly) < 2:  # degenerate route: nearest_on_polyline has no segment to measure
             return self._candidates_brute_force(route)
