@@ -168,13 +168,14 @@ ACCESS = off_for_detour(6) * 1.3
 D_ARRIVE, D_NEED = 50 - (60 + ACCESS) * 0.4, (ACCESS + 140) * 0.4 + 20
 
 
-def pareto_world():
+def pareto_world(**cfg):
     return world(
         [
             station("F", 60, off_for_detour(6), [port(kw=150)]),
             station("S", 60, 0.0, [port(kw=50)]),
             station("D", 60, off_for_detour(6), [port(kw=50)]),
-        ]
+        ],
+        **cfg,
     )
 
 
@@ -196,6 +197,16 @@ def test_pareto_validity_without_amenities():
     assert m["policy_adjusted_pareto_validity_rate"] == pytest.approx(1 / 3)  # no buffer-only cases to drop
     dominated = next(d for d in m["not_valid"] if d["category"] == "dominated")
     assert sorted(dominated["dominated_by"]) == [["F"], ["S"]]
+
+
+def test_pareto_validity_excludes_items_with_an_incomplete_search():
+    shown = [itinerary(stop("D", detour=6, arrive=D_ARRIVE, depart=D_NEED))]  # dominated on the full front
+    res = PlanResult(request_id="p1", config="A", status="ok", alternatives=[alt(i) for i in shown])
+    full = pareto_validity([bench("p1")], [res], pareto_world())
+    assert full["n_dominated"] == 1 and full["n_items_excluded_incomplete_search"] == 0
+    cut = pareto_validity([bench("p1")], [res], pareto_world(pareto_time_budget_s=0.0))
+    assert cut["n_shown"] == 0 and cut["strict_pareto_validity_rate"] is None  # not judged on a partial front
+    assert cut["n_items_excluded_incomplete_search"] == 1 and cut["items_excluded_incomplete_search"] == ["p1"]
 
 
 def test_pareto_validity_amenity_tradeoff_reported_separately():
