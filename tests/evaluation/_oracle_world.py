@@ -100,12 +100,55 @@ def route(km=200.0, duration=120.0) -> Route:
     )
 
 
-def world(stations=(), vehicles=None, route_km=200.0, **cfg) -> LabelSettingOracle:
+class TwinOracle:
+    """Runs every query on the indexed oracle (twice: fresh, then from its caches) and on the
+    exhaustive reference, asserts the three answers are identical, and returns the indexed one.
+    Every hand-built oracle test therefore also checks that the fast path changes no result."""
+
+    COMPARED = ("is_feasible", "pareto_plans", "check_itinerary", "is_valid", "check_plan_result")
+
+    def __init__(self, fast: LabelSettingOracle, slow: LabelSettingOracle) -> None:
+        assert fast.cfg.method == "indexed" and slow.cfg.method == "exhaustive"
+        self.fast, self.slow = fast, slow
+
+    def __getattr__(self, name):
+        attr = getattr(self.fast, name)
+        if name not in self.COMPARED:
+            return attr
+
+        def both(*args, **kwargs):
+            runs = [_outcome(getattr(o, name), args, kwargs) for o in (self.slow, self.fast, self.fast)]
+            answers = [(kind, (type(v), str(v)) if kind == "raised" else v) for kind, v in runs]
+            assert answers[1] == answers[0], f"{name}: indexed {answers[1]!r} != exhaustive {answers[0]!r}"
+            assert answers[2] == answers[0], f"{name}: cached indexed {answers[2]!r} != exhaustive {answers[0]!r}"
+            kind, value = runs[1]
+            if kind == "raised":
+                raise value
+            return value
+
+        return both
+
+    def with_overrides(self, **overrides) -> TwinOracle:
+        return TwinOracle(self.fast.with_overrides(**overrides), self.slow.with_overrides(**overrides))
+
+
+def _outcome(fn, args, kwargs):
+    try:
+        return ("returned", fn(*args, **kwargs))
+    except Exception as e:  # compared by type and message
+        return ("raised", e)
+
+
+def world(stations=(), vehicles=None, route_km=200.0, **cfg) -> TwinOracle:
     r = route(route_km)
     store = DataStore(
         list(stations), vehicles or [vehicle()], [], {"a": (0.0, 0.0), "b": (0.0, route_km / KM_PER_DEG)}, Path(".")
     )
-    return LabelSettingOracle(store, OracleConfig(energy=ENERGY, **cfg), route_source=lambda o, d: r)
+
+    def make(method):
+        return LabelSettingOracle(store, OracleConfig(energy=ENERGY, method=method, **cfg), route_source=lambda o, d: r)
+
+    return TwinOracle(make("indexed"), make("exhaustive"))
 
 
 def req(start=50.0, route_km=200.0, vehicle_id="t", **kw) -> TripRequest:

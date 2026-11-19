@@ -16,14 +16,21 @@ Outputs per request:
 
 Disagreements with the planner are findings. Never change this oracle to match the planner: fix
 the documentation first, then whichever implementation is wrong.
+
+Speed (OracleConfig.method): "indexed" (default) finds corridor stations through a grid index
+(_corridor_index.py) and caches per-route geometry and station projections, and the per-request
+problem (context + candidate nodes), across is_feasible, pareto_plans and check_itinerary.
+"exhaustive" is the original path, locating every station on every segment with no caching; it
+is kept as the reference, and tests/evaluation assert both give identical results.
 """
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import json
 import math
-from collections import Counter
+from collections import Counter, OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +50,7 @@ from clickless.contracts import (
 )
 
 from . import _geometry as geo
+from ._corridor_index import RouteIndex
 from .energy_reference import (
     PortChoice,
     access_km,
@@ -64,6 +72,9 @@ EPS = 1e-9
 EXCLUDED_STATUSES = frozenset({StationStatus.TEMPORARILY_UNAVAILABLE, StationStatus.PLANNED})
 RouteSource = Callable[[Place, Place], "Route | None"]
 DetourScope = Literal["stop", "total"]
+Method = Literal["indexed", "exhaustive"]
+METHODS = ("indexed", "exhaustive")
+MAX_CACHED_REQUESTS = 16
 
 
 class OracleUnavailable(ValueError):
@@ -114,6 +125,11 @@ class OracleConfig:
     continuity_tol_km: float = 0.5
     pareto_tol_min: float = 0.5  # tolerance when comparing a planner plan with the oracle front
     max_labels: int = 200_000
+    method: Method = "indexed"  # speed only: "exhaustive" is the reference path, same results
+
+    def __post_init__(self) -> None:
+        if self.method not in METHODS:
+            raise ValueError(f"method must be one of {METHODS}, got {self.method!r}")
 
     @property
     def charging_model(self) -> Mapping[str, Any]:
@@ -222,6 +238,7 @@ class _Context:
     scale: float  # road km per straight-line km along the geometry
     start: float
     floor_dest: float
+    route_key: tuple = ()  # identifies the route geometry in the RouteIndex
 
 
 @dataclass
@@ -266,11 +283,21 @@ def _insert(front: list, item, key: Callable) -> bool:
 
 
 class LabelSettingOracle:
-    def __init__(self, store, cfg: OracleConfig | Mapping[str, Any], route_source: RouteSource | None = None) -> None:
+    def __init__(
+        self,
+        store,
+        cfg: OracleConfig | Mapping[str, Any],
+        route_source: RouteSource | None = None,
+        *,
+        _index: RouteIndex | None = None,
+    ) -> None:
         self.store = store
         # Backwards compatible with the stub signature LabelSettingOracle(store, energy_cfg).
         self.cfg = cfg if isinstance(cfg, OracleConfig) else OracleConfig(energy=cfg)
         self.route_source: RouteSource = route_source or FileRouteSource(store.routes_dir)
+        self._index = _index or RouteIndex()  # per-route work, shared with with_overrides copies
+        self._requests: OrderedDict[str, Any] = OrderedDict()  # per-request context / problem
+        self._requests_signature: tuple | None = None
 
     @property
     def energy_cfg(self) -> Mapping[str, Any]:
@@ -288,7 +315,30 @@ class LabelSettingOracle:
 
     def with_overrides(self, **overrides) -> LabelSettingOracle:
         """Same store and routes, different model settings (robust / sensitivity / diagnostic runs)."""
-        return LabelSettingOracle(self.store, dataclasses.replace(self.cfg, **overrides), self.route_source)
+        return LabelSettingOracle(
+            self.store, dataclasses.replace(self.cfg, **overrides), self.route_source, _index=self._index
+        )
+
+    # ---------------------------------------------------------------- per-request cache (indexed only)
+
+    def _cached(self, kind: str, request: TripRequest, build: Callable[[], Any]) -> Any:
+        """Memoize build() per (kind, request) while the store's stations and vehicles are the same
+        objects. Public results are never the cached objects themselves (see is_feasible)."""
+        if self.cfg.method == "exhaustive":
+            return build()
+        store = self.store
+        signature = (id(store.stations), len(store.stations), id(store.vehicles), len(store.vehicles))
+        if signature != self._requests_signature:
+            self._requests.clear()
+            self._requests_signature = signature
+        key = f"{kind}:{request.model_dump_json()}"
+        if key in self._requests:
+            self._requests.move_to_end(key)
+            return self._requests[key]
+        value = self._requests[key] = build()
+        while len(self._requests) > MAX_CACHED_REQUESTS:
+            self._requests.popitem(last=False)
+        return value
 
     # ---------------------------------------------------------------- inputs
 
@@ -301,6 +351,9 @@ class LabelSettingOracle:
         return found if found.resolved else None
 
     def _context(self, request: TripRequest) -> _Context | FeasibilityResult:
+        return self._cached("context", request, lambda: self._build_context(request))
+
+    def _build_context(self, request: TripRequest) -> _Context | FeasibilityResult:
         def not_evaluable(reason: str, detail: str) -> FeasibilityResult:
             return FeasibilityResult(False, reason, detail, evaluable=False)
 
@@ -319,16 +372,25 @@ class LabelSettingOracle:
         poly = [(p.lat, p.lon) for p in route.geometry]
         length = geo.path_length_km(poly)
         scale = route.distance_km / length if length > 0 else 1.0
+        route_key = (route.route_id, route.distance_km, route.duration_min, tuple(poly))
         return _Context(
-            request, vehicle, route, poly, scale, float(request.start_soc_pct), self.cfg.floor_dest(request)
+            request, vehicle, route, poly, scale, float(request.start_soc_pct), self.cfg.floor_dest(request), route_key
         )
+
+    def _road(self, ctx: _Context, located: tuple[float, float]) -> tuple[float, float]:
+        along, off = located
+        return min(along * ctx.scale, ctx.route.distance_km), off
 
     def _locate(self, ctx: _Context, station: Station) -> tuple[float, float]:
         """(along road km, offroute straight-line km)."""
-        along, off = geo.locate((station.lat, station.lon), ctx.poly)
-        return min(along * ctx.scale, ctx.route.distance_km), off
+        if self.cfg.method == "exhaustive":
+            return self._road(ctx, geo.locate((station.lat, station.lon), ctx.poly))
+        return self._road(ctx, self._index.locate(self.store.stations, ctx.route_key, ctx.poly, station))
 
     def _problem(self, request: TripRequest) -> _Problem | FeasibilityResult:
+        return self._cached("problem", request, lambda: self._build_problem(request))
+
+    def _build_problem(self, request: TripRequest) -> _Problem | FeasibilityResult:
         ctx = self._context(request)
         if isinstance(ctx, FeasibilityResult):
             return ctx
@@ -353,14 +415,22 @@ class LabelSettingOracle:
         max_detour = request.max_detour_min
         excluded: Counter[str] = Counter()
         stations: list[_Node] = []
+        corridor = None
+        if self.cfg.method == "indexed":  # exact: every station outside it is beyond the buffer
+            corridor = self._index.corridor(self.store.stations, ctx.route_key, ctx.poly, self.cfg.corridor_buffer_km)
         for st in self.store.stations.values():
             reason = None
             if st.status in EXCLUDED_STATUSES:
                 reason = "status"
             elif st.access != "public":
                 reason = "access"
+            elif corridor is not None and st.station_id not in corridor:
+                reason = "buffer"
             else:
-                along, off = self._locate(ctx, st)
+                if corridor is None:
+                    along, off = self._locate(ctx, st)
+                else:
+                    along, off = self._road(ctx, corridor[st.station_id])
                 det = detour_minutes(off, dm)
                 if off > self.cfg.corridor_buffer_km + EPS:
                     reason = "buffer"
@@ -411,7 +481,7 @@ class LabelSettingOracle:
     def is_feasible(self, request: TripRequest) -> FeasibilityResult:
         p = self._problem(request)
         if isinstance(p, FeasibilityResult):
-            return p
+            return copy.deepcopy(p)  # the cached object stays private
         leaf = is_charge_time_excluded(p.ctx.vehicle.vehicle_id)
         total = request.max_detour_min if self.cfg.detour_scope == "total" else None
         ok, path, furthest = self._reach(p, total, p.ctx.floor_dest)
@@ -422,7 +492,7 @@ class LabelSettingOracle:
                 True,
                 None,
                 "",
-                excluded=p.excluded,
+                excluded=dict(p.excluded),
                 charge_time_excluded=leaf,
                 witness=ids,
                 unknown_status_station_ids=unknown,
@@ -444,7 +514,7 @@ class LabelSettingOracle:
                 "energy_gap",
                 f"furthest reachable point {furthest:.1f} km of {p.ctx.route.distance_km:.1f} km",
             )
-        return FeasibilityResult(False, reason, detail, excluded=p.excluded, charge_time_excluded=leaf)
+        return FeasibilityResult(False, reason, detail, excluded=dict(p.excluded), charge_time_excluded=leaf)
 
     # ---------------------------------------------------------------- Pareto search
 
@@ -471,7 +541,7 @@ class LabelSettingOracle:
     def pareto_plans(self, request: TripRequest) -> ParetoResult:
         p = self._problem(request)
         if isinstance(p, FeasibilityResult):
-            return ParetoResult([], True, p)
+            return ParetoResult([], True, copy.deepcopy(p))
         ctx, nodes, n = p.ctx, p.nodes, len(p.nodes)
         cm = self.cfg.charging_model
         total = request.max_detour_min if self.cfg.detour_scope == "total" else None
