@@ -21,13 +21,14 @@ from evaluation.oracle.label_setting import LabelSettingOracle, OracleConfig
 def searches(monkeypatch):
     """Counts actual Pareto searches (cache misses), per oracle method."""
     calls = {"indexed": 0, "exhaustive": 0}
-    real = LabelSettingOracle._pareto
+    for name in ("_pareto", "_pareto_fast"):  # reference search (exhaustive) and fast search (indexed)
+        real = getattr(LabelSettingOracle, name)
 
-    def counting(self, request):
-        calls[self.cfg.method] += 1
-        return real(self, request)
+        def counting(self, request, real=real):
+            calls[self.cfg.method] += 1
+            return real(self, request)
 
-    monkeypatch.setattr(LabelSettingOracle, "_pareto", counting)
+        monkeypatch.setattr(LabelSettingOracle, name, counting)
     return calls
 
 

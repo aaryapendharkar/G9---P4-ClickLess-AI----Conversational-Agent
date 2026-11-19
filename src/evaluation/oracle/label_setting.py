@@ -35,6 +35,7 @@ import dataclasses
 import json
 import math
 import time
+from bisect import bisect_right
 from collections import Counter, OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -276,6 +277,62 @@ class _Label:
 def _weakly_dominates(a: tuple[float, ...], b: tuple[float, ...], tol: float = EPS) -> bool:
     """a <= b in every (minimised) component, within tol."""
     return all(x <= y + tol for x, y in zip(a, b, strict=True))
+
+
+class _Front:
+    """A node's label front with the same semantics as _insert(front, label, _Label.key), faster.
+
+    `labels` keeps _insert's order (survivors in insertion order, the new label appended), so the
+    search expands labels in exactly the reference order. "Is the new key weakly dominated by some
+    label?" does not depend on order, so it is answered from a copy sorted by time: only labels with
+    time <= new time + EPS can dominate, and the four comparisons are the reference's own
+    (x <= y + EPS, with y + EPS computed from the same floats).
+    """
+
+    __slots__ = ("labels", "times", "keys", "hint")
+
+    def __init__(self) -> None:
+        self.labels: list[_Label] = []
+        self.times: list[float] = []  # sorted
+        self.keys: list[tuple[float, float, float, float]] = []  # aligned with times
+        self.hint: tuple[float, float, float, float] | None = None  # the key that last dominated a candidate
+
+    def dominated(self, t0: float, t1: float, t2: float, t3: float) -> bool:
+        """Some label's key is <= (t0, t1, t2, t3) componentwise, where t_c = new key_c + EPS.
+
+        The answer does not depend on the scan order, so the label that dominated the previous
+        candidate (often the same one) is tried first."""
+        h = self.hint
+        if h is not None and h[0] <= t0 and h[1] <= t1 and h[2] <= t2 and h[3] <= t3:
+            return True
+        for key in self.keys[: bisect_right(self.times, t0)]:
+            if key[1] <= t1 and key[2] <= t2 and key[3] <= t3:
+                self.hint = key
+                return True
+        return False
+
+    def add(self, label: _Label, key: tuple[float, float, float, float]) -> None:
+        """Insert a label that no current label dominates; drop the labels it weakly dominates
+        (same test as _insert: key_c <= o_c + EPS for every component)."""
+        k0, k1, k2, k3 = key
+        if self.labels:
+            keys = self.keys
+            gone = [o for o in keys if k0 <= o[0] + EPS and k1 <= o[1] + EPS and k2 <= o[2] + EPS and k3 <= o[3] + EPS]
+            if gone:
+                drop = {id(o) for o in gone}
+                self.keys = [o for o in keys if id(o) not in drop]  # stays sorted
+                self.times = [o[0] for o in self.keys]
+                self.labels = [
+                    o
+                    for o in self.labels
+                    if not (k0 <= o.time + EPS and k1 <= -o.soc + EPS and k2 <= o.detour + EPS and k3 <= o.charge + EPS)
+                ]
+                if self.hint is not None and id(self.hint) in drop:
+                    self.hint = None
+        self.labels.append(label)
+        pos = bisect_right(self.times, k0)
+        self.times.insert(pos, k0)
+        self.keys.insert(pos, key)
 
 
 def _insert(front: list, item, key: Callable) -> bool:
@@ -569,7 +626,7 @@ class LabelSettingOracle:
         )
         found = self._fronts.get(key)
         if found is None:
-            found = self._fronts[key] = self._pareto(request)
+            found = self._fronts[key] = self._pareto_fast(request)
             while len(self._fronts) > MAX_CACHED_FRONTS:
                 self._fronts.popitem(last=False)
         else:
@@ -632,6 +689,82 @@ class LabelSettingOracle:
                 if not complete:
                     break
         plans = [self._to_plan(p, lab) for lab in fronts[-1]]
+        final: list[OraclePlan] = []
+        for plan in sorted(plans, key=lambda x: x.objectives):
+            _insert(final, plan, lambda x: x.objectives)
+        return ParetoResult(sorted(final, key=lambda x: x.objectives), complete, incomplete_reason=reason)
+
+    def _pareto_fast(self, request: TripRequest) -> ParetoResult:
+        """_pareto (the reference, used by method="exhaustive") with identical results, faster:
+        the same labels are created and inserted in the same order with the same float arithmetic;
+        dominance is checked through _Front, per-node values are computed once per node, and a
+        _Label object is built only for a candidate that is inserted."""
+        started = time.monotonic()
+        budget = self.cfg.pareto_time_budget_s
+        p = self._problem(request)
+        if isinstance(p, FeasibilityResult):
+            return ParetoResult([], True, copy.deepcopy(p))
+        ctx, nodes, n = p.ctx, p.nodes, len(p.nodes)
+        cm = self.cfg.charging_model
+        total = request.max_detour_min if self.cfg.detour_scope == "total" else None
+        reserve, floor_dest, max_labels = self.cfg.reserve, ctx.floor_dest, self.cfg.max_labels
+        duration, distance = ctx.route.duration_min, ctx.route.distance_km
+        fronts = [_Front() for _ in range(n)]
+        first = _Label(0, 0.0, ctx.start, 0.0, 0.0, None, None)
+        fronts[0].add(first, first.key())
+        count, complete, reason = 1, True, None
+        last = n - 1
+        for i in range(n - 1):
+            if not complete:
+                break
+            # Per node i: the reference recomputes these for every label and departure, identically.
+            succ = []  # (j, drop, floor - EPS, add_det, drive)
+            for j in range(i + 1, n):
+                floor = floor_dest if j == last else reserve
+                add_det = nodes[j].detour_min if j < last else 0.0
+                drive = duration * (nodes[j].along_km - nodes[i].along_km) / distance
+                succ.append((j, p.drop(i, j), floor - EPS, add_det, drive))
+            port = nodes[i].port
+            for lab in list(fronts[i].labels):
+                if budget is not None and time.monotonic() - started >= budget:
+                    complete, reason = False, "time_budget"
+                    break
+                if i == 0:
+                    deps = [(ctx.start, 0.0)]
+                else:
+                    deps = [
+                        (t, charge_minutes(lab.soc, t, port.peak_kw, port.level, ctx.vehicle, cm))
+                        for t in self._targets(p, i, lab.soc)
+                    ]
+                lab_time, lab_det, lab_charge = lab.time, lab.detour, lab.charge
+                for dep, cmin in deps:
+                    t_base = lab_time + cmin  # the reference's lab.time + cmin + drive + add_det, left to right
+                    charge = lab_charge + cmin
+                    t3 = charge + EPS
+                    stop = (i, lab.soc, dep, cmin) if i > 0 else None
+                    for j, drop, floor_eps, add_det, drive in succ:
+                        arr = dep - drop
+                        if arr < floor_eps:
+                            continue
+                        detour = lab_det + add_det
+                        if total is not None and detour > total + EPS:
+                            continue
+                        t = t_base + drive + add_det
+                        neg_soc = -arr
+                        front = fronts[j]
+                        if front.dominated(t + EPS, neg_soc + EPS, detour + EPS, t3):
+                            continue
+                        new = _Label(j, t, arr, detour, charge, lab, stop)
+                        front.add(new, (t, neg_soc, detour, charge))
+                        count += 1
+                        if count > max_labels:
+                            complete, reason = False, "max_labels"
+                            break
+                    if not complete:
+                        break
+                if not complete:
+                    break
+        plans = [self._to_plan(p, lab) for lab in fronts[-1].labels]
         final: list[OraclePlan] = []
         for plan in sorted(plans, key=lambda x: x.objectives):
             _insert(final, plan, lambda x: x.objectives)

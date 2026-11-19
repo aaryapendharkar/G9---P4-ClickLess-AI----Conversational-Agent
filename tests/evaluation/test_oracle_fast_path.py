@@ -22,7 +22,7 @@ from clickless.data.loaders import DataStore
 from evaluation.oracle import _corridor_index as corridor_index
 from evaluation.oracle import _geometry as geo
 from evaluation.oracle._corridor_index import RouteIndex
-from evaluation.oracle.label_setting import LabelSettingOracle, OracleConfig
+from evaluation.oracle.label_setting import FileRouteSource, LabelSettingOracle, OracleConfig
 
 ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT = ROOT / "data" / "snapshot"
@@ -273,3 +273,39 @@ def test_identical_on_real_snapshot_routes(snapshot_store, route_file, start):
     for plan in front.plans[:2]:
         o.check_itinerary(req, itinerary(*(stop(s.station_id, s.connector, s.port_power_kw) for s in plan.stops)))
     o.check_itinerary(req, itinerary(*(stop(s.station_id) for s in random.Random(1).sample(subset, 3))))
+
+
+# --------------------------------------------------------------------------- the search itself, at 1 %
+
+SEARCH_CASES = [
+    # (route file, origin, destination, vehicle, start, max_labels): capped searches compare the
+    # order-sensitive cut-off too, so the fast search must create and insert labels in the same order.
+    ("denver-co__salt-lake-city-ut.json", "Denver, CO", "Salt Lake City, UT", "tesla-model-3-rwd-2024", 50, 2_000),
+    ("denver-co__salt-lake-city-ut.json", "Denver, CO", "Salt Lake City, UT", "tesla-model-3-rwd-2024", 50, 8_000),
+    ("flagstaff-az__page-az.json", "Flagstaff, AZ", "Page, AZ", "kia-ev9-lr-rwd-2024", 45, 200_000),
+]
+
+
+@pytest.mark.parametrize("case", SEARCH_CASES, ids=lambda c: f"{c[0].split('__')[0]}-{c[5]}")
+def test_fast_search_identical_to_reference_on_real_routes_at_1_percent(snapshot_store, case):
+    """The reference search (_pareto, used by method="exhaustive") and the fast one, on the same
+    indexed problem, full snapshot store, 1 % SoC grid."""
+    route_file, origin, dest, vehicle_id, start, max_labels = case
+    if not (SNAPSHOT / "routes" / route_file).exists():
+        pytest.skip(f"no cached route {route_file}")
+    o = LabelSettingOracle(
+        snapshot_store,
+        OracleConfig(energy=ENERGY, soc_grid_step_pct=1.0, max_labels=max_labels, pareto_time_budget_s=None),
+        route_source=FileRouteSource(SNAPSHOT / "routes"),
+    )
+    request = TripRequest(
+        request_id="r",
+        raw_text="",
+        origin=snapshot_store.geocode(origin),
+        destination=snapshot_store.geocode(dest),
+        vehicle_id=vehicle_id,
+        start_soc_pct=start,
+    )
+    fast, reference = o._pareto_fast(request), o._pareto(request)
+    assert fast == reference
+    assert fast.plans or not fast.complete
