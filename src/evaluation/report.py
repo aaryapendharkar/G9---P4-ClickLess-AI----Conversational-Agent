@@ -59,6 +59,7 @@ import csv
 import json
 import math
 import statistics
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -588,6 +589,42 @@ def _write_csv(path: Path, rows: list[dict[str, Any]], fields: Sequence[str]) ->
             w.writerow({k: "" if r.get(k) is None else r.get(k) for k in fields})
 
 
+def _error_summary(run: ConfigRun, ids: Sequence[str]) -> str:
+    """'ValueError x2 (deepti-025: ValueError: ...)': error types by count, with the first example."""
+    by_id = {r["id"]: r for r in run.rows}
+    kinds = Counter(by_id.get(i, {}).get("error_type") or run.status.get(i) or "no result" for i in ids)
+    first = next((i for i in ids if by_id.get(i, {}).get("error")), None)
+    text = ", ".join(f"{k} x{n}" for k, n in kinds.most_common())
+    return text + (f" (first: {first}: {by_id[first]['error']})" if first else "")
+
+
+def run_problems(
+    configs: Sequence[str], runs: Mapping[str, ConfigRun], failed: Mapping[str, str]
+) -> tuple[list[str], list[str]]:
+    """(why each config with nothing evaluated has nothing, item errors of configs that ran).
+
+    A report whose headline is all n/a must say why at the top: the config failed before writing
+    results, it ran no items, or every item errored. Configs where only some items errored are
+    listed separately, so a crash is visible even when the rest of the run is fine."""
+    nothing: list[str] = []
+    item_errors: list[str] = []
+    for config in configs:
+        run = runs.get(config)
+        if run is None:
+            why = failed.get(config, "no result JSON in this directory")
+            nothing.append(f"{config}: the config failed before writing results ({why})")
+            continue
+        if not run.items:
+            nothing.append(f"{config}: no items ran (the item files or split matched no benchmark items)")
+            continue
+        errored = sorted(i for i in run.items if run.errored(i))
+        if len(errored) == len(run.items):
+            nothing.append(f"{config}: all {len(run.items)} items errored: {_error_summary(run, errored)}")
+        elif errored:
+            item_errors.append(f"{config}: {len(errored)} of {len(run.items)} items: {_error_summary(run, errored)}")
+    return nothing, item_errors
+
+
 def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     """Write report.md and the CSVs into run_dir; return the report.md path."""
     run_dir = Path(run_dir)
@@ -750,6 +787,16 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
             + "; ".join(f"{c}: {', '.join(ids)}" for c, ids in sorted(excluded.items()) if ids),
             "",
         ]
+    nothing, item_errors = run_problems(configs, runs, failed)
+    if nothing:
+        if len(nothing) == len(configs):
+            lines += ["**Nothing was evaluated in this run.** Every number below is n/a, for these reasons:", ""]
+        else:
+            lines += ["**Nothing evaluated for some configs:**", ""]
+        lines += [f"- {msg}" for msg in nothing] + [""]
+    if item_errors:
+        lines += ["**Item errors** (counted in the error rate; the run continued):", ""]
+        lines += [f"- {msg}" for msg in item_errors] + [""]
     lines += [
         "## Headline",
         "",
