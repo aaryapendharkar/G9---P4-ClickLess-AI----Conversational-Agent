@@ -19,6 +19,10 @@ Category = Literal[
 ]
 
 
+class FixtureItemsRefused(ValueError):
+    """Fixture-world benchmark items (e.g. dev/fixture_smoke.jsonl) were requested on snapshot data."""
+
+
 class BenchmarkItem(BaseModel):
     id: str
     author: Author

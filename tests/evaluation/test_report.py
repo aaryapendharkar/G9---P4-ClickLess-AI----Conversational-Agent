@@ -194,19 +194,23 @@ def test_headline_hand_computed(run_dir):
     assert a["exact_match"][0] == pytest.approx(4 / 5, rel=1e-6)
     # clarification: gold positives i3, i6; asked only i3 -> TP 1, FP 0, FN 1 -> F1 = 2/3
     assert a["clarification_f1"][0] == pytest.approx(2 / 3, rel=1e-6)
+    # every predicted place carries the gold's state, so strict == city level here
+    assert a["field_f1_strict"][0] == a["field_f1"][0] and a["exact_match_strict"][0] == a["exact_match"][0]
     # silent assumption: of i3, i6 the system proceeded on i6 -> 1/2
     assert a["silent_assumption_rate"][0] == pytest.approx(1 / 2, rel=1e-6)
-    # error rate over all six items: i5 -> 1/6
-    assert a["error_rate"][0] == pytest.approx(1 / 6, rel=1e-6)
-    lo, hi = a["error_rate"][1]
+    # errors over all six items: i5 (not_implemented, no parsed request) is a parse error -> 1/6
+    assert a["parse_error_rate"][0] == pytest.approx(1 / 6, rel=1e-6)
+    lo, hi = a["parse_error_rate"][1]
     assert 0.0 <= lo <= 1 / 6 <= hi <= 1.0
+    assert a["planning_error_rate"][0] == 0.0
     # no planning / grounding / freshness blocks in A
     for col in ("plan_feasibility_rate", "hard_violation_rate", "claim_support_rate", "freshness_mislabel_rate"):
         assert a[col] == (None, None)
 
     b = headline(runs["B"], n_boot=200)
     assert b["field_f1"][0] == 1.0 and b["exact_match"][0] == 1.0 and b["clarification_f1"][0] == 1.0
-    assert b["silent_assumption_rate"][0] == 0.0 and b["error_rate"][0] == 0.0
+    assert b["silent_assumption_rate"][0] == 0.0
+    assert b["parse_error_rate"][0] == 0.0 and b["planning_error_rate"][0] == 0.0
     assert b["plan_feasibility_rate"] == (None, None)  # {"not_implemented": ...} -> n/a
 
     c = headline(runs["C"], n_boot=200)
@@ -265,8 +269,12 @@ def test_build_report_writes_every_section_and_csv(run_dir):
         "## Run metadata",
     ):
         assert section in text
-    for name in ("headline.csv", "paired.csv", "breakdown.csv", "findings.csv", "metadata.csv"):
+    for name in ("headline.csv", "paired.csv", "breakdown.csv", "errors.csv", "findings.csv", "metadata.csv"):
         assert (run_dir / name).is_file()
+    assert "## Errors by stage and type" in text
+    assert [(r["config"], r["stage"], r["error_type"], r["n"]) for r in read_csv(run_dir / "errors.csv")] == [
+        ("A", "parse", "NotImplementedError", "1")
+    ]
 
     head = {r["config"]: r for r in read_csv(run_dir / "headline.csv")}
     assert float(head["A"]["exact_match"]) == pytest.approx(0.8)
@@ -285,7 +293,8 @@ def test_build_report_writes_every_section_and_csv(run_dir):
     br = read_csv(run_dir / "breakdown.csv")
     a_author = {r["group"]: r for r in br if r["config"] == "A" and r["dimension"] == "author"}
     assert {g: int(r["n_items"]) for g, r in a_author.items()} == {"aarya": 2, "ian": 2, "manas": 2}
-    assert float(a_author["manas"]["error_rate"]) == pytest.approx(0.5)  # i5 errored, i6 ok
+    assert float(a_author["manas"]["parse_error_rate"]) == pytest.approx(0.5)  # i5 errored, i6 ok
+    assert float(a_author["manas"]["planning_error_rate"]) == 0.0
     assert int(a_author["manas"]["n_with_result"]) == 1
     a_cat = {r["group"]: int(r["n_items"]) for r in br if r["config"] == "A" and r["dimension"] == "category"}
     assert a_cat == {"incomplete": 2, "rural": 2, "urban": 2}
@@ -312,7 +321,7 @@ def test_missing_config_shows_failed_and_skips_its_pair(tmp_path, run_dir):
     assert "- C: RuntimeError: config C uses an LLM" in text
     assert "B vs C: n/a (C missing)" in text
     c_line = next(line for line in text.splitlines() if line.startswith("| C |"))
-    assert c_line.count("n/a") == 9  # every headline metric
+    assert c_line.count("n/a") == 12  # every headline metric
     assert {r["pair"] for r in read_csv(run_dir / "paired.csv")} == {"A vs B"}
 
 
@@ -362,8 +371,9 @@ def test_run_all_records_failures_and_keeps_going(tmp_path):
     assert "A vs B: n/a (B missing)" in text and "B vs C: n/a (B missing)" in text
 
 
-def test_end_to_end_config_a_on_the_fixture_world(tmp_path):
+def test_end_to_end_config_a_on_the_fixture_world(tmp_path, monkeypatch):
     """The real harness, Config A, the fixture smoke items -> results/<ts>/report.md."""
+    monkeypatch.delenv("CLICKLESS_DATA_SOURCE", raising=False)
     d = run_all(
         ["A"],
         items_paths=["benchmark/requests/dev/fixture_smoke.jsonl"],
@@ -374,8 +384,79 @@ def test_end_to_end_config_a_on_the_fixture_world(tmp_path):
     report = build_report(d, n_boot=50)
     head = {r["config"]: r for r in read_csv(d / "headline.csv")}
     assert head["A"]["status"] == "ok" and int(head["A"]["n_items"]) == 3
-    assert float(head["A"]["error_rate"]) == 0.0
+    assert float(head["A"]["parse_error_rate"]) == 0.0 and float(head["A"]["planning_error_rate"]) == 0.0
     assert "## Headline" in report.read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------- error stages, strict columns
+
+
+def staged_rows():
+    """Six items: i1 ok without state suffixes; i2/i4 planning errors (route not cached, from the
+    result notes); i3 incomplete, proceeded and hit a planning error (a silent assumption);
+    i5 a harness-tagged parse exception (no result); i6 asked."""
+    def res(item_id, status, notes=(), states=True):
+        r = plan_result(item_id, status, None if item_id in INCOMPLETE else 50)
+        if not states:
+            r["request"]["origin"]["text"], r["request"]["destination"]["text"] = "Phoenix", "Flagstaff"
+        r["notes"] = list(notes)
+        return {"id": item_id, "status": status, "latency_ms": 10.0, "result": r}
+
+    route = ["no cached route at data/snapshot/routes/phoenix-az__flagstaff-az.json"]
+    return [
+        res("i1", "ok", states=False),
+        res("i2", "error", route),
+        res("i3", "error", route),
+        res("i4", "error", route),
+        {"id": "i5", "status": "error", "error": "ValueError: bad JSON from model",
+         "error_type": "ValueError", "error_stage": "parse"},
+        res("i6", "needs_clarification"),
+    ]
+
+
+def test_error_rate_split_by_stage_and_type(tmp_path):
+    items = write_items(tmp_path / "items.jsonl")
+    d = tmp_path / "run"
+    d.mkdir()
+    (d / "A_items.json").write_text(json.dumps(payload("A", items, staged_rows())), encoding="utf-8")
+    runs, _ = load_runs(d)
+    h = headline(runs["A"], n_boot=100)
+    assert h["parse_error_rate"][0] == pytest.approx(1 / 6)  # i5
+    assert h["planning_error_rate"][0] == pytest.approx(3 / 6)  # i2, i3, i4
+    # planning errors keep their parse in the understanding metrics: i1-i4 and i6 scored, i5 not.
+    # i1 has no state suffix -> matches at city level only.
+    assert h["exact_match"][0] == 1.0
+    assert h["exact_match_strict"][0] == pytest.approx(4 / 5)
+    assert h["field_f1"][0] == 1.0 and h["field_f1_strict"][0] < 1.0
+    # silent assumption: incomplete i3 (planning error after proceeding) and i6 (asked) -> 1/2
+    assert h["silent_assumption_rate"][0] == pytest.approx(1 / 2)
+
+    text = build_report(d, n_boot=100).read_text(encoding="utf-8")
+    groups = [(r["stage"], r["error_type"], r["n"], r["example_ids"]) for r in read_csv(d / "errors.csv")]
+    assert groups == [("parse", "ValueError", "1", "i5"), ("planning", "RouteNotCached", "3", "i2 i3 i4")]
+    assert "| A | planning | RouteNotCached | 3 | 0.500 | i2 i3 i4 |" in text
+    header = next(line for line in text.splitlines() if line.startswith("| Config | n |"))
+    for label in ("Exact match (strict)", "Field F1 (strict)", "Parse error rate", "Planning error rate"):
+        assert label in header
+
+
+def test_fixture_refusal_stops_run_all_and_the_cli(tmp_path, monkeypatch):
+    from evaluation import report
+    from evaluation.schema import FixtureItemsRefused
+
+    calls = []
+
+    def runner(config, *a, **k):
+        calls.append(config)
+        raise FixtureItemsRefused("refusing 3 fixture-world item(s)")
+
+    with pytest.raises(FixtureItemsRefused):
+        run_all(["A", "B"], items_paths=["x.jsonl"], out_root=str(tmp_path), runner=runner, stamp="s")
+    assert calls == ["A"]  # stops instead of recording a failed config and trying the next
+
+    monkeypatch.setattr(report, "run_all", lambda *a, **k: runner("A"))
+    with pytest.raises(SystemExit, match="refused: refusing 3 fixture-world"):
+        report.main(["--configs", "A", "--items", "x.jsonl"])
 
 
 # --------------------------------------------------------------------------- independence
