@@ -191,6 +191,11 @@ def run(
         except NotImplementedError as e:
             rows.append({"id": item.id, "status": "not_implemented", "error": str(e)})
             continue
+        except Exception as e:  # noqa: BLE001 - one crashing item must not abort the run
+            # Recorded as an error with its reason (same row fields as #91), and the run goes on.
+            rows.append({"id": item.id, "status": "error", "error": f"{type(e).__name__}: {e}",
+                         "error_type": type(e).__name__, "latency_ms": (time.perf_counter() - t0) * 1000})
+            continue
         results.append(res)
         rows.append({"id": item.id, "status": res.status, "latency_ms": (time.perf_counter() - t0) * 1000,
                      "result": json.loads(res.model_dump_json())})
