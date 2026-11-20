@@ -47,8 +47,11 @@ itinerary break any hard constraint.
 - `is_feasible(request)` is **exact** and independent of the Pareto search. Departing every stop at the cap maximises reach.
   Labels (SoC, cumulative detour) are Pareto-pruned, so under `detour_scope="total"` a lower-reach, lower-detour path survives.
   Reason codes: `unknown_vehicle`, `connector_no_overlap`, `start_below_reserve`, `no_usable_station` (with excluded counts by
-  reason), `energy_gap`, `arrival_soc_unreachable`, `detour_total_exceeded`. Requests with missing fields, an unresolved place or no route are
-  `evaluable=False`.
+  reason), `energy_gap`, `arrival_soc_unreachable`, `detour_total_exceeded`. `connector_no_overlap` applies only when a stop is
+  needed: a trip drivable without charging is feasible whatever the override. Requests with missing fields, an unresolved
+  place, no route (`no_route`), a route source that raised (`route_error`, with the exception) or a degenerate route
+  (`degenerate_route`: fewer than 2 points, zero length, e.g. origin and destination geocode to the same place) are
+  `evaluable=False`. `FeasibilityResult` is truthy exactly when feasible.
 - `pareto_plans(request)`: label-setting over stations in route order, with dominance pruning on (time, SoC, detour, charge).
   Departure targets are the exact need of every later node plus a `soc_grid_step_pct` grid. Returns the non-dominated plans over
   **(total time, detour, charge time)**. `complete=False` (with `incomplete_reason`) if `max_labels` is hit or the search
@@ -58,12 +61,24 @@ itinerary break any hard constraint.
 - `check_itinerary(request, itinerary)` replays the plan with the oracle's own distances and lists **every** violation, using
   the contract codes `connector`, `power`, `detour`, `arrival_soc`, `reserve`, `status`, `access`, `departure_soc`, `continuity`,
   `unknown_station`, `route_distance`. Claim mismatches (claimed detour or arrival vs the oracle's) are notes, not violations.
+  Power rules (`min_power_kw`, non-positive power) apply to the port the stop uses, identified by its claimed power.
+  `ok` allows `soc_tol_pct` / `detour_tol_min`; `strict_ok` repeats the checks with the search's own EPS, so a plan that
+  passes only within tolerance is known (`strict_violations`).
+- Exact ties on the front (and between labels) keep the plan with fewer `UNKNOWN`-status stops, never the one whose station
+  ID sorts first.
 
 ## Metrics (`metrics/planning.py`, wired into the harness)
 plan feasibility rate, false rejection rate, hard-violation rate and counts by code, infeasible-handling accuracy (+ relaxed
-plans checked against never-relaxed constraints), robust feasibility at +`efficiency_penalty_robust` (plan replay and oracle
-re-run), unknown-power sensitivity (DC-fast fallback 25 and 100 kW vs 50, LEAF excluded), corridor-buffer diagnostic, and
-reliance on stations whose status is `UNKNOWN`.
+plans checked against never-relaxed constraints of the original request AND against the relaxed request rebuilt from
+`Relaxation.changes`), robust feasibility at +`efficiency_penalty_robust` (plan replay and oracle
+re-run), unknown-power sensitivity (DC-fast fallback 25 and 100 kW vs 50, LEAF excluded), corridor-buffer diagnostic
+(oracle-infeasible items re-checked with `configs/evaluation.yaml` `oracle.diagnostic_buffer_km`; feasibility can only gain
+from extra stations, so feasible items are not re-run), and reliance on stations whose status is `UNKNOWN`.
+
+Items the oracle cannot judge are never dropped silently: the feasibility block lists them (`items_skipped`,
+`skipped_by_reason`: `clarification_required`, `no_result`, or the oracle's not-evaluable reason), and a run where no item is
+evaluable gets an `oracle_nothing_evaluable` finding. The harness isolates each metric block: an exception becomes
+`{"error": "<Type>: <message>"}` in that block.
 
 Front-based metrics (front membership, oracle-fastest changes, unknown-status reliance, `planner_plan_outside_oracle_front`)
 run only on oracle-feasible items where the planner returned a plan. An item whose search is incomplete is left out of all of
@@ -75,7 +90,13 @@ them (never judged against a partial front), gets an `oracle_search_incomplete` 
 - `oracle_feasible_planner_rejected`
 - `oracle_infeasible_plan_passes_check`
 - `planner_plan_outside_oracle_front` (a valid planner plan that no oracle plan matches within `pareto_tol_min`)
-- `verifier_disagreement` (planner verifier vs oracle check)
+- `verifier_disagreement` (planner verifier vs the oracle check of the same, PARSED, request; the gold request only when the
+  result has no parsed request or the oracle cannot evaluate it)
+- `parse_changed_constraints` (gold vs parsed hard-constraint fields differ: the parser, not the verifier, is the cause)
+- `plan_passes_only_within_tolerance` (passes `check_itinerary` only within tolerance; such a plan is never reported as
+  `oracle_infeasible_plan_passes_check` or `planner_plan_outside_oracle_front`)
+- `relaxation_unparseable` (`Relaxation.changes` not in the relaxation step's fixed forms; the relaxed plan counts as bad)
+- `oracle_nothing_evaluable` (no item could be judged; the detail gives the reasons)
 - `oracle_search_incomplete` (time budget or `max_labels` hit; the item is excluded from front-based metrics)
 - `itinerary_uncheckable`
 

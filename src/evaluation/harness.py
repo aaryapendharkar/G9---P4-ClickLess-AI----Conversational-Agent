@@ -81,10 +81,14 @@ _DIGEST_COMMENT = re.compile(r"digest\s+([0-9a-f]{12,64})\b", re.IGNORECASE)
 
 
 def _safe(fn, *args) -> dict:
+    """One metric block failing must not lose the others or the results JSON: the error is recorded
+    in that block ({"error": "<Type>: <message>"}) and the run continues."""
     try:
         return fn(*args)
     except NotImplementedError as e:
         return {"not_implemented": str(e)}
+    except Exception as e:  # noqa: BLE001 - isolated per metric block on purpose
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 # --------------------------------------------------------------------------- run metadata
