@@ -349,7 +349,7 @@ def run(
         "grounding": _safe(claim_support, ordered),  # each result's own evidence only (ADR 0015)
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
         "planning": _safe(planning_metrics, done, ordered, oracle),
-        "tradeoffs": _safe(tradeoff_metrics, done, ordered, oracle, cfg["tradeoffs"]),
+        "tradeoffs": _safe(tradeoff_metrics, done, ordered, oracle, cfg["tradeoffs"], cfg.get("evaluation")),
         # nDCG@3 (metrics.planning.ndcg_at_k) is wired once graded relevance labels exist.
         # TODO(Ian): handoff, latency p50/p95
     }
