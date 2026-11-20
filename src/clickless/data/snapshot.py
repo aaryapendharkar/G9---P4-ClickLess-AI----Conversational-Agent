@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 
 from ..config import repo_path
 
@@ -28,15 +28,23 @@ def _record_count(path: Path) -> int | None:
     return len(records) if isinstance(records, (list, dict)) else None
 
 
+def manifest_key(path: PurePath, root: PurePath) -> str:
+    """The MANIFEST.json key for `path`: relative to `root`, always with `/` separators.
+
+    `str(path.relative_to(root))` would write `routes\\x.json` on Windows, while manifests,
+    releases and tests use `routes/x.json` (#100)."""
+    return path.relative_to(root).as_posix()
+
+
 def write_manifest(snapshot_dir: str = "data/snapshot", extra: dict | None = None) -> Path:
     """Hash every file; also record per-file record counts and `extra` (sources, query
     parameters, retrieval windows, conversion reports -- see data/build_snapshot.py)."""
     root = repo_path(snapshot_dir)
     files = sorted(p for p in root.rglob("*") if p.is_file() and p.name != "MANIFEST.json")
-    counts = {str(p.relative_to(root)): n for p in files if (n := _record_count(p)) is not None}
+    counts = {manifest_key(p, root): n for p in files if (n := _record_count(p)) is not None}
     manifest = {
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "files": {str(p.relative_to(root)): sha256_file(p) for p in files},
+        "files": {manifest_key(p, root): sha256_file(p) for p in files},
         "record_counts": counts,
         **(extra or {}),
     }
