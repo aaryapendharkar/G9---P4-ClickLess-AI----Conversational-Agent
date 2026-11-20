@@ -74,6 +74,7 @@ def simulate_itinerary(
     energy_config: dict[str, Any],
     efficiency_penalty: float,
     route_measurement: ItineraryRouteMeasurement | None = None,
+    precomputed_distance_scale: float | None = None,
 ) -> Itinerary | None:
     """Build one itinerary from measured legs, rejecting infeasible energy."""
 
@@ -87,6 +88,7 @@ def simulate_itinerary(
         route,
         stops,
         energy_config,
+        precomputed_distance_scale=precomputed_distance_scale,
     )
     if route_measurement is None:
         # Direct callers and cache-mode tests retain the deterministic

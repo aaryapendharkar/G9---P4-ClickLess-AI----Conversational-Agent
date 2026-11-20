@@ -124,15 +124,23 @@ class ItineraryPlanner:
         """
 
         self.measurement_warnings = []
+
+        # Every candidate sequence uses the same route geometry. Calculate its
+        # geometry-to-road-distance scale once instead of once per itinerary.
+        distance_scale = route_distance_scale(route)
+
         ordered_candidates = sorted(
-            candidates, key=lambda candidate: candidate.along_route_km
+            candidates,
+            key=lambda candidate: candidate.along_route_km,
         )
+
         stop_sequences = self._build_stop_sequences(
             request,
             vehicle,
             route,
             ordered_candidates,
             efficiency_penalty,
+            distance_scale,
         )
         feasible_itineraries: list[Itinerary] = []
 
@@ -163,6 +171,7 @@ class ItineraryPlanner:
                 self.energy_config,
                 efficiency_penalty,
                 route_measurement=route_measurement,
+                precomputed_distance_scale=distance_scale,
             )
 
             if itinerary is not None:
@@ -177,6 +186,7 @@ class ItineraryPlanner:
         route: Route,
         ordered_candidates: list[Candidate],
         efficiency_penalty: float,
+        distance_scale: float,
     ) -> list[list[Candidate]]:
         """Build representative forward sequences of any feasible stop count.
 
@@ -192,7 +202,6 @@ class ItineraryPlanner:
         if len(ordered_candidates) < 2:
             return stop_sequences
 
-        distance_scale = route_distance_scale(route)
         road_factor = self.energy_config["placeholder_detour"]["road_factor"]
         minutes_per_km = route.duration_min / route.distance_km
         origin_point = RoutePoint(

@@ -4,6 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
+import clickless.planning.planner as planner_module
+import clickless.planning.route_points as route_points_module
 from clickless.planning.planner import ItineraryPlanner
 from clickless.planning.route_measurement import (
     GeometricRouteMeasurer,
@@ -11,7 +13,82 @@ from clickless.planning.route_measurement import (
     MeasuredLeg,
     TemporaryFailureFallbackMeasurer,
 )
+from clickless.planning.route_points import route_distance_scale
 from clickless.planning.routing import OSRMTemporaryError
+
+
+def test_planner_reuses_route_distance_scale_across_stop_sequences(
+    pipe_a,
+    cfg_a,
+    demo_text,
+    monkeypatch,
+) -> None:
+    """One route scale must serve every itinerary evaluated in a planning run."""
+
+    request = pipe_a.parser.parse(
+        demo_text,
+        "route-scale-cache-test",
+    ).request
+    vehicle = pipe_a.store.vehicle(request.vehicle_id)
+    route = pipe_a.router.route(
+        request.origin,
+        request.destination,
+    )
+    direct_route_measurement = ItineraryRouteMeasurement(
+        points=(),
+        legs=(
+            MeasuredLeg(
+                start_label=request.origin.text,
+                end_label=request.destination.text,
+                distance_km=50.0,
+                duration_min=42.0,
+            ),
+        ),
+        stop_detour_min=(),
+    )
+    route_measurer = Mock()
+    route_measurer.measure.return_value = direct_route_measurement
+    planner = ItineraryPlanner(
+        cfg_a["energy"],
+        route_measurer=route_measurer,
+    )
+
+    # Two sequences reproduce the important condition: final simulation runs
+    # repeatedly while every sequence still uses the same unchanged route.
+    monkeypatch.setattr(
+        planner,
+        "_build_stop_sequences",
+        Mock(return_value=[[], []]),
+    )
+
+    planner_scale_calculation = Mock(wraps=route_distance_scale)
+    unexpected_simulation_recalculation = Mock(
+        side_effect=AssertionError(
+            "simulation recalculated a route scale already supplied by the planner"
+        )
+    )
+    monkeypatch.setattr(
+        planner_module,
+        "route_distance_scale",
+        planner_scale_calculation,
+    )
+    monkeypatch.setattr(
+        route_points_module,
+        "route_distance_scale",
+        unexpected_simulation_recalculation,
+    )
+
+    itineraries = planner.plan(
+        request,
+        vehicle,
+        route,
+        candidates=[],
+    )
+
+    assert len(itineraries) == 2
+    assert planner_scale_calculation.call_count == 1
+    unexpected_simulation_recalculation.assert_not_called()
+    assert route_measurer.measure.call_count == 2
 
 
 def test_planner_uses_injected_leg_distance_and_duration(

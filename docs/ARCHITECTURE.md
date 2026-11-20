@@ -136,6 +136,14 @@ Configuration A's verifier measurements remain deterministic geometric estimates
 not live road reroutes. All committed A/B/C configurations still select fixture
 routing, so tests and demos remain offline and repeatable.
 
+Planning can evaluate many stop sequences against one unchanged route. The
+geometric measurer therefore retains the active route's geometry-wide values
+and each authoritative station projection, while the planner calculates its
+geometry-to-road-distance scale once and passes it to every final simulation.
+A different route is checked before cached values are reused. Planner and
+verifier still own separate measurer instances, so this reuse removes repeated
+arithmetic without letting verification trust planner-produced measurements.
+
 When routing mode is switched to OSRM, the pipeline injects a cache-backed
 measurement strategy into the verifier. It independently requests each
 consecutive itinerary leg and each single-station detour through the waypoint
