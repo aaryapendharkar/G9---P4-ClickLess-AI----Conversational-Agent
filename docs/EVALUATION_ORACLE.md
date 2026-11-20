@@ -54,8 +54,16 @@ itinerary break any hard constraint.
   `evaluable=False`. `FeasibilityResult` is truthy exactly when feasible.
 - `pareto_plans(request)`: label-setting over stations in route order, with dominance pruning on (time, SoC, detour, charge).
   Departure targets are the exact need of every later node plus a `soc_grid_step_pct` grid. Returns the non-dominated plans over
-  **(total time, detour, charge time)**. `complete=False` (with `incomplete_reason`) if `max_labels` is hit or the search
-  runs past `pareto_time_budget_s` (`configs/evaluation.yaml`, default 60 s per search); never silently truncated.
+  **(total time, detour, charge time)**. `complete=False` (with `incomplete_reason`) if the search inserts `max_labels`
+  labels (`configs/evaluation.yaml`, 40,000 per search); never silently truncated. The label limit is deterministic:
+  the same input and settings give the same `complete` flag, label count (`n_labels`) and front on any machine, so
+  the items excluded from front-based metrics are the same in every run. `pareto_time_budget_s` (600 s) is only a
+  wall-clock safety net; if it ever fires (`incomplete_reason="time_budget"`), the result depends on machine load and
+  the planning metrics add an `oracle_nondeterministic_cutoff` finding.
+  Calibration (2026-11-20, snapshot `93983c110571`, Deepti's items): every search that finished within the former
+  60 s wall-clock limit used at most 34,960 labels, and deepti-010 had reached 39,432 when 60 s ran out. Throughput
+  varies from about 200 to 2,300 labels/s by item, so no label count reproduces "60 s" item by item; 40,000 keeps
+  every search that used to finish, and a search at the slowest rate now runs about 200 s at most.
   Results are cached per (request, settings) and returned as copies; the cache never changes an answer.
   Tested invariant: `is_feasible ⇔ front non-empty`, under both detour scopes, and every front plan passes `check_itinerary`.
 - `check_itinerary(request, itinerary)` replays the plan with the oracle's own distances and lists **every** violation, using
@@ -97,7 +105,9 @@ them (never judged against a partial front), gets an `oracle_search_incomplete` 
   `oracle_infeasible_plan_passes_check` or `planner_plan_outside_oracle_front`)
 - `relaxation_unparseable` (`Relaxation.changes` not in the relaxation step's fixed forms; the relaxed plan counts as bad)
 - `oracle_nothing_evaluable` (no item could be judged; the detail gives the reasons)
-- `oracle_search_incomplete` (time budget or `max_labels` hit; the item is excluded from front-based metrics)
+- `oracle_search_incomplete` (`max_labels` or the wall-clock safety net hit; the item is excluded from front-based metrics)
+- `oracle_nondeterministic_cutoff` (the wall-clock safety net fired before `max_labels`: whether the item is excluded
+  depends on machine load, so the run is not reproducible; raise `pareto_time_budget_s` or lower `max_labels`)
 - `itinerary_uncheckable`
 
 **Policy: never change the oracle to make it agree with the planner.** For each finding, first decide what the
@@ -117,7 +127,7 @@ whichever implementation is wrong, and add the case as a hand-built test.
 | 8 | `min_power_kw` against the port's power or the vehicle-capped power | The station's reported port power | `meets_min_power` |
 | 9 | Status `UNKNOWN` (the contract default) | Usable. `PLANNED` and `TEMPORARILY_UNAVAILABLE` are excluded. Reliance is reported (`unknown_status` metrics) | `EXCLUDED_STATUSES` |
 | 10 | Start below the reserve; `arrival_soc_pct_min` below the reserve | Start < reserve is infeasible; destination floor = `max(reserve, ·)` | `_problem`, `OracleConfig.floor_dest` |
-| 11 | `charge_buffer_soc_pct` (2 %): hard constraint or policy? | Planner policy, not a constraint. The oracle front may be slightly faster than any planner plan; comparisons use `pareto_tol_min` | `_targets` |
+| 11 | `charge_buffer_soc_pct` (2 %): hard constraint or policy? | Planner policy, not a constraint. The strict oracle never applies it; `OracleConfig.departure_buffer_pct` gives a separate policy front (after a charging stop, arrive at the next node that much above its floor, as the planner does), which `tradeoffs.pareto_validity` uses to tell buffer-only cases from real domination | `_targets`, `departure_buffer_pct` |
 | 12 | Pareto dimensions: TRADEOFFS §4 and the docstring include amenity satisfaction, which needs matcher scores (retrieval) | Front over (time, detour, charge). `tradeoffs.pareto_validity` must not treat an alternative that is 3-D dominated but better on amenities as invalid | `pareto_plans` |
 | 13 | Unknown-power sensitivity: which levels and values | DC fast only, 25 and 100 kW vs the 50 kW baseline; L2/L1 unchanged. Rank flip-rate under the cost model belongs in `metrics/tradeoffs.py` | `unknown_power_sensitivity` |
 | 14 | "Robust feasibility" undefined | Both are reported: (a) valid recommended plans that still meet reserve and arrival when replayed at +15 %, (b) oracle-feasible items still feasible at +15 % | `robust_feasibility` |

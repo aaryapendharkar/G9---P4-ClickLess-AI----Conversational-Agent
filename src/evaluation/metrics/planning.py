@@ -14,7 +14,7 @@ plan count against the system. Every planner/oracle disagreement is returned as 
 
 Front-based metrics (the oracle's Pareto search: front membership, oracle-fastest changes, unknown-
 status reliance) run only on oracle-feasible items where the planner returned a plan. An item
-whose search stopped early (configs/evaluation.yaml pareto_time_budget_s, or max_labels) gets an
+whose search stopped early (configs/evaluation.yaml max_labels, or the pareto_time_budget_s safety net) gets an
 `oracle_search_incomplete` finding, is counted in the `oracle_search` block, and is left out of
 every front-based metric rather than judged against a partial front.
 """
@@ -185,7 +185,7 @@ def _complete_front(oracle: LabelSettingOracle, request: TripRequest) -> ParetoR
 
 def _incomplete_detail(oracle: LabelSettingOracle, front: ParetoResult) -> str:
     if front.incomplete_reason == "time_budget":
-        why = f"time budget of {oracle.cfg.pareto_time_budget_s:g} s hit"
+        why = f"wall-clock safety limit of {oracle.cfg.pareto_time_budget_s:g} s hit after {front.n_labels} labels"
     else:
         why = f"max_labels ({oracle.cfg.max_labels}) hit"
     return f"{why}; {len(front.plans)} plan(s) found; excluded from front-based metrics"
@@ -202,6 +202,9 @@ def oracle_search(items, results, oracle, evals: list[ItemEval] | None = None) -
         "n_incomplete": len(incomplete),
         "items_incomplete": incomplete,
         "incomplete_reasons": dict(sorted(Counter(fronts[i].incomplete_reason for i in incomplete).items())),
+        # Stopped by the wall-clock safety limit rather than max_labels: which items these are can
+        # depend on machine load, so the run is not reproducible (oracle_nondeterministic_cutoff).
+        "items_nondeterministic_cutoff": [i for i in incomplete if fronts[i].incomplete_reason == "time_budget"],
         "pareto_time_budget_s": oracle.cfg.pareto_time_budget_s,
         "max_labels": oracle.cfg.max_labels,
     }
@@ -215,6 +218,16 @@ def _incomplete_findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> l
             out.append(
                 {"item_id": e.item_id, "kind": "oracle_search_incomplete", "detail": _incomplete_detail(oracle, front)}
             )
+            if front.incomplete_reason == "time_budget":
+                out.append(
+                    {
+                        "item_id": e.item_id,
+                        "kind": "oracle_nondeterministic_cutoff",
+                        "detail": f"the wall-clock safety limit ({oracle.cfg.pareto_time_budget_s:g} s) fired before "
+                        f"max_labels ({oracle.cfg.max_labels}); whether this item is excluded depends on machine "
+                        "load, so this run is not reproducible. Raise pareto_time_budget_s or lower max_labels.",
+                    }
+                )
     return out
 
 

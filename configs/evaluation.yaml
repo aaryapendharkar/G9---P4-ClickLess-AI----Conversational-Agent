@@ -1,9 +1,17 @@
 # Evaluation-only settings (owner: Ian). Read by src/evaluation, never by the system under test.
 oracle:
-  # Wall-clock limit per oracle Pareto search (one item, one settings variant). On expiry the search
-  # returns complete=False; the item gets an oracle_search_incomplete finding and is left out of
-  # the front-based metrics. null = no limit.
-  pareto_time_budget_s: 60
+  # Deterministic limit per oracle Pareto search (one item, one settings variant): the search stops
+  # after this many labels and returns complete=False (incomplete_reason "max_labels"); the item gets
+  # an oracle_search_incomplete finding and is left out of the front-based metrics. A label count
+  # does not depend on machine load, so the same input always gives the same excluded items.
+  # Calibrated 2026-11-20 on Deepti's items (snapshot 93983c110571): every search that finished
+  # within the old 60 s limit used <= 34,960 labels; deepti-010 had reached 39,432 when 60 s ran
+  # out. Throughput varies 200-2,300 labels/s by item, so no cap matches 60 s exactly per item.
+  max_labels: 40000
+  # Wall-clock SAFETY NET only (null = none). It should never fire: 40,000 labels take <= ~200 s
+  # at the slowest rate measured. If it does fire, the run is no longer reproducible and the item
+  # gets an oracle_nondeterministic_cutoff finding.
+  pareto_time_budget_s: 600
   # Corridor-buffer diagnostic: re-check oracle-infeasible items with this much wider buffer
   # (instead of no buffer at all, which makes every station a node and does not scale).
   diagnostic_buffer_km: 50
