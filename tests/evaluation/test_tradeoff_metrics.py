@@ -9,10 +9,8 @@ Cost (docs/TRADEOFFS.md section 2, configs/tradeoffs.yaml):
 import math
 
 import pytest
-import yaml
 from _oracle_world import itinerary, off_for_detour, port, station, stop, world
 
-from clickless.config import repo_path
 from clickless.contracts import Alternative, Itinerary, PlanCost, PlanResult, TripRequest
 from evaluation.metrics.tradeoffs import (
     charge_time_sensitivity,
@@ -28,7 +26,29 @@ from evaluation.metrics.tradeoffs import (
 )
 from evaluation.schema import BenchmarkItem
 
-TRADEOFFS = yaml.safe_load(repo_path("configs/tradeoffs.yaml").read_text(encoding="utf-8"))
+# The weights the hand-computed answers below assume, pinned here (configs/tradeoffs.yaml values at
+# the time of writing) so tuning the live config on DEV cannot break these tests.
+TRADEOFFS = {
+    "default_profile": "balanced",
+    "profiles": {
+        "balanced": {
+            "drive_min_weight": 1.0, "charge_min_weight": 1.0, "detour_extra_weight": 0.5, "stop_overhead_min": 5,
+            "amenity_value_min": {"food": 15, "coffee": 8, "restroom": 10, "restroom_wheelchair": 20, "grocery": 8,
+                                  "lodging": 0, "other": 3},
+        },
+        "fastest": {
+            "drive_min_weight": 1.0, "charge_min_weight": 1.0, "detour_extra_weight": 1.0, "stop_overhead_min": 8,
+            "amenity_value_min": {"food": 3, "coffee": 2, "restroom": 3, "restroom_wheelchair": 15, "grocery": 2,
+                                  "lodging": 0, "other": 0},
+        },
+        "comfort": {
+            "drive_min_weight": 1.0, "charge_min_weight": 0.6, "detour_extra_weight": 0.3, "stop_overhead_min": 3,
+            "amenity_value_min": {"food": 30, "coffee": 15, "restroom": 15, "restroom_wheelchair": 30, "grocery": 12,
+                                  "lodging": 0, "other": 5},
+        },
+    },
+    "evidence": {"evidence_credit_min": 5},
+}
 COST = PlanCost(
     profile="balanced",
     drive_min=0,
@@ -116,7 +136,8 @@ def test_plan_cost_and_overrides():
 
 # P1 = (drive 141, charge 20, detour 2, 1 stop); P2 = (145, 25, 6, 1 stop, food 1.0)
 # balanced 167 vs 163 (P2) | fastest 171 vs 181 (P1) | comfort 156.6 vs 134.8 (P2)
-WEIGHT_RESULT = ranked("w1", [plan(141, 20, 2, sid="P1"), plan(145, 25, 6, food=1.0, sid="P2")], food=True)
+# Shown in the balanced ranker's order: P2 first (flips are measured against alternatives[0]).
+WEIGHT_RESULT = ranked("w1", [plan(145, 25, 6, food=1.0, sid="P2"), plan(141, 20, 2, sid="P1")], food=True)
 
 
 def test_weight_sensitivity_across_profiles_and_pm20():
@@ -131,8 +152,8 @@ def test_weight_sensitivity_across_profiles_and_pm20():
 
 
 def test_pm20_flip_is_detected():
-    # P1 167 vs P2' 166 under balanced: food x0.8 makes P2' 169 -> flip
-    res = ranked("w2", [plan(141, 20, 2, sid="P1"), plan(145, 28, 6, food=1.0, sid="P2")], food=True)
+    # P2' 166 (shown first) vs P1 167 under balanced: food x0.8 makes P2' 169 -> flip
+    res = ranked("w2", [plan(145, 28, 6, food=1.0, sid="P2"), plan(141, 20, 2, sid="P1")], food=True)
     m = weight_sensitivity([bench("w2")], [res], TRADEOFFS)
     assert m["item_flip_rate_pm20"] == 1.0 and 0 < m["flip_rate_pm20"] < 1
 

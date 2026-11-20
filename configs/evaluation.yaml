@@ -15,3 +15,13 @@ oracle:
   # Corridor-buffer diagnostic: re-check oracle-infeasible items with this much wider buffer
   # (instead of no buffer at all, which makes every station a node and does not scale).
   diagnostic_buffer_km: 50
+
+tradeoffs:
+  # How an amenity preference with no amenity_value_min entry of its own is valued by the trade-off
+  # metrics. Copied from the ranker, src/clickless/ranking/cost.py plan_cost:
+  #     values.get(k, values.get(k.split("_")[0], 0.0))
+  # i.e. "food_wheelchair" uses the "food" value, else 0. The evaluation must not import ranking code;
+  # tests/evaluation/test_tradeoff_review_75.py checks this rule against the ranker for every
+  # amenity key and profile, so a change on either side fails the test.
+  amenity_value_fallback: base_category   # base_category | none
+  amenity_value_default_min: 0
