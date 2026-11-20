@@ -83,3 +83,28 @@ def test_refuses_empty_changed_or_frozen_snapshots(stations_only, tmp_path):
     _put_routes(stations_only, ["phoenix__flagstaff.json"])
     (stations_only / "places.json").write_text("{}", encoding="utf-8")
     assert ar.add_routes(str(stations_only)) == 1
+
+
+def test_a_second_run_accepts_the_rewritten_report_and_new_routes(stations_only):
+    """The builder rewrites its report on every run, and adds routes for new pairs (#103)."""
+    _put_routes(stations_only, ["phoenix__flagstaff.json"], report={"pairs_total": 1})
+    assert ar.add_routes(str(stations_only)) == 0
+
+    _put_routes(stations_only, ["tempe__flagstaff.json"], report={"pairs_total": 2, "skipped_existing": [1]})
+    assert verify_manifest(str(stations_only)) == [ar.REPORT_FILE]  # changed by the builder
+    assert ar.add_routes(str(stations_only)) == 0
+
+    after = json.loads((stations_only / "MANIFEST.json").read_text(encoding="utf-8"))
+    assert verify_manifest(str(stations_only)) == []
+    assert "routes/tempe__flagstaff.json" in after["files"]
+    assert after["sources"]["routes"]["files"] == 2 and after["sources"]["routes"]["pairs_total"] == 2
+
+
+def test_other_changed_files_are_still_refused_on_a_second_run(stations_only, capsys):
+    _put_routes(stations_only, ["phoenix__flagstaff.json"], report={"pairs_total": 1})
+    assert ar.add_routes(str(stations_only)) == 0
+    (stations_only / "stations.json").write_text("{}", encoding="utf-8")
+    _put_routes(stations_only, [], report={"pairs_total": 1, "rerun": True})
+
+    assert ar.add_routes(str(stations_only)) == 1
+    assert "['stations.json']" in capsys.readouterr().err

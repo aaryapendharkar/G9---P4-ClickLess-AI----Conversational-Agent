@@ -7,7 +7,8 @@
 and `route_cache_report.json`, but does not touch MANIFEST.json, so on their own those files are
 neither hashed nor checked. This step checks every route file and re-hashes the snapshot:
 
-- the snapshot's existing files still match MANIFEST.json, and the snapshot is not frozen;
+- the snapshot's other files still match MANIFEST.json (routes/ and the builder's report may have
+  changed: a second run rewrites the report), and the snapshot is not frozen;
 - every file in routes/ is named `<slug>__<slug>.json` and loads as the `Route` contract
   (its `_meta` block is ignored, as CachedRouter does);
 - `sources.routes` records the number of routes and pairs, the OSRM server, the retrieval window
@@ -53,13 +54,19 @@ def check_route_files(routes_dir) -> tuple[list[Route], list[str]]:
     return routes, problems
 
 
+def _rebuilt_by_route_builder(rel: str) -> bool:
+    return rel == REPORT_FILE or rel.startswith("routes/")
+
+
 def add_routes(snapshot_dir: str = "data/snapshot") -> int:
     root = repo_path(snapshot_dir)
     manifest_path = root / "MANIFEST.json"
     if not manifest_path.is_file():
         print(f"no MANIFEST.json in {root}", file=sys.stderr)
         return 1
-    changed = verify_manifest(str(root))
+    # The route builder rewrites its report (and may add routes) on every run; those are exactly the
+    # files re-checked and re-hashed below. Everything else must still match the manifest.
+    changed = [f for f in verify_manifest(str(root)) if not _rebuilt_by_route_builder(f)]
     if changed:
         print(f"snapshot does not match its MANIFEST.json (missing or changed: {changed})", file=sys.stderr)
         return 1
