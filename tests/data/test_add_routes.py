@@ -108,3 +108,28 @@ def test_other_changed_files_are_still_refused_on_a_second_run(stations_only, ca
 
     assert ar.add_routes(str(stations_only)) == 1
     assert "['stations.json']" in capsys.readouterr().err
+
+
+def test_a_changed_existing_route_is_refused(stations_only, capsys):
+    """A routes run may only add routes (#110)."""
+    _put_routes(stations_only, ["phoenix__flagstaff.json"], report={"pairs_total": 1})
+    assert ar.add_routes(str(stations_only)) == 0
+    path = stations_only / "routes" / "phoenix__flagstaff.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["distance_km"] *= 2
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    _put_routes(stations_only, ["tempe__flagstaff.json"], report={"pairs_total": 2})
+
+    assert ar.add_routes(str(stations_only)) == 1
+    assert "['routes/phoenix__flagstaff.json']" in capsys.readouterr().err
+    manifest = json.loads((stations_only / "MANIFEST.json").read_text(encoding="utf-8"))
+    assert "routes/tempe__flagstaff.json" not in manifest["files"]  # nothing re-hashed
+
+
+def test_a_deleted_existing_route_is_refused(stations_only, capsys):
+    _put_routes(stations_only, ["phoenix__flagstaff.json", "phoenix-az__flagstaff-az.json"], report={"pairs_total": 1})
+    assert ar.add_routes(str(stations_only)) == 0
+    (stations_only / "routes" / "phoenix-az__flagstaff-az.json").unlink()  # an alias copy
+
+    assert ar.add_routes(str(stations_only)) == 1
+    assert "['routes/phoenix-az__flagstaff-az.json']" in capsys.readouterr().err

@@ -97,6 +97,7 @@ def test_only_new_places_are_geocoded_and_old_ones_kept(snapshot, benchmark, fak
     assert verify_manifest(str(snapshot)) == []
     out = capsys.readouterr().out
     assert "Places added: 3 of 4 new" in out and "not resolved: Springfield" in out
+    assert "Geocoding 4 new place(s):\n  Bangor, ME\n  Bar Harbor, ME\n  Buffalo, NY\n  Springfield\n" in out
 
 
 def test_nothing_new_changes_nothing(snapshot, benchmark, fake_nominatim, capsys):
