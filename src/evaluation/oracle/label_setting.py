@@ -133,6 +133,7 @@ class OracleConfig:
     pareto_tol_min: float = 0.5  # tolerance when comparing a planner plan with the oracle front
     max_labels: int = 200_000
     pareto_time_budget_s: float | None = 60.0  # per pareto_plans call; None = no limit (configs/evaluation.yaml)
+    diagnostic_buffer_km: float = 50.0  # corridor-buffer diagnostic's wide buffer (configs/evaluation.yaml)
     method: Method = "indexed"  # speed only: "exhaustive" is the reference path, same results
 
     def __post_init__(self) -> None:
@@ -172,6 +173,10 @@ class FeasibilityResult:
     charge_time_excluded: bool = False  # ADR 0009 (LEAF)
     witness: list[str] = field(default_factory=list)  # station ids of one feasible plan
     unknown_status_station_ids: list[str] = field(default_factory=list)  # in the witness
+
+    def __bool__(self) -> bool:
+        """`if oracle.is_feasible(request):` means feasible (a dataclass is otherwise always truthy)."""
+        return self.feasible
 
 
 @dataclass(frozen=True)
@@ -220,6 +225,10 @@ class CheckReport:
     notes: list[str] = field(default_factory=list)  # claim mismatches that are not hard violations
     objectives: tuple[float, float, float] | None = None  # (time, detour, charge) under the oracle model
     uses_unknown_power: bool = False
+    # The same checks with no tolerance (the search's own EPS): False for a plan that passes only
+    # because of soc_tol_pct / detour_tol_min. Findings that compare with the search use this.
+    strict_ok: bool = True
+    strict_violations: list[str] = field(default_factory=list)  # codes failed only without tolerance
 
     def to_verification_report(self) -> VerificationReport:
         return VerificationReport(ok=self.ok, violations=list(self.violations))
@@ -256,6 +265,7 @@ class _Problem:
     nodes: list[_Node]
     excluded: dict[str, int]
     penalty: float
+    no_overlap_detail: str | None = None  # set when connectors_override shares nothing with the vehicle
 
     def drop(self, i: int, j: int) -> float:
         a, b = self.nodes[i], self.nodes[j]
@@ -264,11 +274,12 @@ class _Problem:
 
 
 class _Label:
-    __slots__ = ("node", "time", "soc", "detour", "charge", "parent", "stop")
+    __slots__ = ("node", "time", "soc", "detour", "charge", "parent", "stop", "unk")
 
-    def __init__(self, node, time, soc, detour, charge, parent, stop):
+    def __init__(self, node, time, soc, detour, charge, parent, stop, unk=0):
         self.node, self.time, self.soc, self.detour, self.charge = node, time, soc, detour, charge
         self.parent, self.stop = parent, stop  # stop: (node index, arrive, depart, charge_min) of the PREVIOUS node
+        self.unk = unk  # stops at stations whose status is UNKNOWN: breaks exact ties only (see _insert_pref)
 
     def key(self) -> tuple[float, float, float, float]:
         return (self.time, -self.soc, self.detour, self.charge)
@@ -297,42 +308,54 @@ class _Front:
         self.keys: list[tuple[float, float, float, float]] = []  # aligned with times
         self.hint: tuple[float, float, float, float] | None = None  # the key that last dominated a candidate
 
-    def dominated(self, t0: float, t1: float, t2: float, t3: float) -> bool:
-        """Some label's key is <= (t0, t1, t2, t3) componentwise, where t_c = new key_c + EPS.
+    def dominated(self, t0: float, t1: float, t2: float, t3: float, key: tuple, u: int) -> bool:
+        """Some label beats the candidate (key, u) under _beats, where t_c = key_c + EPS.
 
-        The answer does not depend on the scan order, so the label that dominated the previous
-        candidate (often the same one) is tried first."""
+        Stored keys are (time, -soc, detour, charge, unk). The answer does not depend on the scan
+        order, so the label that dominated the previous candidate (often the same one) is tried first."""
+        k0, k1, k2, k3 = key
+
+        def beats(o) -> bool:
+            if not (o[0] <= t0 and o[1] <= t1 and o[2] <= t2 and o[3] <= t3):
+                return False
+            # exact tie (the candidate also weakly dominates o) and o relies on more UNKNOWN stations
+            return not (o[4] > u and k0 <= o[0] + EPS and k1 <= o[1] + EPS and k2 <= o[2] + EPS and k3 <= o[3] + EPS)
+
         h = self.hint
-        if h is not None and h[0] <= t0 and h[1] <= t1 and h[2] <= t2 and h[3] <= t3:
+        if h is not None and beats(h):
             return True
-        for key in self.keys[: bisect_right(self.times, t0)]:
-            if key[1] <= t1 and key[2] <= t2 and key[3] <= t3:
-                self.hint = key
+        for o in self.keys[: bisect_right(self.times, t0)]:
+            if beats(o):
+                self.hint = o
                 return True
         return False
 
     def add(self, label: _Label, key: tuple[float, float, float, float]) -> None:
-        """Insert a label that no current label dominates; drop the labels it weakly dominates
-        (same test as _insert: key_c <= o_c + EPS for every component)."""
+        """Insert a label that no current label beats; drop the labels it beats (same test as
+        _insert_pref: _beats with key_c <= o_c + EPS for every component)."""
         k0, k1, k2, k3 = key
+        u = label.unk
+        stored = (k0, k1, k2, k3, u)
+
+        def gone_key(o) -> bool:
+            if not (k0 <= o[0] + EPS and k1 <= o[1] + EPS and k2 <= o[2] + EPS and k3 <= o[3] + EPS):
+                return False
+            return not (u > o[4] and o[0] <= k0 + EPS and o[1] <= k1 + EPS and o[2] <= k2 + EPS and o[3] <= k3 + EPS)
+
         if self.labels:
             keys = self.keys
-            gone = [o for o in keys if k0 <= o[0] + EPS and k1 <= o[1] + EPS and k2 <= o[2] + EPS and k3 <= o[3] + EPS]
+            gone = [o for o in keys if gone_key(o)]
             if gone:
                 drop = {id(o) for o in gone}
                 self.keys = [o for o in keys if id(o) not in drop]  # stays sorted
                 self.times = [o[0] for o in self.keys]
-                self.labels = [
-                    o
-                    for o in self.labels
-                    if not (k0 <= o.time + EPS and k1 <= -o.soc + EPS and k2 <= o.detour + EPS and k3 <= o.charge + EPS)
-                ]
+                self.labels = [o for o in self.labels if not gone_key((o.time, -o.soc, o.detour, o.charge, o.unk))]
                 if self.hint is not None and id(self.hint) in drop:
                     self.hint = None
         self.labels.append(label)
         pos = bisect_right(self.times, k0)
         self.times.insert(pos, k0)
-        self.keys.insert(pos, key)
+        self.keys.insert(pos, stored)
 
 
 def _insert(front: list, item, key: Callable) -> bool:
@@ -342,6 +365,36 @@ def _insert(front: list, item, key: Callable) -> bool:
     front[:] = [o for o in front if not _weakly_dominates(k, key(o))]
     front.append(item)
     return True
+
+
+def _beats(ok: tuple, ou: int, k: tuple, u: int) -> bool:
+    """Does (ok, ou) remove (k, u) from a front? Weak dominance within EPS, except that on an exact
+    tie (each weakly dominates the other) the side relying on fewer UNKNOWN-status stations wins,
+    so a station whose ID happens to sort first never beats an equivalent AVAILABLE one."""
+    return _weakly_dominates(ok, k) and not (ou > u and _weakly_dominates(k, ok))
+
+
+def _insert_pref(front: list, item, key: Callable, unk: Callable) -> bool:
+    """_insert with the unknown-status tie-break of _beats."""
+    k, u = key(item), unk(item)
+    if any(_beats(key(o), unk(o), k, u) for o in front):
+        return False
+    front[:] = [o for o in front if not _beats(k, u, key(o), unk(o))]
+    front.append(item)
+    return True
+
+
+def _label_unk(label: _Label) -> int:
+    return label.unk
+
+
+def _final_front(plans: list[OraclePlan]) -> list[OraclePlan]:
+    """Non-dominated plans over (time, detour, charge); an exact tie keeps the plan with fewer
+    UNKNOWN-status stops. Sorted by objectives."""
+    final: list[OraclePlan] = []
+    for plan in sorted(plans, key=lambda x: (x.objectives, len(x.unknown_status_station_ids))):
+        _insert_pref(final, plan, lambda x: x.objectives, lambda x: len(x.unknown_status_station_ids))
+    return sorted(final, key=lambda x: x.objectives)
 
 
 # --------------------------------------------------------------------------- the oracle
@@ -377,11 +430,13 @@ class LabelSettingOracle:
             from clickless.data.loaders import DataStore
 
             store = DataStore.from_config(dict(cfg))
-        budget = (cfg.get("evaluation") or {}).get("oracle", {}).get("pareto_time_budget_s", 60.0)
+        ev = (cfg.get("evaluation") or {}).get("oracle", {})
+        budget = ev.get("pareto_time_budget_s", 60.0)
         oc = OracleConfig(
             energy=cfg["energy"],
             corridor_buffer_km=float(cfg["retrieval"]["corridor_buffer_km"]),
             pareto_time_budget_s=None if budget is None else float(budget),
+            diagnostic_buffer_km=float(ev.get("diagnostic_buffer_km", OracleConfig.diagnostic_buffer_km)),
         )
         return cls(store, dataclasses.replace(oc, **overrides), route_source)
 
@@ -442,12 +497,29 @@ class LabelSettingOracle:
         origin, dest = self._resolve(request.origin), self._resolve(request.destination)
         if origin is None or dest is None:
             return not_evaluable("unresolved_place", "origin or destination could not be geocoded")
-        route = self.route_source(origin, dest)
+        try:
+            route = self.route_source(origin, dest)
+        except Exception as e:  # noqa: BLE001 - any route-source failure makes this one item not evaluable
+            # A route source may raise instead of returning None (the OSRM router raises
+            # OSRMNoRouteError / OSRMTemporaryError, ValueError for a place without coordinates).
+            # Matched by name and LookupError (RouteNotCached) so the oracle needs no planner import.
+            name = type(e).__name__
+            if isinstance(e, LookupError) or "NoRoute" in name:
+                return not_evaluable("no_route", f"no route for {origin.text} -> {dest.text} ({name}: {e})")
+            return not_evaluable("route_error", f"{name}: {e}")
         if route is None:
             return not_evaluable("no_route", f"no route for {origin.text} -> {dest.text}")
         poly = [(p.lat, p.lon) for p in route.geometry]
+        if len(poly) < 2 or route.distance_km <= 0 or route.duration_min < 0:
+            return not_evaluable(
+                "degenerate_route",
+                f"route {route.route_id} has {len(poly)} point(s), {route.distance_km} km, {route.duration_min} min "
+                "(e.g. origin and destination geocode to the same place)",
+            )
         length = geo.path_length_km(poly)
-        scale = route.distance_km / length if length > 0 else 1.0
+        if length <= 0:
+            return not_evaluable("degenerate_route", f"route {route.route_id} geometry has zero length")
+        scale = route.distance_km / length
         route_key = (route.route_id, route.distance_km, route.duration_min, tuple(poly))
         return _Context(
             request, vehicle, route, poly, scale, float(request.start_soc_pct), self.cfg.floor_dest(request), route_key
@@ -471,15 +543,6 @@ class LabelSettingOracle:
         if isinstance(ctx, FeasibilityResult):
             return ctx
         leaf = is_charge_time_excluded(ctx.vehicle.vehicle_id)
-        if override_has_no_overlap(ctx.vehicle, request.connectors_override):
-            supported = sorted(c.value for c in ctx.vehicle.supported_connectors())
-            wanted = sorted(c.value for c in request.connectors_override or [])
-            return FeasibilityResult(
-                False,
-                "connector_no_overlap",
-                f"override {wanted} shares no connector with the vehicle's {supported}",
-                charge_time_excluded=leaf,
-            )
         if ctx.start < self.cfg.reserve - EPS:
             return FeasibilityResult(
                 False,
@@ -487,6 +550,16 @@ class LabelSettingOracle:
                 f"start SoC {ctx.start}% is below the {self.cfg.reserve}% reserve",
                 charge_time_excluded=leaf,
             )
+        if override_has_no_overlap(ctx.vehicle, request.connectors_override):
+            # No station is usable, but a trip that needs no charge is still feasible (and
+            # check_itinerary passes a stop-free plan), so only the direct drive is searched.
+            # is_feasible reports connector_no_overlap when that direct drive does not reach.
+            supported = sorted(c.value for c in ctx.vehicle.supported_connectors())
+            wanted = sorted(c.value for c in request.connectors_override or [])
+            nodes = [_Node("origin", 0.0), _Node("destination", ctx.route.distance_km)]
+            excluded = {"connector": len(self.store.stations)} if self.store.stations else {}
+            detail = f"override {wanted} shares no connector with the vehicle's {supported}"
+            return _Problem(ctx, nodes, excluded, self.cfg.efficiency_penalty, no_overlap_detail=detail)
         cm, dm = self.cfg.charging_model, self.cfg.detour_model
         max_detour = request.max_detour_min
         excluded: Counter[str] = Counter()
@@ -573,7 +646,9 @@ class LabelSettingOracle:
                 witness=ids,
                 unknown_status_station_ids=unknown,
             )
-        if total is not None and self._reach(p, None, p.ctx.floor_dest)[0]:
+        if p.no_overlap_detail is not None:
+            reason, detail = "connector_no_overlap", p.no_overlap_detail
+        elif total is not None and self._reach(p, None, p.ctx.floor_dest)[0]:
             reason, detail = (
                 "detour_total_exceeded",
                 f"every feasible stop sequence exceeds {total} min of total detour",
@@ -644,6 +719,7 @@ class LabelSettingOracle:
         total = request.max_detour_min if self.cfg.detour_scope == "total" else None
         fronts: list[list[_Label]] = [[] for _ in range(n)]
         fronts[0] = [_Label(0, 0.0, ctx.start, 0.0, 0.0, None, None)]
+        unknown = self._unknown_flags(nodes)
         count, complete, reason = 1, True, None
         for i in range(n - 1):
             if not complete:
@@ -678,8 +754,9 @@ class LabelSettingOracle:
                             lab.charge + cmin,
                             lab,
                             (i, lab.soc, dep, cmin) if i > 0 else None,
+                            lab.unk + unknown[j],
                         )
-                        if _insert(fronts[j], new, _Label.key):
+                        if _insert_pref(fronts[j], new, _Label.key, _label_unk):
                             count += 1
                             if count > self.cfg.max_labels:
                                 complete, reason = False, "max_labels"
@@ -689,10 +766,7 @@ class LabelSettingOracle:
                 if not complete:
                     break
         plans = [self._to_plan(p, lab) for lab in fronts[-1]]
-        final: list[OraclePlan] = []
-        for plan in sorted(plans, key=lambda x: x.objectives):
-            _insert(final, plan, lambda x: x.objectives)
-        return ParetoResult(sorted(final, key=lambda x: x.objectives), complete, incomplete_reason=reason)
+        return ParetoResult(_final_front(plans), complete, incomplete_reason=reason)
 
     def _pareto_fast(self, request: TripRequest) -> ParetoResult:
         """_pareto (the reference, used by method="exhaustive") with identical results, faster:
@@ -712,18 +786,19 @@ class LabelSettingOracle:
         fronts = [_Front() for _ in range(n)]
         first = _Label(0, 0.0, ctx.start, 0.0, 0.0, None, None)
         fronts[0].add(first, first.key())
+        unknown = self._unknown_flags(nodes)
         count, complete, reason = 1, True, None
         last = n - 1
         for i in range(n - 1):
             if not complete:
                 break
             # Per node i: the reference recomputes these for every label and departure, identically.
-            succ = []  # (j, drop, floor - EPS, add_det, drive)
+            succ = []  # (j, drop, floor - EPS, add_det, drive, unknown_j)
             for j in range(i + 1, n):
                 floor = floor_dest if j == last else reserve
                 add_det = nodes[j].detour_min if j < last else 0.0
                 drive = duration * (nodes[j].along_km - nodes[i].along_km) / distance
-                succ.append((j, p.drop(i, j), floor - EPS, add_det, drive))
+                succ.append((j, p.drop(i, j), floor - EPS, add_det, drive, unknown[j]))
             port = nodes[i].port
             for lab in list(fronts[i].labels):
                 if budget is not None and time.monotonic() - started >= budget:
@@ -736,13 +811,13 @@ class LabelSettingOracle:
                         (t, charge_minutes(lab.soc, t, port.peak_kw, port.level, ctx.vehicle, cm))
                         for t in self._targets(p, i, lab.soc)
                     ]
-                lab_time, lab_det, lab_charge = lab.time, lab.detour, lab.charge
+                lab_time, lab_det, lab_charge, lab_unk = lab.time, lab.detour, lab.charge, lab.unk
                 for dep, cmin in deps:
                     t_base = lab_time + cmin  # the reference's lab.time + cmin + drive + add_det, left to right
                     charge = lab_charge + cmin
                     t3 = charge + EPS
                     stop = (i, lab.soc, dep, cmin) if i > 0 else None
-                    for j, drop, floor_eps, add_det, drive in succ:
+                    for j, drop, floor_eps, add_det, drive, unk_j in succ:
                         arr = dep - drop
                         if arr < floor_eps:
                             continue
@@ -752,9 +827,10 @@ class LabelSettingOracle:
                         t = t_base + drive + add_det
                         neg_soc = -arr
                         front = fronts[j]
-                        if front.dominated(t + EPS, neg_soc + EPS, detour + EPS, t3):
+                        unk = lab_unk + unk_j
+                        if front.dominated(t + EPS, neg_soc + EPS, detour + EPS, t3, (t, neg_soc, detour, charge), unk):
                             continue
-                        new = _Label(j, t, arr, detour, charge, lab, stop)
+                        new = _Label(j, t, arr, detour, charge, lab, stop, unk)
                         front.add(new, (t, neg_soc, detour, charge))
                         count += 1
                         if count > max_labels:
@@ -765,10 +841,11 @@ class LabelSettingOracle:
                 if not complete:
                     break
         plans = [self._to_plan(p, lab) for lab in fronts[-1].labels]
-        final: list[OraclePlan] = []
-        for plan in sorted(plans, key=lambda x: x.objectives):
-            _insert(final, plan, lambda x: x.objectives)
-        return ParetoResult(sorted(final, key=lambda x: x.objectives), complete, incomplete_reason=reason)
+        return ParetoResult(_final_front(plans), complete, incomplete_reason=reason)
+
+    def _unknown_flags(self, nodes: list[_Node]) -> list[int]:
+        """1 for a station node whose status is UNKNOWN (the tie-break of _beats), else 0."""
+        return [int(n.kind == "station" and n.station.status == StationStatus.UNKNOWN) for n in nodes]
 
     def _to_plan(self, p: _Problem, lab: _Label) -> OraclePlan:
         stops: list[OracleStop] = []
@@ -806,7 +883,23 @@ class LabelSettingOracle:
 
         Distances come from the oracle's own geometry, never from the itinerary's legs.
         Raises OracleUnavailable when the request cannot be evaluated.
+
+        `ok` uses the tolerances soc_tol_pct / detour_tol_min (planner rounding, OSRM detours).
+        `strict_ok` repeats the checks with the search's own EPS: a plan that passes only within
+        tolerance can lie outside the oracle front or pass on an oracle-infeasible request, and the
+        findings use strict_ok so that gap is not reported as a disagreement.
         """
+        report = self._check(request, itinerary, self.cfg.soc_tol_pct, self.cfg.detour_tol_min)
+        if not report.ok:
+            report.strict_ok = False
+            return report
+        strict = self._check(request, itinerary, EPS, EPS)
+        report.strict_ok = strict.ok
+        report.strict_violations = sorted({v.code for v in strict.violations})
+        return report
+
+    def _check(self, request: TripRequest, itinerary: Itinerary, soc_tol: float, detour_tol: float) -> CheckReport:
+        """check_itinerary with explicit SoC / detour tolerances."""
         ctx = self._context(request)
         if isinstance(ctx, FeasibilityResult):
             raise OracleUnavailable(f"{ctx.reason}: {ctx.detail}")
@@ -844,13 +937,19 @@ class LabelSettingOracle:
                     k,
                 )
             ports = compat or same
-            if request.min_power_kw is not None and not any(meets_min_power(p, request.min_power_kw) for p in ports):
+            # Power rules apply to the port the stop uses (identified by its claimed power), not to
+            # any port of that connector: CCS1 50 + 150 kW with a stop on the 50 kW port fails
+            # min_power_kw=100. A claimed power no port has is its own violation below; the rules
+            # then fall back to every port of the connector.
+            used = [p for p in ports if _same_power(p.power_kw, stop.port_power_kw)] or ports
+            if request.min_power_kw is not None and not any(meets_min_power(p, request.min_power_kw) for p in used):
                 bad(
                     "power",
-                    f"no {stop.connector.value} port at {st.station_id} reports >= {request.min_power_kw} kW",
+                    f"the {stop.connector.value} port used at {st.station_id} ({stop.port_power_kw} kW) "
+                    f"is not >= {request.min_power_kw} kW",
                     k,
                 )
-            if ports and all(p.power_kw is not None and p.power_kw <= 0 for p in ports):
+            if used and all(p.power_kw is not None and p.power_kw <= 0 for p in used):
                 bad("power", f"{st.station_id} {stop.connector.value} reports non-positive power", k)
             if ports and not any(_same_power(p.power_kw, stop.port_power_kw) for p in ports):
                 bad(
@@ -868,27 +967,27 @@ class LabelSettingOracle:
             if (
                 cfg.detour_scope == "stop"
                 and max_detour is not None
-                and (det > max_detour + cfg.detour_tol_min or stop.detour_min > max_detour + EPS)
+                and (det > max_detour + detour_tol or stop.detour_min > max_detour + EPS)
             ):
                 bad("detour", f"detour {max(det, stop.detour_min):.1f} min > limit {max_detour} min", k)
-            if abs(stop.detour_min - det) > cfg.detour_tol_min:
+            if abs(stop.detour_min - det) > detour_tol:
                 notes.append(f"stop {k}: claimed detour {stop.detour_min:.1f} min, oracle {det:.1f} min")
-            if stop.depart_soc_pct < stop.arrive_soc_pct - cfg.soc_tol_pct:
+            if stop.depart_soc_pct < stop.arrive_soc_pct - soc_tol:
                 bad(
                     "departure_soc",
                     f"departs with {stop.depart_soc_pct}% after arriving with {stop.arrive_soc_pct}%",
                     k,
                 )
-            if stop.depart_soc_pct > cfg.cap + cfg.soc_tol_pct:
+            if stop.depart_soc_pct > cfg.cap + soc_tol:
                 bad("departure_soc", f"departs with {stop.depart_soc_pct}% > cap {cfg.cap}%", k)
 
             if replay:
                 km = prev_access + max(0.0, along - prev_along) + acc
                 oracle_km += km
                 arrive = soc - leg_soc_drop_pct(km, vehicle, cfg.efficiency_penalty)
-                if arrive < cfg.reserve - cfg.soc_tol_pct:
+                if arrive < cfg.reserve - soc_tol:
                     bad("reserve", f"arrives at {st.station_id} with {arrive:.1f}% < reserve {cfg.reserve}%", k)
-                if abs(arrive - stop.arrive_soc_pct) > cfg.soc_tol_pct:
+                if abs(arrive - stop.arrive_soc_pct) > soc_tol:
                     notes.append(f"stop {k}: claimed arrival {stop.arrive_soc_pct:.1f}%, oracle {arrive:.1f}%")
                 depart = min(stop.depart_soc_pct, cfg.cap)
                 price = _pricing_port(ports, stop.port_power_kw)
@@ -907,9 +1006,9 @@ class LabelSettingOracle:
             km = prev_access + max(0.0, ctx.route.distance_km - prev_along)
             oracle_km += km
             arrival = soc - leg_soc_drop_pct(km, vehicle, cfg.efficiency_penalty)
-            if arrival < cfg.reserve - cfg.soc_tol_pct:
+            if arrival < cfg.reserve - soc_tol:
                 bad("reserve", f"arrives at the destination with {arrival:.1f}% < reserve {cfg.reserve}%")
-            if arrival < ctx.floor_dest - cfg.soc_tol_pct:
+            if arrival < ctx.floor_dest - soc_tol:
                 bad("arrival_soc", f"arrives with {arrival:.1f}% < required {ctx.floor_dest}%")
             if itinerary.legs:
                 legs_km = sum(leg.distance_km for leg in itinerary.legs)
@@ -918,7 +1017,7 @@ class LabelSettingOracle:
         if (
             cfg.detour_scope == "total"
             and max_detour is not None
-            and (detour_sum > max_detour + cfg.detour_tol_min or itinerary.total_detour_min > max_detour + EPS)
+            and (detour_sum > max_detour + detour_tol or itinerary.total_detour_min > max_detour + EPS)
         ):
             bad(
                 "detour", f"total detour {max(detour_sum, itinerary.total_detour_min):.1f} min > limit {max_detour} min"

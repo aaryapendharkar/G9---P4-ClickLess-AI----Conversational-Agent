@@ -21,12 +21,14 @@ every front-based metric rather than judged against a partial front.
 
 from __future__ import annotations
 
+import math
+import re
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from clickless.contracts import Itinerary, Place, PlanResult, TripRequest
+from clickless.contracts import Place, PlanResult, TripRequest
 
 from ..oracle.energy_reference import is_charge_time_excluded
 from ..oracle.label_setting import (
@@ -36,6 +38,7 @@ from ..oracle.label_setting import (
     OracleUnavailable,
     ParetoResult,
     dominated_by_front,
+    strictly_dominating,
 )
 
 # Codes that relaxation (configs/relaxation.yaml) never changes, so a relaxed plan must still pass them.
@@ -43,6 +46,24 @@ NEVER_RELAXED = frozenset(
     {"connector", "reserve", "status", "access", "power", "unknown_station", "departure_soc", "continuity"}
 )
 ENERGY_CODES = frozenset({"reserve", "arrival_soc"})
+
+# Hard-constraint fields of a TripRequest compared between the gold and the parsed request
+# (parse_changed_constraints finding). Places are left out: their text differs in formatting.
+HARD_FIELDS = (
+    "vehicle_id",
+    "start_soc_pct",
+    "arrival_soc_pct_min",
+    "max_detour_min",
+    "min_power_kw",
+    "connectors_override",
+)
+
+# The relaxation step writes Relaxation.changes in these fixed forms (the contract carries no
+# relaxed request). Anything else is reported as relaxation_unparseable, never accepted.
+_NUM = r"(\d+(?:\.\d+)?)"
+_DROP_AMENITY = re.compile(r"drop amenity: (\S+)")
+_DETOUR = re.compile(rf"max detour {_NUM} -> {_NUM} min")
+_ARRIVAL = re.compile(rf"arrival charge {_NUM}% -> {_NUM}%")
 
 
 def _rate(num: int, den: int) -> float | None:
@@ -60,6 +81,26 @@ def request_from_item(item) -> TripRequest | None:
     return TripRequest.model_validate({"request_id": item.id, "raw_text": item.text, **gold})
 
 
+def relaxed_request(request: TripRequest, changes: Sequence[str]) -> tuple[TripRequest | None, str | None]:
+    """Apply Relaxation.changes to the (gold) request: (relaxed request, None) or (None, why not)."""
+    update: dict[str, Any] = {}
+    amenities = list(request.amenities)
+    for change in changes:
+        text = change.strip()
+        if m := _DROP_AMENITY.fullmatch(text):
+            kept = [a for a in amenities if a.key != m.group(1)]
+            if len(kept) == len(amenities):
+                return None, f"change {change!r}: the request has no amenity {m.group(1)!r}"
+            amenities = update["amenities"] = kept
+        elif m := _DETOUR.fullmatch(text):
+            update["max_detour_min"] = float(m.group(2))
+        elif m := _ARRIVAL.fullmatch(text):
+            update["arrival_soc_pct_min"] = float(m.group(2))
+        else:
+            return None, f"unparseable change {change!r}"
+    return request.model_copy(update=update, deep=True), None
+
+
 @dataclass
 class ItemEval:
     item_id: str
@@ -67,12 +108,11 @@ class ItemEval:
     result: PlanResult
     feasibility: FeasibilityResult
     reports: list[CheckReport] = field(default_factory=list)  # one per returned alternative
-    relaxed_reports: list[CheckReport] = field(default_factory=list)
+    relaxed_reports: list[CheckReport] = field(default_factory=list)  # relaxed plans vs the ORIGINAL request
     uncheckable: int = 0
-
-    @property
-    def returned(self) -> list[Itinerary]:
-        return [a.itinerary for a in self.result.alternatives]
+    relaxed: TripRequest | None = None  # the request after Relaxation.changes
+    relaxed_full_reports: list[CheckReport] = field(default_factory=list)  # relaxed plans vs `relaxed`
+    relaxation_error: str | None = None  # Relaxation.changes could not be applied
 
     @property
     def recommended(self) -> CheckReport | None:
@@ -82,7 +122,9 @@ class ItemEval:
 def evaluate(
     items: Sequence, results: Sequence[PlanResult], oracle: LabelSettingOracle
 ) -> tuple[list[ItemEval], list[dict]]:
-    """Run the oracle once per item. Returns evaluable items and the findings collected so far."""
+    """Run the oracle once per item. Returns evaluable items and the findings collected so far.
+
+    Items left out (no gold request, no result, not evaluable) are listed by skipped_items()."""
     by_id = {r.request_id: r for r in results}
     evals, findings = [], []
     for item in items:
@@ -93,18 +135,41 @@ def evaluate(
         if not fr.evaluable:
             continue
         ev = ItemEval(item.id, req, res, fr)
-        for key, target in (("alternatives", ev.reports), ("relaxed", ev.relaxed_reports)):
-            alts = (
-                res.alternatives if key == "alternatives" else (res.relaxation.alternatives if res.relaxation else [])
-            )
-            for a in alts:
-                try:
-                    target.append(oracle.check_itinerary(req, a.itinerary))
-                except OracleUnavailable as e:
-                    ev.uncheckable += 1
-                    findings.append({"item_id": item.id, "kind": "itinerary_uncheckable", "detail": str(e)})
+        relaxed_alts = res.relaxation.alternatives if res.relaxation else []
+        try:
+            checked = oracle.check_plan_result(req, res)
+        except OracleUnavailable as e:
+            ev.uncheckable = len(res.alternatives) + len(relaxed_alts)
+            findings.append({"item_id": item.id, "kind": "itinerary_uncheckable", "detail": str(e)})
+        else:
+            ev.reports, ev.relaxed_reports = checked["alternatives"], checked["relaxed"]
+            if relaxed_alts:
+                ev.relaxed, ev.relaxation_error = relaxed_request(req, res.relaxation.changes)
+                if ev.relaxation_error:
+                    findings.append(
+                        {"item_id": item.id, "kind": "relaxation_unparseable", "detail": ev.relaxation_error}
+                    )
+                else:
+                    ev.relaxed_full_reports = [oracle.check_itinerary(ev.relaxed, a.itinerary) for a in relaxed_alts]
         evals.append(ev)
     return evals, findings
+
+
+def skipped_items(items: Sequence, results: Sequence[PlanResult], oracle: LabelSettingOracle) -> list[dict]:
+    """Every item evaluate() leaves out, with the reason (oracle results are cached, so this is cheap)."""
+    by_id = {r.request_id: r for r in results}
+    out = []
+    for item in items:
+        req = request_from_item(item)
+        if req is None:
+            out.append({"item_id": item.id, "reason": "clarification_required", "detail": "no complete gold request"})
+        elif item.id not in by_id:
+            out.append({"item_id": item.id, "reason": "no_result", "detail": "the system returned no result"})
+        else:
+            fr = oracle.is_feasible(req)
+            if not fr.evaluable:
+                out.append({"item_id": item.id, "reason": fr.reason, "detail": fr.detail})
+    return out
 
 
 def _front_scope(evals: list[ItemEval]) -> list[ItemEval]:
@@ -153,6 +218,37 @@ def _incomplete_findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> l
     return out
 
 
+def _same_value(a: Any, b: Any) -> bool:
+    if isinstance(a, int | float) and isinstance(b, int | float):
+        return math.isclose(float(a), float(b), abs_tol=1e-9)
+    if isinstance(a, list) or isinstance(b, list):
+        return sorted(getattr(c, "value", c) for c in a or []) == sorted(getattr(c, "value", c) for c in b or [])
+    return a == b
+
+
+def parse_differences(gold: TripRequest, parsed: TripRequest) -> dict[str, tuple[Any, Any]]:
+    """Hard-constraint fields whose parsed value differs from the gold one: {field: (gold, parsed)}."""
+    out = {}
+    for f in HARD_FIELDS:
+        g, p = getattr(gold, f), getattr(parsed, f)
+        if not _same_value(g, p):
+            norm = (lambda v: sorted(c.value for c in v) if isinstance(v, list) else v)  # noqa: E731
+            out[f] = (norm(g), norm(p))
+    return out
+
+
+def _verifier_basis(ev: ItemEval, oracle: LabelSettingOracle) -> tuple[CheckReport | None, str]:
+    """The oracle check to compare with the planner's verifier: on the PARSED request (what the
+    verifier saw) when the result carries one the oracle can evaluate, else on the gold request."""
+    res = ev.result
+    if res.request is not None and res.alternatives:
+        try:
+            return oracle.check_itinerary(res.request, res.alternatives[0].itinerary), "parsed request"
+        except OracleUnavailable:
+            pass
+    return ev.recommended, "gold request (parsed request not evaluable)" if res.request is not None else "gold request"
+
+
 def _findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> list[dict]:
     out = []
     for ev in evals:
@@ -165,7 +261,18 @@ def _findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> list[dict]:
                     "detail": f"oracle witness {fr.witness}",
                 }
             )
-        if not fr.feasible and any(r.ok for r in ev.reports):
+        # A plan that passes only within soc_tol_pct / detour_tol_min is its own finding: the strict
+        # search cannot contain it, so it is not evidence of a planner/oracle disagreement.
+        for k, r in enumerate(ev.reports):
+            if r.ok and not r.strict_ok:
+                out.append(
+                    {
+                        "item_id": ev.item_id,
+                        "kind": "plan_passes_only_within_tolerance",
+                        "detail": f"alternative {k} fails {r.strict_violations} without tolerance",
+                    }
+                )
+        if not fr.feasible and any(r.ok and r.strict_ok for r in ev.reports):
             out.append(
                 {
                     "item_id": ev.item_id,
@@ -173,23 +280,35 @@ def _findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> list[dict]:
                     "detail": f"oracle reason {fr.reason}: {fr.detail}",
                 }
             )
-        rec = ev.recommended
-        if rec is not None and res.verification is not None and res.verification.ok != rec.ok:
-            out.append(
-                {
-                    "item_id": ev.item_id,
-                    "kind": "verifier_disagreement",
-                    "detail": f"planner verifier ok={res.verification.ok}, oracle ok={rec.ok}: "
-                    f"{[v.code for v in rec.violations]}",
-                }
-            )
-        if fr.feasible and any(r.ok and r.objectives for r in ev.reports):
+        if res.request is not None:
+            diffs = parse_differences(ev.request, res.request)
+            if diffs:
+                out.append(
+                    {
+                        "item_id": ev.item_id,
+                        "kind": "parse_changed_constraints",
+                        "detail": "; ".join(f"{f}: gold {g!r}, parsed {p!r}" for f, (g, p) in diffs.items()),
+                    }
+                )
+        if res.verification is not None and ev.recommended is not None:
+            basis, on = _verifier_basis(ev, oracle)
+            if basis is not None and res.verification.ok != basis.ok:
+                out.append(
+                    {
+                        "item_id": ev.item_id,
+                        "kind": "verifier_disagreement",
+                        "detail": f"planner verifier ok={res.verification.ok}, oracle ok={basis.ok} on the {on}: "
+                        f"{[v.code for v in basis.violations]}",
+                    }
+                )
+        if fr.feasible and any(r.ok and r.strict_ok and r.objectives for r in ev.reports):
             front = _complete_front(oracle, ev.request)
             if front is None:  # reported once as oracle_search_incomplete (_incomplete_findings)
                 continue
             for k, r in enumerate(ev.reports):
                 if (
                     r.ok
+                    and r.strict_ok
                     and r.objectives
                     and not dominated_by_front(r.objectives, front.plans, oracle.cfg.pareto_tol_min)
                 ):
@@ -213,7 +332,12 @@ def feasibility_and_violations(items, results, oracle, evals: list[ItemEval] | N
     rejected = sum(1 for e in feasible if e.result.status == "infeasible")
     reports = [r for e in evals for r in e.reports]
     codes = Counter(v.code for r in reports for v in r.violations)
+    skipped = skipped_items(items, results, oracle)
     return {
+        "n_items": len(items),
+        "n_skipped": len(skipped),
+        "skipped_by_reason": dict(sorted(Counter(s["reason"] for s in skipped).items())),
+        "items_skipped": skipped,
         "n_evaluable": len(evals),
         "n_oracle_feasible": len(feasible),
         "n_oracle_infeasible": len(evals) - len(feasible),
@@ -232,14 +356,26 @@ def infeasible_handling(items, results, oracle, evals: list[ItemEval] | None = N
     infeasible = [e for e in evals if not e.feasibility.feasible]
     correct = sum(1 for e in infeasible if e.result.status == "infeasible" and not e.result.alternatives)
     offered = [e for e in infeasible if e.result.relaxation and e.result.relaxation.alternatives]
-    relaxed = [r for e in infeasible for r in e.relaxed_reports]
-    bad_relaxed = sum(1 for r in relaxed if any(v.code in NEVER_RELAXED for v in r.violations))
+    # A relaxed plan is bad if it breaks a never-relaxed constraint of the ORIGINAL request, breaks
+    # anything in the RELAXED request (e.g. detour 10 -> 15 but a 25-minute detour), or its
+    # relaxation cannot be read (then nothing vouches for it).
+    n_relaxed = bad_relaxed = 0
+    for e in infeasible:
+        for k, original in enumerate(e.relaxed_reports):
+            n_relaxed += 1
+            full = e.relaxed_full_reports[k] if k < len(e.relaxed_full_reports) else None
+            bad_relaxed += (
+                any(v.code in NEVER_RELAXED for v in original.violations)
+                or e.relaxation_error is not None
+                or (full is not None and not full.ok)
+            )
     return {
         "n_oracle_infeasible": len(infeasible),
         "infeasible_handling_accuracy": _rate(correct, len(infeasible)),
         "relaxation_offered_rate": _rate(len(offered), len(infeasible)),
-        "n_relaxed_itineraries": len(relaxed),
-        "relaxed_plan_violation_rate": _rate(bad_relaxed, len(relaxed)),
+        "n_relaxed_itineraries": n_relaxed,
+        "relaxed_plan_violation_rate": _rate(bad_relaxed, n_relaxed),
+        "n_relaxation_unparseable": sum(1 for e in infeasible if e.relaxation_error is not None),
         "oracle_reasons": dict(sorted(Counter(e.feasibility.reason for e in infeasible).items())),
     }
 
@@ -286,7 +422,10 @@ def unknown_power_sensitivity(
     out: dict[str, Any] = {
         "n_items": len(in_scope),
         "n_leaf_excluded_from_charge_time": leaf,
-        "baseline_dc_fast_kw": float(oracle.cfg.charging_model["unknown_power_kw"]["dc_fast"]),
+        # what the baseline run actually used: the oracle's override if set, else the charging model
+        "baseline_dc_fast_kw": float(
+            (oracle.cfg.unknown_power_kw or {}).get("dc_fast", oracle.cfg.charging_model["unknown_power_kw"]["dc_fast"])
+        ),
         "n_excluded_incomplete_search": sum(f is None for f in base_fronts.values()),
     }
     for kw in fallbacks:
@@ -324,13 +463,23 @@ def unknown_power_sensitivity(
 
 
 def corridor_buffer_diagnostic(items, results, oracle, evals: list[ItemEval] | None = None) -> dict[str, Any]:
+    """Which oracle-infeasible items become feasible with a much wider corridor buffer?
+
+    Feasibility can only gain from extra stations (more nodes never remove a path), so feasible
+    items are not re-checked. The wide buffer is finite (configs/evaluation.yaml
+    oracle.diagnostic_buffer_km): with no buffer every station becomes a node and the reach check
+    is O(N^2) per item, which does not finish on a full snapshot."""
     evals = evals if evals is not None else evaluate(items, results, oracle)[0]
-    unbounded = oracle.with_overrides(corridor_buffer_km=float("inf"))
-    changed = [e.item_id for e in evals if unbounded.is_feasible(e.request).feasible != e.feasibility.feasible]
+    wide_km = max(oracle.cfg.diagnostic_buffer_km, oracle.cfg.corridor_buffer_km)
+    wide = oracle.with_overrides(corridor_buffer_km=wide_km)
+    infeasible = [e for e in evals if not e.feasibility.feasible]
+    changed = [e.item_id for e in infeasible if wide.is_feasible(e.request).feasible]
     return {
         "corridor_buffer_km": oracle.cfg.corridor_buffer_km,
-        "n_feasibility_changes_without_buffer": len(changed),
-        "items_changed_without_buffer": changed,
+        "diagnostic_buffer_km": wide_km,
+        "n_rechecked": len(infeasible),
+        "n_feasible_with_wide_buffer": len(changed),
+        "items_feasible_with_wide_buffer": changed,
     }
 
 
@@ -363,6 +512,17 @@ def unknown_status_reliance(items, results, oracle, evals: list[ItemEval] | None
 def planning_metrics(items, results, oracle) -> dict[str, Any]:
     """All planning blocks plus `findings` (planner/oracle disagreements) from one oracle pass."""
     evals, findings = evaluate(items, results, oracle)
+    if items and not evals:
+        # Nothing to judge: say why instead of reporting None rates and no findings as if clean
+        # (e.g. an empty routes/ makes every item not evaluable with reason no_route).
+        why = Counter(s["reason"] for s in skipped_items(items, results, oracle))
+        findings.append(
+            {
+                "item_id": None,
+                "kind": "oracle_nothing_evaluable",
+                "detail": f"0 of {len(items)} items evaluable: {dict(sorted(why.items()))}",
+            }
+        )
     return {
         "feasibility": feasibility_and_violations(items, results, oracle, evals),
         "infeasible": infeasible_handling(items, results, oracle, evals),
@@ -386,11 +546,7 @@ def _fastest_of(front: ParetoResult) -> tuple[str, ...] | None:
 
 def _strictly_beaten(point, plans, tol: float) -> bool:
     """Some oracle plan is better by more than tol on one objective and no worse on the others."""
-    def beats(objectives) -> bool:
-        pairs = list(zip(objectives, point, strict=True))
-        return all(a <= b + tol for a, b in pairs) and any(a < b - tol for a, b in pairs)
-
-    return any(beats(p.objectives) for p in plans)
+    return bool(strictly_dominating(point, plans, tol))
 
 
 def ndcg_at_k(ranked_relevances: list[list[float]], k: int = 3) -> float:

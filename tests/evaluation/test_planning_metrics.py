@@ -148,7 +148,8 @@ def test_unknown_power_sensitivity_excludes_leaf():
 def test_corridor_buffer_diagnostic():
     o = world([station("FAR", 60, off_km=9.0)])
     m = corridor_buffer_diagnostic([item("b1")], [result("b1", status="infeasible")], o)
-    assert m["n_feasibility_changes_without_buffer"] == 1 and m["items_changed_without_buffer"] == ["b1"]
+    assert m["n_feasible_with_wide_buffer"] == 1 and m["items_feasible_with_wide_buffer"] == ["b1"]
+    assert m["diagnostic_buffer_km"] == 50.0
 
 
 def test_unknown_status_reliance():

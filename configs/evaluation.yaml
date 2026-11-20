@@ -4,3 +4,6 @@ oracle:
   # returns complete=False; the item gets an oracle_search_incomplete finding and is left out of
   # the front-based metrics. null = no limit.
   pareto_time_budget_s: 60
+  # Corridor-buffer diagnostic: re-check oracle-infeasible items with this much wider buffer
+  # (instead of no buffer at all, which makes every station a node and does not scale).
+  diagnostic_buffer_km: 50
