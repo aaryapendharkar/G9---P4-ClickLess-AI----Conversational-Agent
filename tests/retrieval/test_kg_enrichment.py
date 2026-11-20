@@ -22,7 +22,7 @@ from clickless.contracts import (
 )
 from clickless.data import DataStore
 from clickless.pipeline import build_pipeline
-from clickless.retrieval.kg.build import DEFAULT_AMENITY_RADIUS_M, build_graph, derived_provenance, near_pairs
+from clickless.retrieval.kg.build import DEFAULT_AMENITY_RADIUS_M, derived_provenance, near_pairs
 from clickless.retrieval.kg.enrich import KGEnricher, evidence_id
 from clickless.retrieval.tfidf_matcher import TfidfMatcher
 
@@ -221,19 +221,6 @@ def test_every_kg_term_is_declared_in_the_ontology():
 
     undeclared = [t for t in vocab.TERMS if (t, RDF.type, None) not in ontology]
     assert not undeclared
-
-
-def test_graph_follows_the_competency_query_conventions(store):
-    from rdflib.plugins.sparql import prepareQuery
-
-    from clickless.retrieval.kg.build import station_uri
-
-    cq3 = repo_path("src/clickless/retrieval/kg/competency_queries/cq03_amenity_wheelchair_status.rq").read_text()
-    query = prepareQuery(cq3.replace("VALUES ?station { cc:station_REPLACE_ME }", ""))
-
-    rows = build_graph(store).query(query, initBindings={"station": station_uri("FIX-ST-002")})
-
-    assert [(str(r.amenity).rsplit("_", 1)[-1], str(r.wheelchair)) for r in rows] == [("fix%3Aa02", "unknown")]
 
 
 def test_config_c_plans_on_the_fixtures_with_kg_evidence(store, demo_text):

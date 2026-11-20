@@ -8,7 +8,7 @@ Ontology adequacy = share of these 20 questions answerable by a SPARQL query ove
 |---|---|---|---|
 | 1 | Which stations have a port vehicle V can use, and at what power? | cq01_compatible_stations.rq | draft |
 | 2 | Which compatible stations have a food amenity within 400 m? | cq02_compatible_stations_with_food.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
-| 3 | Which amenities near station S are tagged wheelchair-accessible (and which are unknown)? | cq03_amenity_wheelchair_status.rq | tested on the fixture KG (Aarya; `test_kg_enrichment.py`) |
+| 3 | Which amenities near station S are tagged wheelchair-accessible (and which are unknown)? | cq03_amenity_wheelchair_status.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
 | 4 | What is the source and retrieval time of the power value of station S's DC port? | cq04_dc_power_provenance.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
 | 5 | Which connectors does vehicle V support only through an adapter? | cq05_adapter_only_connectors.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
 | 6 | Which stations' records were updated at the source more than N days before retrieval? | cq06_stale_station_records.rq | tested on the fixture KG (Aarya; `test_competency_query_answers.py`) |
@@ -18,11 +18,19 @@ Ontology adequacy = share of these 20 questions answerable by a SPARQL query ove
 | 10–20 | TODO (Manas): cover access restrictions, status, opening hours, port counts, vehicle max DC power, evidence freshness labels | | |
 
 ## Ontology terms needed by CQ2–CQ6 (proposal for Manas)
-CQ2–CQ6 are drafts. `retrieval/kg/build.py::build_graph(store)` now builds the fixture KG, so each
-CQ can get its expected-answer test (CQ3 already runs on it in `tests/retrieval/test_kg_enrichment.py`).
-`tests/retrieval/test_competency_queries.py` checks their structure everywhere and parses them
-with rdflib where it is installed (`pip install -e ".[kg]"`). They use these terms, defined in
-`ontology.ttl` v0.2 (ADR 0015):
+CQ2–CQ6 have expected-answer tests on the fixture KG (`retrieval/kg/build.py::build_graph`) in
+`tests/retrieval/test_competency_query_answers.py`. Cases the fixtures lack (a connector both
+native and adapted, an unknown-power DC port, dated records, "limited"/"no" wheelchair tags) are
+made by copying fixture records and rebuilding the graph. `tests/retrieval/test_competency_queries.py`
+checks every query's structure and parses it with rdflib where it is installed (`pip install -e ".[kg]"`).
+
+**Running a CQ:** `clickless.retrieval.kg.competency.run_competency_query(graph, "cq04", station=...)`.
+It removes each `VALUES ?x { cc:x_REPLACE_ME }` placeholder and binds `?x` instead, and refuses
+to run with a placeholder left (which would match nothing and return `[]`). CQ6 takes
+`cutoff=clickless.data.provenance.stale_cutoff(retrieved_at)`: a record is stale exactly when its
+source update time is at or before the cutoff, the same rule as `provenance.is_stale`.
+
+They use these terms, defined in `ontology.ttl` v0.2 (ADR 0015):
 
 | Term | Domain → range | Used by | Value |
 |---|---|---|---|
@@ -30,6 +38,7 @@ with rdflib where it is installed (`pip install -e ".[kg]"`). They use these ter
 | `cc:chargerLevel` | ChargingPort → xsd:string | CQ4 | `ChargingPort.level` (`dc_fast`, `l2`, `l1`) |
 | `cc:hasProvenance` | Station → Source | CQ4, CQ6 | one Source node per station record |
 | `cc:sourceName` | Source → xsd:string | CQ4 | `Provenance.source` (`AFDC`, `OSM`, ...) |
+| `cc:dataStatus` | Source → xsd:string | CQ6 | `Provenance.status`; static reference data is never judged stale |
 
 Graph-building assumptions: `cc:near` edges only for amenities within `amenity_radius_m`
 (400 m); a missing wheelchair tag means no `cc:wheelchair` triple; native connectors use
