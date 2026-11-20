@@ -63,3 +63,125 @@ def test_infeasible_connector_request_explains_vehicle_support(store):
     assert "cannot use the requested connector(s): CHADEMO" in explanation
     assert "CCS1" in explanation and "NACS" in explanation
     assert claims == []
+
+
+def test_grounded_explanation_cites_plan_evidence_when_present(pipe_a, store, demo_text):
+    from clickless.contracts import Evidence
+
+    result = pipe_a.run(demo_text, request_id="evidence-1")
+    stop = result.alternatives[0].itinerary.stops[0]
+    station = store.station(stop.station_id)
+    evidence = [
+        Evidence(
+            evidence_id=f"kg:{stop.station_id}:name",
+            subject_id=stop.station_id,
+            field="name",
+            value=station.name,
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id=f"kg:{stop.station_id}:ports[0].connector",
+            subject_id=stop.station_id,
+            field="ports[0].connector",
+            value=stop.connector.value,
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id=f"kg:{stop.station_id}:ports[0].power_kw",
+            subject_id=stop.station_id,
+            field="ports[0].power_kw",
+            value=stop.port_power_kw,
+            provenance=station.provenance,
+        ),
+    ]
+    grounded_result = result.model_copy(update={"evidence": evidence})
+
+    _, claims = GroundedLLMExplainer(store, {}).explain(grounded_result)
+
+    assert claims[0].supported_by[0] == "verified:evidence-1:stop:0"
+    assert set(claims[0].supported_by[1:]) == {
+        f"kg:{stop.station_id}:name",
+        f"kg:{stop.station_id}:ports[0].connector",
+        f"kg:{stop.station_id}:ports[0].power_kw",
+    }
+
+
+def test_kg_connector_and_power_citations_share_port_index(store):
+    from clickless.contracts import Evidence
+    from clickless.explain.grounded import GroundedLLMExplainer
+
+    station = store.station("FIX-ST-004")
+    evidence = [
+        Evidence(
+            evidence_id="kg:FIX-ST-004:ports[0].connector",
+            subject_id="FIX-ST-004",
+            field="ports[0].connector",
+            value="CCS1",
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id="kg:FIX-ST-004:ports[0].power_kw",
+            subject_id="FIX-ST-004",
+            field="ports[0].power_kw",
+            value=50.0,
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id="kg:FIX-ST-004:ports[1].connector",
+            subject_id="FIX-ST-004",
+            field="ports[1].connector",
+            value="CCS1",
+            provenance=station.provenance,
+        ),
+        Evidence(
+            evidence_id="kg:FIX-ST-004:ports[1].power_kw",
+            subject_id="FIX-ST-004",
+            field="ports[1].power_kw",
+            value=150.0,
+            provenance=station.provenance,
+        ),
+    ]
+    # Use a tiny result-shaped object only to exercise the pure port-fact selector.
+    pipeline_result = type("EvidenceResult", (), {"evidence": evidence})()
+    selected = GroundedLLMExplainer(store, {})._port_fact_ids(
+        pipeline_result, "FIX-ST-004", "CCS1", 150.0
+    )
+
+    assert selected == [
+        "kg:FIX-ST-004:ports[1].connector",
+        "kg:FIX-ST-004:ports[1].power_kw",
+    ]
+
+
+def test_grounded_amenity_claim_omits_unbacked_displayed_amenity(pipe_a, store, demo_text):
+    from clickless.contracts import Evidence
+
+    result = pipe_a.run(demo_text, request_id="evidence-partial")
+    stop = result.alternatives[0].itinerary.stops[0]
+    amenities_by_id = {amenity.amenity_id: amenity for amenity in store.amenities}
+    named_amenity_ids = [
+        amenity_id for amenity_id in stop.amenity_ids if amenities_by_id[amenity_id].name
+    ]
+    first_amenity = amenities_by_id[named_amenity_ids[0]]
+    evidence = Evidence(
+        evidence_id=f"kg:{first_amenity.amenity_id}:name",
+        subject_id=first_amenity.amenity_id,
+        field="name",
+        value=first_amenity.name,
+        provenance=first_amenity.provenance,
+    )
+    grounded_result = result.model_copy(update={"evidence": [evidence]})
+
+    _, claims = GroundedLLMExplainer(store, {}).explain(grounded_result)
+    amenity_claims = [claim.text for claim in claims if claim.text.startswith("Nearby (requested):")]
+
+    assert len(amenity_claims) == 1
+    assert first_amenity.name in amenity_claims[0]
+    assert all(
+        amenities_by_id[amenity_id].name in amenity_claims[0]
+        for amenity_id in named_amenity_ids[:1]
+    )
+    assert all(
+        amenities_by_id[amenity_id].name not in amenity_claims[0]
+        for amenity_id in named_amenity_ids[1:]
+    )

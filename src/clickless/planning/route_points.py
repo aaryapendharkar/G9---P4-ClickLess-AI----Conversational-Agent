@@ -37,10 +37,20 @@ def build_route_points(
     route: Route,
     stops: list[Candidate],
     energy_config: dict[str, Any],
+    precomputed_distance_scale: float | None = None,
 ) -> list[RoutePoint]:
-    """Convert the origin, ordered stations, and destination to route points."""
+    """Convert the origin, ordered stations, and destination to route points.
 
-    distance_scale = route_distance_scale(route)
+    The planner supplies ``precomputed_distance_scale`` because it evaluates
+    many stop sequences against the same route. Direct callers may omit it,
+    preserving the existing self-contained behavior.
+    """
+
+    distance_scale = (
+        precomputed_distance_scale
+        if precomputed_distance_scale is not None
+        else route_distance_scale(route)
+    )
     road_factor = energy_config["placeholder_detour"]["road_factor"]
     points = [
         RoutePoint(

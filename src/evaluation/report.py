@@ -1,0 +1,658 @@
+"""Evaluation report: run configs A/B/C on one split and write report.md + CSVs. Owner: Ian.
+
+    python -m evaluation.report                         # A, B, C on dev -> results/<timestamp>/
+    python -m evaluation.report --configs A --split dev --n-boot 2000
+    python -m evaluation.report --split test --final    # only after the freeze (FROZEN.json)
+    python -m evaluation.report --from results/<ts>     # rebuild the report from saved JSONs
+    make eval-dev                                       # same as the first line
+
+Steps
+  1. run_all(): runs the harness once per config into results/<timestamp>/. A config that fails
+     (e.g. B/C without an LLM endpoint) is recorded in report_inputs.json and shown as failed;
+     the others still run. The test split is refused unless final=True AND benchmark/FROZEN.json
+     exists, so nothing is ever tuned on held-out items by accident.
+  2. build_report(): reads every result JSON in the directory and writes
+       report.md          all sections below
+       headline.csv       one row per config, value + 95 % CI per metric
+       paired.csv         A vs B and B vs C: McNemar (success rates), Wilcoxon (per-item scores)
+       breakdown.csv      by author / category / route_type, with item counts
+       findings.csv       planner/oracle disagreements (the result JSON's "findings")
+       metadata.csv       git commit, model, digest, prompt version, snapshot id
+
+Metric sources (no metric is reimplemented here)
+  * Request understanding (field F1, exact match, clarification F1, silent-assumption rate) is
+    recomputed from the per-item rows with evaluation.metrics.request_understanding, and its CIs
+    with understanding_cis (percentile bootstrap, seed 573). Error rate (status "error" or
+    "not_implemented") uses evaluation.metrics.stats.bootstrap_ci.
+  * Plan feasibility / hard-violation rate (metrics.planning.feasibility), grounding
+    (metrics.grounding.claim_support_rate) and freshness (metrics.freshness.
+    freshness_mislabel_rate) are read from the harness's metric blocks. Their CI is taken from
+    the block's "ci95": {key: [lo, hi]} when the metric provides one, else shown as n/a. A block
+    that is missing or {"not_implemented": ...} is shown as n/a.
+  * Paired tests use evaluation.metrics.stats.mcnemar / wilcoxon on the items both configs ran.
+
+Independence: building a report imports no system code. Only run_all() imports the harness (which
+runs the pipeline), lazily; tests/evaluation/test_report.py checks both.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import math
+import os
+from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from clickless.config import load_config, repo_path
+from clickless.contracts import PlanResult
+
+from .metrics.request_understanding import (
+    asked,
+    clarification_prf,
+    extraction_prf,
+    item_exact_match,
+    item_field_counts,
+    prf,
+    silent_assumption_rate,
+    understanding_cis,
+)
+from .metrics.stats import bootstrap_ci, mcnemar, wilcoxon
+from .schema import BenchmarkItem, load_items
+
+CONFIGS = ("A", "B", "C")
+PAIRS = (("A", "B"), ("B", "C"))
+BREAKDOWNS = ("author", "category", "route_type")
+INPUTS_FILE = "report_inputs.json"
+NA = "n/a"
+_ERROR_STATUSES = ("error", "not_implemented")
+_REPORT_FILES = {INPUTS_FILE}
+
+# (column, label, where the value comes from). "understanding" metrics are recomputed from rows;
+# ("block", path, key) metrics are read from the result JSON's metric blocks.
+HEADLINE: tuple[tuple[str, str, tuple], ...] = (
+    ("field_f1", "Field F1 (micro)", ("understanding", "micro_f1")),
+    ("exact_match", "Exact match", ("understanding", "exact_match")),
+    ("clarification_f1", "Clarification F1", ("understanding", "clarification_f1")),
+    ("silent_assumption_rate", "Silent-assumption rate", ("understanding", "silent_assumption_rate")),
+    ("error_rate", "Error rate", ("error_rate",)),
+    ("plan_feasibility_rate", "Plan feasibility", ("block", ("planning", "feasibility"), "plan_feasibility_rate")),
+    ("hard_violation_rate", "Hard-violation rate", ("block", ("planning", "feasibility"), "hard_violation_rate")),
+    ("claim_support_rate", "Grounding (claim support)", ("block", ("grounding",), "claim_support_rate")),
+    ("freshness_mislabel_rate", "Freshness mislabel rate", ("block", ("freshness",), "freshness_mislabel_rate")),
+)
+
+
+class SplitRefused(ValueError):
+    """Raised when the test split is requested without --final and a frozen benchmark."""
+
+
+# --------------------------------------------------------------------------- step 1: run
+
+
+def check_split(split: str, final: bool, frozen_file: Path | None = None) -> None:
+    """Refuse the held-out test split unless final=True and benchmark/FROZEN.json exists."""
+    if split != "test":
+        return
+    frozen_file = frozen_file or repo_path("benchmark/FROZEN.json")
+    if not final:
+        raise SplitRefused("the test split is held out: pass --final (only for the final evaluation)")
+    if not Path(frozen_file).is_file():
+        raise SplitRefused(f"refusing the test split: {frozen_file} does not exist (freeze the benchmark first)")
+
+
+def snapshot_id(config: str) -> str:
+    """'fixtures', or 'snapshot:<first 12 hex of sha256(MANIFEST.json)> (<draft|frozen>, created <ts>)'."""
+    cfg = load_config(config)
+    data = cfg.get("data", {})
+    source = os.environ.get("CLICKLESS_DATA_SOURCE", "").strip().lower() or data.get("source", "fixtures")
+    if source != "snapshot":
+        return source
+    manifest = repo_path(data.get("snapshot_dir", "data/snapshot")) / "MANIFEST.json"
+    if not manifest.is_file():
+        return "snapshot (no MANIFEST.json)"
+    raw = manifest.read_bytes()
+    meta = json.loads(raw)
+    kind = "frozen" if meta.get("frozen") else "draft"
+    return f"snapshot:{hashlib.sha256(raw).hexdigest()[:12]} ({kind}, created {meta.get('created_at', '?')})"
+
+
+def run_all(
+    configs: Sequence[str] = CONFIGS,
+    split: str = "dev",
+    final: bool = False,
+    out_root: str = "results",
+    items_paths: list[str] | None = None,
+    n_boot: int = 10_000,
+    runner: Callable[..., Path] | None = None,
+    stamp: str | None = None,
+) -> Path:
+    """Run every config into <out_root>/<timestamp>/ and return that directory.
+
+    `runner` defaults to evaluation.harness.run (imported here so building a report never loads
+    the pipeline). Failures are recorded per config instead of aborting the whole run.
+    """
+    if not items_paths:
+        check_split(split, final)
+    if runner is None:
+        from .harness import run as runner  # runs the system under test; deliberately lazy
+    stamp = stamp or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_dir = repo_path(out_root) / stamp
+    run_dir.mkdir(parents=True, exist_ok=True)
+    rel_dir = str(Path(out_root) / stamp)
+    inputs: dict[str, Any] = {
+        "split": None if items_paths else split,
+        "items": items_paths,
+        "final": final,
+        "configs": list(configs),
+        "snapshot_id": {},
+        "failed": {},
+        "outputs": {},
+    }
+    for config in configs:
+        try:
+            inputs["snapshot_id"][config] = snapshot_id(config)
+            out = runner(config, split, None, out_dir=rel_dir, items_paths=items_paths, n_boot=n_boot)
+            inputs["outputs"][config] = Path(out).name
+        except Exception as e:  # noqa: BLE001 - one failing config must not hide the others
+            inputs["failed"][config] = f"{type(e).__name__}: {e}"
+    (run_dir / INPUTS_FILE).write_text(json.dumps(inputs, indent=2), encoding="utf-8")
+    return run_dir
+
+
+# --------------------------------------------------------------------------- step 2: load
+
+
+class ConfigRun:
+    """One config's saved result JSON, with its items and PlanResults paired by item id."""
+
+    def __init__(self, payload: Mapping[str, Any], items_by_id: Mapping[str, BenchmarkItem]):
+        self.payload = payload
+        self.config: str = payload["config"]
+        self.metrics: Mapping[str, Any] = payload.get("metrics", {}) or {}
+        self.meta: Mapping[str, Any] = payload.get("run_metadata", {}) or {}
+        self.findings: list[Mapping[str, Any]] = list(payload.get("findings", []) or [])
+        self.rows: list[Mapping[str, Any]] = list(payload.get("rows", []))
+        self.items: dict[str, BenchmarkItem] = {}
+        self.results: dict[str, PlanResult] = {}
+        self.status: dict[str, str] = {}
+        self.latency: dict[str, float] = {}
+        for row in self.rows:
+            item = items_by_id.get(row["id"])
+            if item is None:
+                continue
+            self.items[item.id] = item
+            self.status[item.id] = row.get("status", "")
+            if row.get("latency_ms") is not None:
+                self.latency[item.id] = float(row["latency_ms"])
+            if row.get("result") is not None:
+                self.results[item.id] = PlanResult.model_validate(row["result"])
+
+    def pairs(self, ids: Sequence[str] | None = None) -> tuple[list[BenchmarkItem], list[PlanResult]]:
+        """(items, results) for item ids that produced a PlanResult, in id order."""
+        keep = sorted(i for i in (ids if ids is not None else self.results) if i in self.results)
+        return [self.items[i] for i in keep], [self.results[i] for i in keep]
+
+    def errored(self, item_id: str) -> bool:
+        return self.status.get(item_id) in _ERROR_STATUSES or item_id not in self.results
+
+
+def _items_for(payload: Mapping[str, Any]) -> dict[str, BenchmarkItem]:
+    sources = payload.get("items") or ([f"benchmark/requests/{payload['split']}"] if payload.get("split") else [])
+    items: dict[str, BenchmarkItem] = {}
+    for src in sources:
+        for item in load_items(repo_path(src)):
+            items[item.id] = item
+    return items
+
+
+def load_runs(run_dir: str | Path) -> tuple[dict[str, ConfigRun], dict[str, Any]]:
+    """Every result JSON in run_dir (by config name) and the run inputs (if run_all wrote them)."""
+    run_dir = Path(run_dir)
+    inputs_path = run_dir / INPUTS_FILE
+    inputs = json.loads(inputs_path.read_text(encoding="utf-8")) if inputs_path.is_file() else {}
+    runs: dict[str, ConfigRun] = {}
+    for path in sorted(run_dir.glob("*.json")):
+        if path.name in _REPORT_FILES:
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if "config" not in payload or "rows" not in payload:
+            continue
+        runs[payload["config"]] = ConfigRun(payload, _items_for(payload))
+    return runs, inputs
+
+
+# --------------------------------------------------------------------------- metrics
+
+
+def _num(x: Any) -> float | None:
+    if x is None:
+        return None
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(v) else v
+
+
+def _ci(pair: Any) -> tuple[float, float] | None:
+    if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+        return None
+    lo, hi = _num(pair[0]), _num(pair[1])
+    return None if lo is None or hi is None else (lo, hi)
+
+
+def _block(metrics: Mapping[str, Any], path: Sequence[str]) -> Mapping[str, Any] | None:
+    node: Any = metrics
+    for key in path:
+        if not isinstance(node, Mapping) or key not in node:
+            return None
+        node = node[key]
+    if not isinstance(node, Mapping) or "not_implemented" in node:
+        return None
+    return node
+
+
+def _understanding(items, results, n_boot: int) -> dict[str, tuple[float | None, tuple[float, float] | None]]:
+    if not items:
+        return {}
+    ext = extraction_prf(items, results)
+    clar = clarification_prf(items, results)
+    silent = silent_assumption_rate(items, results)
+    cis = understanding_cis(items, results, n=n_boot)
+    return {
+        "micro_f1": (_num(ext["micro_f1"]), _ci(cis.get("micro_f1"))),
+        "exact_match": (_num(ext["exact_match"]), _ci(cis.get("exact_match"))),
+        "clarification_f1": (_num(clar["f1"]), _ci(cis.get("clarification_f1"))),
+        "silent_assumption_rate": (_num(silent["silent_assumption_rate"]), _ci(cis.get("silent_assumption_rate"))),
+    }
+
+
+def headline(run: ConfigRun, n_boot: int = 10_000) -> dict[str, tuple[float | None, tuple[float, float] | None]]:
+    """column -> (value or None, CI or None) for every HEADLINE metric."""
+    items, results = run.pairs()
+    und = _understanding(items, results, n_boot)
+    errors = [float(run.errored(i)) for i in sorted(run.items)]
+    out: dict[str, tuple[float | None, tuple[float, float] | None]] = {}
+    for column, _label, source in HEADLINE:
+        if source[0] == "understanding":
+            out[column] = und.get(source[1], (None, None))
+        elif source[0] == "error_rate":
+            out[column] = (sum(errors) / len(errors), _ci(bootstrap_ci(errors, n=n_boot))) if errors else (None, None)
+        else:
+            block = _block(run.metrics, source[1])
+            if block is None:
+                out[column] = (None, None)
+            else:
+                ci = block.get("ci95", {})
+                out[column] = (_num(block.get(source[2])), _ci(ci.get(source[2]) if isinstance(ci, Mapping) else None))
+    return out
+
+
+def per_item(run: ConfigRun, item_id: str) -> dict[str, Any]:
+    """Per-item outcomes for paired tests: successes (bool) and scores (float or None)."""
+    item, result = run.items.get(item_id), run.results.get(item_id)
+    if item is None or result is None:
+        return {
+            "exact_match": False,
+            "clarification_correct": False,
+            "no_error": False,
+            "field_f1": None,
+            "latency_ms": run.latency.get(item_id),
+        }
+    counts = item_field_counts(item, result)
+    f1 = prf(
+        sum(c[0] for c in counts.values()), sum(c[1] for c in counts.values()), sum(c[2] for c in counts.values())
+    )["f1"]
+    return {
+        "exact_match": item_exact_match(item, result),
+        "clarification_correct": bool(item.clarification_required) == asked(result),
+        "no_error": not run.errored(item_id),
+        "field_f1": _num(f1),
+        "latency_ms": run.latency.get(item_id),
+    }
+
+
+SUCCESS_OUTCOMES = ("exact_match", "clarification_correct", "no_error")
+SCORE_OUTCOMES = ("field_f1", "latency_ms")
+
+
+def paired(a: ConfigRun, b: ConfigRun) -> list[dict[str, Any]]:
+    """McNemar on success outcomes and Wilcoxon on per-item scores, over items both configs ran."""
+    common = sorted(set(a.items) & set(b.items))
+    pa = {i: per_item(a, i) for i in common}
+    pb = {i: per_item(b, i) for i in common}
+    rows: list[dict[str, Any]] = []
+    for outcome in SUCCESS_OUTCOMES:
+        xa = [bool(pa[i][outcome]) for i in common]
+        xb = [bool(pb[i][outcome]) for i in common]
+        test = mcnemar(xa, xb)
+        rows.append(
+            {
+                "pair": f"{a.config} vs {b.config}",
+                "outcome": outcome,
+                "test": "McNemar",
+                "n": len(common),
+                "rate_a": sum(xa) / len(xa) if xa else None,
+                "rate_b": sum(xb) / len(xb) if xb else None,
+                "b": test["b"],
+                "c": test["c"],
+                "statistic": test["statistic"],
+                "p_value": test["p_value"],
+                "note": "exact binomial" if test["exact"] else "chi-square, continuity-corrected",
+            }
+        )
+    for outcome in SCORE_OUTCOMES:
+        keep = [i for i in common if pa[i][outcome] is not None and pb[i][outcome] is not None]
+        xa = [pa[i][outcome] for i in keep]
+        xb = [pb[i][outcome] for i in keep]
+        if keep:
+            test = wilcoxon(xa, xb)
+            stat, p, note = test["statistic"], test["p_value"], f"{test['n_nonzero']} non-zero differences"
+        else:
+            stat, p, note = None, None, "no paired values"
+        rows.append(
+            {
+                "pair": f"{a.config} vs {b.config}",
+                "outcome": outcome,
+                "test": "Wilcoxon",
+                "n": len(keep),
+                "rate_a": sum(xa) / len(xa) if xa else None,
+                "rate_b": sum(xb) / len(xb) if xb else None,
+                "b": None,
+                "c": None,
+                "statistic": _num(stat),
+                "p_value": _num(p),
+                "note": note,
+            }
+        )
+    return rows
+
+
+def breakdown(run: ConfigRun) -> list[dict[str, Any]]:
+    """Per author / category / route_type: item count, error rate and request-understanding metrics."""
+    out: list[dict[str, Any]] = []
+    for dim in BREAKDOWNS:
+        groups: dict[str, list[str]] = {}
+        for item_id, item in run.items.items():
+            groups.setdefault(str(getattr(item, dim)), []).append(item_id)
+        for group, ids in sorted(groups.items()):
+            items, results = run.pairs(ids)
+            ext = extraction_prf(items, results) if items else {}
+            clar = clarification_prf(items, results) if items else {}
+            silent = silent_assumption_rate(items, results) if items else {}
+            out.append(
+                {
+                    "config": run.config,
+                    "dimension": dim,
+                    "group": group,
+                    "n_items": len(ids),
+                    "n_with_result": len(items),
+                    "error_rate": sum(run.errored(i) for i in ids) / len(ids),
+                    "field_f1": _num(ext.get("micro_f1")),
+                    "exact_match": _num(ext.get("exact_match")),
+                    "clarification_f1": _num(clar.get("f1")),
+                    "silent_assumption_rate": _num(silent.get("silent_assumption_rate")),
+                }
+            )
+    return out
+
+
+# --------------------------------------------------------------------------- step 2: write
+
+
+def _fmt(v: Any, digits: int = 3) -> str:
+    v2 = _num(v) if not isinstance(v, str) else v
+    if v2 is None:
+        return NA
+    return v2 if isinstance(v2, str) else f"{v2:.{digits}f}"
+
+
+def _fmt_ci(value: float | None, ci: tuple[float, float] | None) -> str:
+    if value is None:
+        return NA
+    return f"{value:.3f} [{ci[0]:.3f}, {ci[1]:.3f}]" if ci else f"{value:.3f} [CI n/a]"
+
+
+def _md_table(header: Sequence[str], rows: Sequence[Sequence[str]]) -> list[str]:
+    lines = ["| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
+    lines += ["| " + " | ".join(str(c) for c in r) + " |" for r in rows]
+    return lines
+
+
+def _write_csv(path: Path, rows: list[dict[str, Any]], fields: Sequence[str]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(fields), lineterminator="\n")
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: "" if r.get(k) is None else r.get(k) for k in fields})
+
+
+def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
+    """Write report.md and the CSVs into run_dir; return the report.md path."""
+    run_dir = Path(run_dir)
+    runs, inputs = load_runs(run_dir)
+    configs = list(inputs.get("configs") or sorted(runs))
+    failed: dict[str, str] = dict(inputs.get("failed") or {})
+    snapshot: dict[str, str] = dict(inputs.get("snapshot_id") or {})
+
+    # Headline
+    head_rows: list[dict[str, Any]] = []
+    md_head: list[list[str]] = []
+    for config in configs:
+        run = runs.get(config)
+        values = headline(run, n_boot) if run else {}
+        row: dict[str, Any] = {
+            "config": config,
+            "n_items": len(run.items) if run else 0,
+            "status": "ok" if run else ("failed: " + failed.get(config, "no result JSON")),
+        }
+        md = [config, str(row["n_items"])]
+        for column, _label, _src in HEADLINE:
+            value, ci = values.get(column, (None, None))
+            row[column] = value
+            row[f"{column}_ci_lo"] = ci[0] if ci else None
+            row[f"{column}_ci_hi"] = ci[1] if ci else None
+            md.append(_fmt_ci(value, ci))
+        head_rows.append(row)
+        md_head.append(md)
+    head_fields = ["config", "status", "n_items"] + [
+        f for c, _l, _s in HEADLINE for f in (c, f"{c}_ci_lo", f"{c}_ci_hi")
+    ]
+    _write_csv(run_dir / "headline.csv", head_rows, head_fields)
+
+    # Paired comparisons
+    pair_rows: list[dict[str, Any]] = []
+    skipped_pairs: list[str] = []
+    for a, b in PAIRS:
+        if a in runs and b in runs:
+            pair_rows += paired(runs[a], runs[b])
+        else:
+            skipped_pairs.append(f"{a} vs {b}: n/a ({', '.join(c for c in (a, b) if c not in runs)} missing)")
+    pair_fields = ["pair", "outcome", "test", "n", "rate_a", "rate_b", "b", "c", "statistic", "p_value", "note"]
+    _write_csv(run_dir / "paired.csv", pair_rows, pair_fields)
+
+    # Breakdowns
+    br_rows = [r for c in configs if c in runs for r in breakdown(runs[c])]
+    br_fields = [
+        "config",
+        "dimension",
+        "group",
+        "n_items",
+        "n_with_result",
+        "error_rate",
+        "field_f1",
+        "exact_match",
+        "clarification_f1",
+        "silent_assumption_rate",
+    ]
+    _write_csv(run_dir / "breakdown.csv", br_rows, br_fields)
+
+    # Findings
+    find_rows = [
+        {"config": c, "item_id": f.get("item_id"), "kind": f.get("kind"), "detail": f.get("detail")}
+        for c in configs
+        if c in runs
+        for f in runs[c].findings
+    ]
+    _write_csv(run_dir / "findings.csv", find_rows, ["config", "item_id", "kind", "detail"])
+
+    # Metadata
+    meta_rows = []
+    for config in configs:
+        meta = runs[config].meta if config in runs else {}
+        meta_rows.append(
+            {
+                "config": config,
+                "git_commit": meta.get("git_commit"),
+                "git_dirty": meta.get("git_dirty"),
+                "model": meta.get("model"),
+                "model_digest": meta.get("model_digest"),
+                "digest_check": meta.get("digest_check"),
+                "prompt_version": meta.get("prompt_version"),
+                "snapshot_id": snapshot.get(config),
+            }
+        )
+    meta_fields = [
+        "config",
+        "git_commit",
+        "git_dirty",
+        "model",
+        "model_digest",
+        "digest_check",
+        "prompt_version",
+        "snapshot_id",
+    ]
+    _write_csv(run_dir / "metadata.csv", meta_rows, meta_fields)
+
+    # report.md
+    split = inputs.get("split")
+    lines = [
+        f"# Evaluation report: {run_dir.name}",
+        "",
+        f"Split: {split or NA}"
+        + (f" (items: {', '.join(inputs['items'])})" if inputs.get("items") else "")
+        + (" -- FINAL (held-out test)" if inputs.get("final") else ""),
+        f"Configs: {', '.join(configs) or NA}. Bootstrap: {n_boot} resamples, seed 573, percentile 95 % CI.",
+        "",
+    ]
+    if failed:
+        lines += ["**Failed configs:**", ""] + [f"- {c}: {msg}" for c, msg in sorted(failed.items())] + [""]
+    lines += [
+        "## Headline",
+        "",
+        "Value [95 % CI]. n/a = metric block missing or not implemented; [CI n/a] = the metric block reports no CI.",
+        "",
+    ]
+    lines += _md_table(["Config", "n"] + [label for _c, label, _s in HEADLINE], md_head)
+    lines += [
+        "",
+        "## Paired comparisons",
+        "",
+        "McNemar on per-item successes (b = first config only, c = second only); Wilcoxon "
+        "signed-rank on per-item scores. Items both configs ran.",
+        "",
+    ]
+    if pair_rows:
+        lines += _md_table(
+            ["Pair", "Outcome", "Test", "n", "First", "Second", "b", "c", "Statistic", "p"],
+            [
+                [
+                    r["pair"],
+                    r["outcome"],
+                    r["test"],
+                    str(r["n"]),
+                    _fmt(r["rate_a"]),
+                    _fmt(r["rate_b"]),
+                    NA if r["b"] is None else str(r["b"]),
+                    NA if r["c"] is None else str(r["c"]),
+                    _fmt(r["statistic"]),
+                    _fmt(r["p_value"], 4),
+                ]
+                for r in pair_rows
+            ],
+        )
+    lines += [f"- {s}" for s in skipped_pairs]
+    lines += ["", "## Breakdowns", ""]
+    for dim in BREAKDOWNS:
+        rows = [r for r in br_rows if r["dimension"] == dim]
+        lines += [f"### By {dim}", ""]
+        if not rows:
+            lines += [NA, ""]
+            continue
+        lines += _md_table(
+            ["Config", dim, "n", "Error rate", "Field F1", "Exact match", "Clarification F1", "Silent-assumption"],
+            [
+                [
+                    r["config"],
+                    r["group"],
+                    str(r["n_items"]),
+                    _fmt(r["error_rate"]),
+                    _fmt(r["field_f1"]),
+                    _fmt(r["exact_match"]),
+                    _fmt(r["clarification_f1"]),
+                    _fmt(r["silent_assumption_rate"]),
+                ]
+                for r in rows
+            ],
+        )
+        lines.append("")
+    lines += ["## Findings (planner/oracle disagreements)", ""]
+    if find_rows:
+        lines += _md_table(
+            ["Config", "Item", "Kind", "Detail"],
+            [[r["config"], str(r["item_id"]), str(r["kind"]), str(r["detail"])] for r in find_rows],
+        )
+    else:
+        lines.append("None recorded (no planning block with findings in these results).")
+    lines += ["", "## Run metadata", ""]
+    lines += _md_table(
+        ["Config", "Git commit", "Model", "Digest", "Prompt", "Snapshot"],
+        [
+            [
+                r["config"],
+                _fmt(r["git_commit"]) + (" (dirty)" if r["git_dirty"] else ""),
+                _fmt(r["model"]),
+                _fmt(r["model_digest"]),
+                _fmt(r["prompt_version"]),
+                _fmt(r["snapshot_id"]),
+            ]
+            for r in meta_rows
+        ],
+    )
+    lines.append("")
+    out = run_dir / "report.md"
+    out.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    return out
+
+
+# --------------------------------------------------------------------------- CLI
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(prog="python -m evaluation.report")
+    ap.add_argument("--configs", nargs="+", default=list(CONFIGS))
+    ap.add_argument("--split", default="dev")
+    ap.add_argument("--final", action="store_true", help="allow the held-out test split (needs FROZEN.json)")
+    ap.add_argument("--items", nargs="+", help="explicit .jsonl files/dirs instead of --split")
+    ap.add_argument("--out", default="results")
+    ap.add_argument("--n-boot", type=int, default=10_000)
+    ap.add_argument("--from", dest="from_dir", help="rebuild the report from an existing results/<ts> directory")
+    args = ap.parse_args(argv)
+    try:
+        run_dir = (
+            Path(args.from_dir)
+            if args.from_dir
+            else run_all(args.configs, args.split, args.final, args.out, args.items, args.n_boot)
+        )
+    except SplitRefused as e:
+        raise SystemExit(f"refused: {e}") from e
+    print(build_report(run_dir, n_boot=args.n_boot))
+
+
+if __name__ == "__main__":
+    main()

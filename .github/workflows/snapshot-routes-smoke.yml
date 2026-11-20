@@ -1,0 +1,63 @@
+# Smoke test for "snapshot routes" (issue #36), on pull requests that change it: builds the routes of
+# three real benchmark items through the public OSRM server from a GitHub runner, adds them to the
+# published snapshot with add_routes, and comments the result on the PR. Publishes nothing.
+name: snapshot routes smoke
+
+on:
+  pull_request:
+    paths:
+      - scripts/build_route_cache.py
+      - src/clickless/data/add_routes.py
+      - .github/workflows/snapshot-routes*.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Download the snapshot
+        run: |
+          gh release download snapshot-v1-draft --pattern '*.zip' --dir downloaded
+          mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
+          python -m clickless.data.snapshot_report --verify-only
+      - name: Three real routes, end to end
+        run: |
+          mkdir -p smoke-items && head -n 4 benchmark/requests/raw/aarya.jsonl > smoke-items/aarya.jsonl
+          python scripts/build_route_cache.py --snapshot-dir data/snapshot --raw-dir smoke-items 2>&1 | tee smoke.log
+          python -m clickless.data.add_routes --dir data/snapshot 2>&1 | tee -a smoke.log
+          python -m clickless.data.snapshot_report --verify-only 2>&1 | tee -a smoke.log
+          python - <<'PY' | tee -a smoke.log
+          import json
+          from clickless.config import load_config
+          from clickless.data.loaders import DataStore
+          from clickless.planning.routing import CachedRouter
+          r = json.load(open("data/snapshot/MANIFEST.json"))["sources"]["routes"]
+          print("sources.routes:", {k: r[k] for k in ("files", "distinct_routes", "sources", "osrm_server", "pairs_failed")})
+          store = DataStore.from_dir("data/snapshot")
+          meta = json.load(open(next(__import__("pathlib").Path("data/snapshot/routes").glob("*.json"))))["_meta"]
+          o, d = store.geocode(meta["origin_text"]), store.geocode(meta["destination_text"])
+          route = CachedRouter(store, load_config("A")["energy"]).route(o, d)
+          print(f"CachedRouter: {o.text} -> {d.text}: {route.distance_km:.0f} km, {route.duration_min:.0f} min, "
+                f"{len(route.geometry)} points, source {route.provenance.source}")
+          PY
+      - name: Comment the result on the PR
+        if: always()
+        run: |
+          {
+            echo "**snapshot routes smoke test** (run ${{ github.run_id }}, ${{ job.status }}): 3 real benchmark items via OSRM from a GitHub runner"
+            echo '```'
+            tail -n 30 smoke.log 2>/dev/null || echo "no log"
+            echo '```'
+          } > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md

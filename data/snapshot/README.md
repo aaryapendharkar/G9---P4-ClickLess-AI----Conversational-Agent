@@ -91,3 +91,13 @@ every US state and territory extract (`python -m clickless.data.osm_extract regi
 publish job merges all matches through the same normalization as Overpass answers
 (`add_amenities --from-raw`). Each extract's replication timestamp (the data date) is recorded in
 `MANIFEST.json` under `sources.osm.extracts`. If one job fails, use "Re-run failed jobs".
+
+## Add the route cache (issue #36)
+Actions tab → **snapshot routes** → **Run workflow**. It downloads the published snapshot, builds every
+benchmark origin → destination route with `scripts/build_route_cache.py` (public OSRM demo server,
+1 request/s), checks the files and re-hashes `MANIFEST.json` (`python -m clickless.data.add_routes`),
+and replaces the release's zip. Locally: unzip the snapshot into `data/snapshot/`, run the script, then
+`python -m clickless.data.add_routes --dir data/snapshot`.
+
+Order matters: **snapshot amenities** rebuilds `snapshot-v1-draft` from the stations-only release
+without routes, so run **snapshot routes** again after it.

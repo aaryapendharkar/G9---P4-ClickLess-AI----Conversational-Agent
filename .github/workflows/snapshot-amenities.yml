@@ -29,7 +29,7 @@ permissions:
   contents: write  # publish the release
 
 concurrency:
-  group: snapshot-amenities
+  group: snapshot-release  # shared with "snapshot routes": both update the same release
   cancel-in-progress: false
 
 env:

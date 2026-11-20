@@ -15,8 +15,8 @@ lint:
 demo:             ## Config A on the synthetic fixture world
 	python -m clickless plan "From Phoenix to Flagstaff in my Spark LR, I have 65% battery and want to arrive with at least 20%, lunch stop and a wheelchair accessible restroom please"
 
-eval-dev:         ## run the harness on the dev split (CONFIG=A|B|C)
-	python -m evaluation.harness --config $${CONFIG:-A} --split dev
+eval-dev:         ## run A, B, C on dev and write results/<timestamp>/report.md + CSVs (CONFIGS="A B", SPLIT=dev, ARGS=...)
+	python -m evaluation.report --configs $${CONFIGS:-A B C} --split $${SPLIT:-dev} $(ARGS)
 
 bench-check:      ## validate every benchmark JSONL file
 	python -c "from evaluation.schema import load_items; [print(s, len(load_items('benchmark/requests/'+s))) for s in ('raw','dev','test')]"
