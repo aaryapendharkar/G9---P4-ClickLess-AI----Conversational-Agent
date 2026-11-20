@@ -134,6 +134,11 @@ class OracleConfig:
     max_labels: int = 200_000
     pareto_time_budget_s: float | None = 60.0  # per pareto_plans call; None = no limit (configs/evaluation.yaml)
     diagnostic_buffer_km: float = 50.0  # corridor-buffer diagnostic's wide buffer (configs/evaluation.yaml)
+    # Planner POLICY, not a constraint (gap 11): after a charging stop, depart with enough to arrive at
+    # the next node this much above its floor (configs/energy.yaml charge_buffer_soc_pct). 0 (the
+    # default) is the strict oracle; a non-zero value gives the policy-adjusted front that
+    # tradeoffs.pareto_validity compares with. Never applied to is_feasible or check_itinerary.
+    departure_buffer_pct: float = 0.0
     method: Method = "indexed"  # speed only: "exhaustive" is the reference path, same results
 
     def __post_init__(self) -> None:
@@ -677,7 +682,7 @@ class LabelSettingOracle:
         hi = cap
         for j in range(i + 1, n):
             floor = p.ctx.floor_dest if j == n - 1 else self.cfg.reserve
-            need = p.drop(i, j) + floor
+            need = p.drop(i, j) + floor + self.cfg.departure_buffer_pct
             if need <= cap + EPS:
                 ts.add(min(need, cap))
                 if j == n - 1:
@@ -739,6 +744,8 @@ class LabelSettingOracle:
                 for dep, cmin in deps:
                     for j in range(i + 1, n):
                         floor = ctx.floor_dest if j == n - 1 else self.cfg.reserve
+                        if i > 0:  # leaving a charging stop: the planner's buffer policy, if any
+                            floor = floor + self.cfg.departure_buffer_pct
                         arr = dep - p.drop(i, j)
                         if arr < floor - EPS:
                             continue
@@ -782,6 +789,7 @@ class LabelSettingOracle:
         cm = self.cfg.charging_model
         total = request.max_detour_min if self.cfg.detour_scope == "total" else None
         reserve, floor_dest, max_labels = self.cfg.reserve, ctx.floor_dest, self.cfg.max_labels
+        buffer = self.cfg.departure_buffer_pct
         duration, distance = ctx.route.duration_min, ctx.route.distance_km
         fronts = [_Front() for _ in range(n)]
         first = _Label(0, 0.0, ctx.start, 0.0, 0.0, None, None)
@@ -796,6 +804,8 @@ class LabelSettingOracle:
             succ = []  # (j, drop, floor - EPS, add_det, drive, unknown_j)
             for j in range(i + 1, n):
                 floor = floor_dest if j == last else reserve
+                if i > 0:  # same buffer policy as _pareto
+                    floor = floor + buffer
                 add_det = nodes[j].detour_min if j < last else 0.0
                 drive = duration * (nodes[j].along_km - nodes[i].along_km) / distance
                 succ.append((j, p.drop(i, j), floor - EPS, add_det, drive, unknown[j]))

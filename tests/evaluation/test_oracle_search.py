@@ -232,3 +232,18 @@ def test_strictly_dominating_needs_a_gain_beyond_tolerance():
     # weak dominance (dominated_by_front) also accepts ties; strict dominance does not
     assert dominated_by_front(point, [equal], tol=1.0)
     assert strictly_dominating(point, [equal], tol=1.0) == []
+
+
+def test_departure_buffer_gives_the_policy_front():
+    # Route 200 km, start 50 %, S at km 60 (50 kW). Strict: depart S at exactly 76 % (needs 56 % + 20 %).
+    # With the planner's 2 % buffer policy the front departs at 78 %, arriving with 22 %; the start leg
+    # is unchanged (no charging at the origin). is_feasible and check_itinerary never use the buffer.
+    strict = world([station("S", 60, ports=[port(kw=50)])])
+    policy = strict.with_overrides(departure_buffer_pct=2.0)
+    [s_plan] = strict.pareto_plans(req()).plans
+    [p_plan] = policy.pareto_plans(req()).plans
+    assert s_plan.stops[0].depart_soc_pct == pytest.approx(76.0)
+    assert p_plan.stops[0].depart_soc_pct == pytest.approx(78.0)
+    assert p_plan.arrival_soc_pct == pytest.approx(22.0)
+    assert p_plan.total_charge_min == pytest.approx(s_plan.total_charge_min + 1.2)  # 1 kWh at 50 kW
+    assert policy.is_feasible(req()).feasible and policy.check_itinerary(req(), from_plan(s_plan)).ok
