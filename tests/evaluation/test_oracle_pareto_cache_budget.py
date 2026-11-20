@@ -101,7 +101,7 @@ def test_budget_stops_the_search_with_complete_false():
 
 
 def test_no_budget_and_default_budget_complete():
-    for budget in (None, 60.0):
+    for budget in (None, 600.0):
         front = two_station_world(pareto_time_budget_s=budget).pareto_plans(req(start=50))
         assert front.complete is True and front.incomplete_reason is None and len(front.plans) == 2
 
@@ -111,14 +111,19 @@ def test_max_labels_reason_is_kept_distinct():
     assert front.complete is False and front.incomplete_reason == "max_labels"
 
 
-def test_budget_comes_from_configs_evaluation_yaml():
+def test_limits_come_from_configs_evaluation_yaml():
     store = DataStore([], [], [], {}, ".")
     cfg = load_config("A")
-    assert cfg["evaluation"]["oracle"]["pareto_time_budget_s"] == 60
-    assert LabelSettingOracle.from_config(cfg, store=store).cfg.pareto_time_budget_s == 60.0
-    cfg["evaluation"]["oracle"]["pareto_time_budget_s"] = None
+    oracle_cfg = cfg["evaluation"]["oracle"]
+    built = LabelSettingOracle.from_config(cfg, store=store).cfg
+    assert built.max_labels == int(oracle_cfg["max_labels"])  # the deterministic limit
+    assert built.pareto_time_budget_s == float(oracle_cfg["pareto_time_budget_s"])  # safety net only
+    # the safety net must sit well above the time max_labels takes (calibrated at <= ~200 s)
+    assert built.pareto_time_budget_s >= 3 * 200
+    oracle_cfg["pareto_time_budget_s"] = None
     assert LabelSettingOracle.from_config(cfg, store=store).cfg.pareto_time_budget_s is None
-    assert OracleConfig(energy=ENERGY).pareto_time_budget_s == 60.0
+    defaults = OracleConfig(energy=ENERGY)
+    assert (defaults.max_labels, defaults.pareto_time_budget_s) == (40_000, 600.0)
 
 
 # --------------------------------------------------------------------------- metrics
@@ -136,9 +141,10 @@ def test_incomplete_item_is_a_finding_and_excluded_from_front_metrics():
     assert m["oracle_search"]["incomplete_reasons"] == {"time_budget": 1}
     kinds = [f["kind"] for f in m["findings"]]
     assert kinds.count("oracle_search_incomplete") == 1
+    assert kinds.count("oracle_nondeterministic_cutoff") == 1  # the wall-clock net fired, not max_labels
     assert "planner_plan_outside_oracle_front" not in kinds  # never judged against a partial front
     finding = next(f for f in m["findings"] if f["kind"] == "oracle_search_incomplete")
-    assert finding["item_id"] == "p" and "time budget of 0 s hit" in finding["detail"]
+    assert finding["item_id"] == "p" and "wall-clock safety limit of 0 s hit" in finding["detail"]
     assert m["unknown_status"]["n_excluded_incomplete_search"] == 1 and m["unknown_status"]["n_oracle_plans"] == 0
     # Not front-based: feasibility and violations are unaffected by the budget.
     full = planning_metrics([item("p")], [_plan_result("p")], two_station_world())
@@ -161,3 +167,27 @@ def test_front_metrics_only_for_items_with_a_planner_plan():
     m = planning_metrics([item("p"), item("q")], [_plan_result("p"), result("q", status="infeasible")], o)
     assert m["oracle_search"]["n_items_searched"] == 1  # q: no plan returned, no Pareto search
     assert unknown_status_reliance([item("q")], [result("q", status="infeasible")], o)["n_oracle_plans"] == 0
+
+
+# --------------------------------------------------------------------------- deterministic limit
+
+
+def test_max_labels_cutoff_is_deterministic():
+    """The same input gives the same complete flag, label count and front, run after run, on fresh
+    oracles (no shared cache) and with any wall-clock safety net that does not fire."""
+    runs = []
+    for budget in (None, 600.0, None):
+        front = two_station_world(max_labels=3, pareto_time_budget_s=budget).pareto_plans(req(start=50))
+        runs.append((front.complete, front.incomplete_reason, front.n_labels, front.plans))
+    assert runs[0][:2] == (False, "max_labels")
+    assert runs[0] == runs[1] == runs[2]
+    full = [two_station_world().pareto_plans(req(start=50)) for _ in range(2)]
+    assert full[0].complete and (full[0].n_labels, full[0].plans) == (full[1].n_labels, full[1].plans)
+
+
+def test_max_labels_cutoff_is_not_a_nondeterministic_finding():
+    m = planning_metrics([item("p")], [_plan_result("p")], two_station_world(max_labels=1))
+    kinds = [f["kind"] for f in m["findings"]]
+    assert kinds.count("oracle_search_incomplete") == 1
+    assert "oracle_nondeterministic_cutoff" not in kinds
+    assert m["oracle_search"]["items_nondeterministic_cutoff"] == []

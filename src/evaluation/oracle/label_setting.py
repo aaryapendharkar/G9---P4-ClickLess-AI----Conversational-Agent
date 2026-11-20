@@ -24,8 +24,10 @@ problem (context + candidate nodes), across is_feasible, pareto_plans and check_
 is kept as the reference, and tests/evaluation assert both give identical results.
 
 pareto_plans results are cached per (request, settings) and shared with with_overrides copies
-(indexed only; callers get copies). The search stops at pareto_time_budget_s per call and returns
-complete=False with incomplete_reason="time_budget"; max_labels still applies ("max_labels").
+(indexed only; callers get copies). The search stops after max_labels labels and returns complete=False
+with incomplete_reason="max_labels": deterministic, so the same input gives the same front and flag.
+pareto_time_budget_s is a wall-clock safety net only ("time_budget"); if it fires the result depends on
+machine load, and planning metrics report it as oracle_nondeterministic_cutoff.
 """
 
 from __future__ import annotations
@@ -131,8 +133,8 @@ class OracleConfig:
     route_distance_tol: float = 0.05  # relative tolerance of summed leg km
     continuity_tol_km: float = 0.5
     pareto_tol_min: float = 0.5  # tolerance when comparing a planner plan with the oracle front
-    max_labels: int = 200_000
-    pareto_time_budget_s: float | None = 60.0  # per pareto_plans call; None = no limit (configs/evaluation.yaml)
+    max_labels: int = 40_000  # deterministic search limit (configs/evaluation.yaml oracle.max_labels)
+    pareto_time_budget_s: float | None = 600.0  # wall-clock SAFETY NET per pareto_plans call; None = none
     diagnostic_buffer_km: float = 50.0  # corridor-buffer diagnostic's wide buffer (configs/evaluation.yaml)
     # Planner POLICY, not a constraint (gap 11): after a charging stop, depart with enough to arrive at
     # the next node this much above its floor (configs/energy.yaml charge_buffer_soc_pct). 0 (the
@@ -221,6 +223,7 @@ class ParetoResult:
     complete: bool  # False when the search stopped early (the front may be missing plans)
     feasibility: FeasibilityResult | None = None  # set when the request was rejected before searching
     incomplete_reason: str | None = None  # "time_budget" or "max_labels" when complete is False
+    n_labels: int = 0  # labels inserted by the search (deterministic for a given input and config)
 
 
 @dataclass
@@ -436,11 +439,13 @@ class LabelSettingOracle:
 
             store = DataStore.from_config(dict(cfg))
         ev = (cfg.get("evaluation") or {}).get("oracle", {})
-        budget = ev.get("pareto_time_budget_s", 60.0)
+        budget = ev.get("pareto_time_budget_s", OracleConfig.pareto_time_budget_s)
+        max_labels = ev.get("max_labels", OracleConfig.max_labels)
         oc = OracleConfig(
             energy=cfg["energy"],
             corridor_buffer_km=float(cfg["retrieval"]["corridor_buffer_km"]),
             pareto_time_budget_s=None if budget is None else float(budget),
+            max_labels=int(max_labels),
             diagnostic_buffer_km=float(ev.get("diagnostic_buffer_km", OracleConfig.diagnostic_buffer_km)),
         )
         return cls(store, dataclasses.replace(oc, **overrides), route_source)
@@ -773,7 +778,7 @@ class LabelSettingOracle:
                 if not complete:
                     break
         plans = [self._to_plan(p, lab) for lab in fronts[-1]]
-        return ParetoResult(_final_front(plans), complete, incomplete_reason=reason)
+        return ParetoResult(_final_front(plans), complete, incomplete_reason=reason, n_labels=count)
 
     def _pareto_fast(self, request: TripRequest) -> ParetoResult:
         """_pareto (the reference, used by method="exhaustive") with identical results, faster:
@@ -851,7 +856,7 @@ class LabelSettingOracle:
                 if not complete:
                     break
         plans = [self._to_plan(p, lab) for lab in fronts[-1].labels]
-        return ParetoResult(_final_front(plans), complete, incomplete_reason=reason)
+        return ParetoResult(_final_front(plans), complete, incomplete_reason=reason, n_labels=count)
 
     def _unknown_flags(self, nodes: list[_Node]) -> list[int]:
         """1 for a station node whose status is UNKNOWN (the tie-break of _beats), else 0."""
