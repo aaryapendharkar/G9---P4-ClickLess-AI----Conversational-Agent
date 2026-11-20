@@ -1,6 +1,7 @@
-# Smoke test for "snapshot routes" (issue #36), on pull requests that change it: builds the routes of
-# three real benchmark items through the public OSRM server from a GitHub runner, adds them to the
-# published snapshot with add_routes, and comments the result on the PR. Publishes nothing.
+# Smoke test for "snapshot routes" (issues #36, #103), on pull requests that change it: builds the
+# routes of three real benchmark items through the public OSRM server from a GitHub runner, adds them
+# to the published snapshot with add_routes, then geocodes two places the snapshot lacks (Nominatim,
+# add_places) and routes them too. Comments the result on the PR. Publishes nothing.
 name: snapshot routes smoke
 
 on:
@@ -8,6 +9,8 @@ on:
     paths:
       - scripts/build_route_cache.py
       - src/clickless/data/add_routes.py
+      - src/clickless/data/add_places.py
+      - src/clickless/data/geocode.py
       - .github/workflows/snapshot-routes*.yml
 
 permissions:
@@ -51,13 +54,35 @@ jobs:
           print(f"CachedRouter: {o.text} -> {d.text}: {route.distance_km:.0f} km, {route.duration_min:.0f} min, "
                 f"{len(route.geometry)} points, source {route.provenance.source}")
           PY
+      - name: Two new places, geocoded then routed
+        run: |
+          mkdir -p smoke-places
+          echo '{"id": "smoke-001", "author": "manas", "category": "rural", "route_type": "rural", "text": "smoke", "gold_request": {"origin": "Bangor, ME", "destination": "Bar Harbor, ME", "vehicle_id": "tesla-model-3-rwd-2024", "start_soc_pct": 50}, "clarification_required": false}' > smoke-places/manas.jsonl
+          python -m clickless.data.add_places --dir data/snapshot --benchmark-dir smoke-places 2>&1 | tee -a smoke.log
+          python scripts/build_route_cache.py --snapshot-dir data/snapshot --raw-dir smoke-places 2>&1 | tail -n 6 | tee -a smoke.log
+          python -m clickless.data.add_routes --dir data/snapshot 2>&1 | tee -a smoke.log
+          python -m clickless.data.snapshot_report --verify-only 2>&1 | tee -a smoke.log
+          python - <<'PY' | tee -a smoke.log
+          import json
+          from clickless.config import load_config
+          from clickless.data.loaders import DataStore
+          from clickless.planning.routing import CachedRouter
+          print("sources.places:", {k: v for k, v in json.load(open("data/snapshot/MANIFEST.json"))["sources"]["places"].items()
+                                    if k in ("requested", "resolved", "added")})
+          store = DataStore.from_dir("data/snapshot")
+          o, d = store.geocode("Bangor, ME"), store.geocode("Bar Harbor, ME")
+          print(f"geocode: {o.text} -> ({o.lat}, {o.lon}); {d.text} -> ({d.lat}, {d.lon})")
+          route = CachedRouter(store, load_config("A")["energy"]).route(o, d)
+          print(f"CachedRouter: {o.text} -> {d.text}: {route.distance_km:.0f} km, {route.duration_min:.0f} min, "
+                f"{len(route.geometry)} points, source {route.provenance.source}")
+          PY
       - name: Comment the result on the PR
         if: always()
         run: |
           {
-            echo "**snapshot routes smoke test** (run ${{ github.run_id }}, ${{ job.status }}): 3 real benchmark items via OSRM from a GitHub runner"
+            echo "**snapshot routes smoke test** (run ${{ github.run_id }}, ${{ job.status }}): 3 real benchmark items via OSRM, then 2 new places via Nominatim + OSRM, from a GitHub runner"
             echo '```'
-            tail -n 30 smoke.log 2>/dev/null || echo "no log"
+            tail -n 40 smoke.log 2>/dev/null || echo "no log"
             echo '```'
           } > comment.md
           gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
