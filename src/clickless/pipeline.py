@@ -423,21 +423,30 @@ class Pipeline:
             for candidate in candidates
         )
 
-        if (
+        evidence_ranking_available = (
             self.enricher is not None
-            and has_candidate_evidence
             and rank_with_evidence is not None
-        ):
+        )
+
+        if evidence_ranking_available and has_candidate_evidence:
             ranked_itineraries = rank_with_evidence(
                 verified_itineraries,
                 request,
                 candidates,
             )
+            planning_notes.append("evidence ranking: on")
         else:
             ranked_itineraries = self.ranker.rank(
                 verified_itineraries,
                 request,
             )
+
+            if evidence_ranking_available:
+                planning_notes.append(
+                    "evidence ranking: off "
+                    "(no KG evidence on candidates)"
+                )
+
         alternatives = self.selector.select(
             ranked_itineraries,
             request,

@@ -48,6 +48,11 @@ cost = w_drive · drive_min                (includes detour driving)
 | overhead per stop (min) | 5 | 8 | 3 |
 | food / coffee / restroom (min) | 15 / 8 / 10 | 3 / 2 / 3 | 30 / 15 / 15 |
 | accessible restroom (min) | 20 | 15 | 30 |
+| Config C evidence credit (min) | 5 | 5 | 5 |
+
+The Config C evidence credit is shared across all three profiles. It is stored
+once under `evidence.evidence_credit_min`; Configs A/B and the no-KG ablation
+explicitly use zero.
 
 The driver picks a profile in words ("I'm in a hurry", "no rush if there's good food") or with
 explicit overrides ("food matters more than time" → `amenity_value_min.food` up). Values are

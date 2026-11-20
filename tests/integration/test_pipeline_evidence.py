@@ -231,17 +231,19 @@ def test_pipeline_uses_evidence_aware_ranking_after_enrichment(
         "logreg ranker not trained yet -- fell back to weighted cost"
         in result.notes
     )
+    assert "evidence ranking: on" in result.notes
     assert result.status == "ok"
     assert recording_ranker.evidence_rank_calls == 1
     assert recording_ranker.standard_rank_calls == 0
     assert recording_ranker.received_candidate_count > 0
 
 
-def test_no_op_enricher_does_not_activate_evidence_credit(
+def test_no_kg_ablation_matches_standard_weighted_ranking(
     pipe_a,
     cfg_a,
+    demo_text,
 ):
-    """The C-without-KG ablation keeps evidence ranking disabled."""
+    """C without KG must produce B-equivalent weighted order and costs."""
 
     pipe_a.enricher = _NoOpEnricher()
     pipe_a.ranker = WeightedRanker(
@@ -249,16 +251,61 @@ def test_no_op_enricher_does_not_activate_evidence_credit(
         use_evidence=True,
     )
 
-    result = pipe_a.run(
-        "Phoenix to Flagstaff in my comet with 90%",
-        request_id="no-kg-evidence-ablation",
+    ablation_result = pipe_a.run(
+        demo_text,
+        request_id="no-kg-ablation-comparison",
     )
 
-    assert result.status == "ok"
-    assert result.evidence == []
-    assert result.alternatives[0].itinerary.stops == []
-    assert result.alternatives[0].cost.evidence_credit_min == 0.0
-    assert "verified evidence" not in result.explanation
+    pipe_a.enricher = None
+    pipe_a.ranker = WeightedRanker(
+        cfg_a["tradeoffs"],
+        use_evidence=False,
+    )
+
+    standard_result = pipe_a.run(
+        demo_text,
+        request_id="standard-weighted-comparison",
+    )
+
+    ablation_stop_sequences = [
+        tuple(
+            stop.station_id
+            for stop in alternative.itinerary.stops
+        )
+        for alternative in ablation_result.alternatives
+    ]
+    standard_stop_sequences = [
+        tuple(
+            stop.station_id
+            for stop in alternative.itinerary.stops
+        )
+        for alternative in standard_result.alternatives
+    ]
+
+    assert ablation_result.status == "ok"
+    assert standard_result.status == "ok"
+    assert ablation_result.evidence == []
+    assert ablation_stop_sequences == standard_stop_sequences
+    assert [
+        alternative.cost
+        for alternative in ablation_result.alternatives
+    ] == [
+        alternative.cost
+        for alternative in standard_result.alternatives
+    ]
+    assert all(
+        alternative.cost.evidence_credit_min == 0.0
+        for alternative in ablation_result.alternatives
+    )
+    assert (
+        "evidence ranking: off "
+        "(no KG evidence on candidates)"
+        in ablation_result.notes
+    )
+    assert not any(
+        note.startswith("evidence ranking:")
+        for note in standard_result.notes
+    )
 
 
 def test_pipeline_preserves_standard_ranking_without_enrichment(
