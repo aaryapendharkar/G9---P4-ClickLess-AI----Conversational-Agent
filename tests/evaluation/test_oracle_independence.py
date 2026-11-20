@@ -15,7 +15,11 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 FORBIDDEN = ("clickless.planning", "clickless.ranking", "clickless.retrieval", "clickless.pipeline")
-GUARDED = [*sorted((SRC / "evaluation/oracle").glob("*.py")), SRC / "evaluation/metrics/planning.py"]
+GUARDED = [
+    *sorted((SRC / "evaluation/oracle").glob("*.py")),
+    SRC / "evaluation/metrics/planning.py",
+    SRC / "evaluation/metrics/tradeoffs.py",
+]
 
 
 def imported_names(source: str, package: str) -> set[str]:
@@ -74,6 +78,7 @@ def test_no_forbidden_module_loaded_at_runtime():
     code = (
         f"import sys; sys.path.insert(0, {str(SRC)!r})\n"
         "import evaluation.oracle.label_setting, evaluation.oracle.energy_reference, evaluation.metrics.planning\n"
+        "import evaluation.metrics.tradeoffs\n"
         f"print('\\n'.join(sorted(m for m in sys.modules if m.startswith({FORBIDDEN!r}))))\n"
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
