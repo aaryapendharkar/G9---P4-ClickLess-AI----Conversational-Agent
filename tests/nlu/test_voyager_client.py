@@ -57,6 +57,38 @@ def test_remote_endpoint_sends_configured_api_key(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer test-secret"
 
 
+def _payload(monkeypatch, **extra):
+    captured = {}
+
+    def fake_post(url, headers, json, **kwargs):
+        captured.update(json)
+        return FakeResponse()
+
+    monkeypatch.setenv("LOCAL_BASE", "http://127.0.0.1:11434/v1")
+    monkeypatch.setattr(voyager_client.requests, "post", fake_post)
+    voyager_client.chat([], "qwen3:8b", base_url_env="LOCAL_BASE", api_key_env="LOCAL_KEY", **extra)
+    return captured
+
+
+def test_think_false_also_sends_reasoning_effort_none(monkeypatch):
+    """Ollama's /v1 endpoint ignores `think`; reasoning_effort "none" is what disables reasoning (#114)."""
+    payload = _payload(monkeypatch, think=False)
+    assert payload["think"] is False and payload["reasoning_effort"] == "none"
+
+
+def test_think_true_omits_reasoning_effort(monkeypatch):
+    payload = _payload(monkeypatch, think=True)
+    assert payload["think"] is True and "reasoning_effort" not in payload
+
+
+def test_no_think_setting_omits_reasoning_effort(monkeypatch):
+    assert "reasoning_effort" not in _payload(monkeypatch)
+
+
+def test_explicit_reasoning_effort_is_not_overridden(monkeypatch):
+    assert _payload(monkeypatch, think=False, reasoning_effort="low")["reasoning_effort"] == "low"
+
+
 def test_missing_base_url_fails_before_request(monkeypatch):
     monkeypatch.delenv("MISSING_BASE", raising=False)
 
