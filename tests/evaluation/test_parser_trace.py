@@ -136,8 +136,22 @@ def _llm_config(tmp_path):
     return path
 
 
+class _OfflineResidency:
+    """No Ollama in these tests: skip the warm-up / keep-alive calls (tested in test_llm_residency)."""
+
+    def warm_up(self):
+        return {}
+
+    def before_item(self):
+        return {}
+
+    def release(self):
+        pass
+
+
 def _run(tmp_path, monkeypatch, config):
     monkeypatch.setattr(harness, "run_metadata", lambda cfg, text="": {"config": cfg["name"]})
+    monkeypatch.setattr(harness.LLMResidency, "from_config", classmethod(lambda cls, cfg: _OfflineResidency()))
     out = harness.run(config, items_paths=["benchmark/requests/dev/fixture_smoke.jsonl"],
                       out_dir=str(tmp_path), n_boot=20)
     return json.loads(out.read_text(encoding="utf-8"))["rows"]

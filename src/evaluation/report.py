@@ -17,7 +17,8 @@ Steps
        paired.csv         A vs B, A vs C, B vs C: McNemar (success rates), Wilcoxon (per-item scores)
        breakdown.csv      by author / category / route_type, with item counts
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
-       metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id
+       metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id,
+                          LLM GPU share, keep-alive
 
 Snapshot: each config's snapshot id comes from its own run_metadata (recorded by the process
 that ran it), so `--from` reports have it too. A report refuses to build (MixedSnapshots) when
@@ -48,6 +49,7 @@ import argparse
 import csv
 import json
 import math
+import statistics
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -341,6 +343,36 @@ SUCCESS_OUTCOMES = ("exact_match", "clarification_correct", "no_error")
 SCORE_OUTCOMES = ("field_f1", "latency_ms")
 
 
+GPU_SHARE_TOLERANCE = 0.01  # shares further apart than this are a different CPU/GPU split
+
+
+def gpu_share(run: ConfigRun) -> dict[str, Any]:
+    """The LLM's GPU share (size_vram / size per item, from the harness) as n / min / median / max."""
+    shares = sorted(float(r["gpu_share"]) for r in run.rows if r.get("gpu_share") is not None)
+    if not shares:
+        return {"n": 0, "min": None, "median": None, "max": None}
+    return {"n": len(shares), "min": shares[0], "median": statistics.median(shares), "max": shares[-1]}
+
+
+def gpu_share_warnings(shares: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Latency is only comparable when every LLM config ran with the same CPU/GPU split."""
+    recorded = {c: s for c, s in shares.items() if s["n"]}
+    warnings = [
+        f"{c}: the LLM's GPU share varied within the run ({s['min']:.2f}-{s['max']:.2f})"
+        for c, s in recorded.items()
+        if s["max"] - s["min"] > GPU_SHARE_TOLERANCE
+    ]
+    medians = [s["median"] for s in recorded.values()]
+    if len(medians) > 1 and max(medians) - min(medians) > GPU_SHARE_TOLERANCE:
+        warnings.insert(
+            0,
+            "the LLM's GPU share differs between configs ("
+            + ", ".join(f"{c} {s['median']:.2f}" for c, s in recorded.items())
+            + "), so latency comparisons between them are confounded",
+        )
+    return warnings
+
+
 def paired(a: ConfigRun, b: ConfigRun) -> list[dict[str, Any]]:
     """McNemar on success outcomes and Wilcoxon on per-item scores, over items both configs ran."""
     common = sorted(set(a.items) & set(b.items))
@@ -566,9 +598,12 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     _write_csv(run_dir / "findings.csv", find_rows, ["config", "item_id", "kind", "detail"])
 
     # Metadata
+    shares = {c: gpu_share(runs[c]) for c in configs if c in runs}
+    share_warnings = gpu_share_warnings(shares)
     meta_rows = []
     for config in configs:
         meta = runs[config].meta if config in runs else {}
+        share = shares.get(config, {})
         meta_rows.append(
             {
                 "config": config,
@@ -581,6 +616,12 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
                 "endpoint_host": meta.get("endpoint_host"),
                 "prompt_version": meta.get("prompt_version"),
                 "snapshot_id": snapshot.get(config),
+                "gpu_share_n": share.get("n", 0),
+                "gpu_share_min": share.get("min"),
+                "gpu_share_median": share.get("median"),
+                "gpu_share_max": share.get("max"),
+                "llm_keep_alive": meta.get("llm_keep_alive"),
+                "llm_warmup_s": meta.get("llm_warmup_s"),
             }
         )
     meta_fields = [
@@ -594,6 +635,12 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "endpoint_host",
         "prompt_version",
         "snapshot_id",
+        "gpu_share_n",
+        "gpu_share_min",
+        "gpu_share_median",
+        "gpu_share_max",
+        "llm_keep_alive",
+        "llm_warmup_s",
     ]
     _write_csv(run_dir / "metadata.csv", meta_rows, meta_fields)
 
@@ -618,6 +665,8 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
             for c in fell_back
         ]
         lines += [">", "> See \"LLM parser fallback\" below.", ""]
+    if share_warnings:
+        lines += ["**Latency warning:**", ""] + [f"- {w}" for w in share_warnings] + [""]
     if failed:
         lines += ["**Failed configs:**", ""] + [f"- {c}: {msg}" for c, msg in sorted(failed.items())] + [""]
     lines += [
@@ -702,6 +751,27 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         )
     else:
         lines.append("None recorded (no planning block with findings in these results).")
+    lines += ["", "## LLM GPU residency", ""]
+    lines += [
+        "Share of the LLM held in GPU memory (size_vram / size from Ollama /api/ps), read before each "
+        "item after the harness renewed keep_alive. Configs without an LLM record none.",
+        "",
+    ]
+    lines += _md_table(
+        ["Config", "Items recorded", "Min", "Median", "Max", "Keep-alive", "Warm-up (s)"],
+        [
+            [
+                r["config"],
+                str(r["gpu_share_n"]),
+                _fmt(r["gpu_share_min"]),
+                _fmt(r["gpu_share_median"]),
+                _fmt(r["gpu_share_max"]),
+                _fmt(r["llm_keep_alive"]),
+                _fmt(r["llm_warmup_s"]),
+            ]
+            for r in meta_rows
+        ],
+    )
     lines += ["", "## Run metadata", ""]
     lines += _md_table(
         ["Config", "Git commit", "Model", "Digest", "Ollama", "Prompt", "Snapshot"],

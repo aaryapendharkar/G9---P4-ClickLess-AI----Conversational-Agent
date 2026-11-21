@@ -13,6 +13,7 @@ from evaluation.report import (
     SplitRefused,
     build_report,
     check_split,
+    gpu_share_warnings,
     headline,
     load_runs,
     paired,
@@ -265,6 +266,48 @@ def test_paired_a_vs_c_is_in_the_report(run_dir):
     ab = next(r for r in paired(runs["A"], runs["B"]) if r["outcome"] == "exact_match")
     assert em["rate_a"] == ab["rate_a"]  # A's side is the same A run in both pairs
     assert "| A vs C | exact_match | McNemar |" in (run_dir / "report.md").read_text(encoding="utf-8")
+
+
+def _set_gpu_share(run_dir, config, shares):
+    path = run_dir / f"{config}_items.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for row, share in zip(data["rows"], shares, strict=True):
+        row["gpu_share"] = share
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_gpu_share_per_config_in_report_and_metadata(run_dir):
+    _set_gpu_share(run_dir, "B", [0.7] * 6)
+    _set_gpu_share(run_dir, "C", [0.7] * 6)
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+    assert "## LLM GPU residency" in text and "Latency warning" not in text
+    meta = {r["config"]: r for r in read_csv(run_dir / "metadata.csv")}
+    assert meta["A"]["gpu_share_n"] == "0" and meta["A"]["gpu_share_median"] == ""  # no LLM
+    assert (meta["B"]["gpu_share_n"], float(meta["B"]["gpu_share_median"])) == ("6", 0.7)
+
+
+def test_report_warns_when_gpu_share_differs_between_configs(run_dir):
+    _set_gpu_share(run_dir, "B", [0.7] * 6)
+    _set_gpu_share(run_dir, "C", [0.5] * 6)
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+    assert "**Latency warning:**" in text
+    assert "differs between configs (B 0.70, C 0.50)" in text
+    assert text.index("Latency warning") < text.index("## Headline")  # at the top
+
+
+def test_report_warns_when_gpu_share_varies_within_a_run(run_dir):
+    _set_gpu_share(run_dir, "B", [0.7, 0.7, 0.7, 0.7, 0.7, 0.5])
+    _set_gpu_share(run_dir, "C", [0.7] * 6)
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+    assert "B: the LLM's GPU share varied within the run (0.50-0.70)" in text
+    assert "differs between configs" not in text  # medians agree
+
+
+def test_gpu_share_warnings_tolerate_rounding():
+    same = {"n": 3, "min": 0.700, "median": 0.700, "max": 0.700}
+    close = {"n": 3, "min": 0.705, "median": 0.705, "max": 0.705}
+    assert gpu_share_warnings({"B": same, "C": close}) == []
+    assert gpu_share_warnings({"A": {"n": 0, "min": None, "median": None, "max": None}, "B": same}) == []
 
 
 # --------------------------------------------------------------------------- full report
