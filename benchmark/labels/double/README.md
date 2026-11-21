@@ -1,8 +1,25 @@
 # Blind double annotation (40 items, issue #49 follow-up)
 
-One file per second annotator, 8 items each, from `python -m evaluation.splits assign-double`
-(seed 573; Deepti, the parser owner, only gets dev items, see `configs/benchmark.yaml`).
-Each line has the item `id` and request `text` only; every annotation field starts empty.
+40 items (8 per author, one per category) are re-annotated blind for Cohen's κ / field agreement.
+One file per second annotator, from `python -m evaluation.splits assign-double` (seed 573) with
+the rules in `configs/benchmark.yaml`:
+
+| annotator | items | why |
+|---|---:|---|
+| aarya | 11 | |
+| hriday | 10 | |
+| manas | 11 | |
+| deepti | 8 | dev items only, capped at 8: she owns the parser, the same reason her own items are all in dev |
+| ian | 0 | excluded: see below |
+
+Nobody gets an item they wrote or cross-checked. Each line has the item `id` and request `text`
+only; every annotation field starts empty.
+
+## Why Ian is not a second annotator
+Ian is the benchmark owner and has seen nearly every item's gold: he reviewed the cross-check
+PRs (including the full review of Manas's 30 items in #102) and ran the split and freeze checks.
+His annotations would not be blind, so `excluded_annotators: [ian]` takes him out of the
+assignment. His own 8 items are still double-annotated by the others.
 
 ## How to submit
 1. Make a branch `<you>/double-annotation` from `main`.

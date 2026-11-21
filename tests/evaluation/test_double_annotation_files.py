@@ -26,12 +26,17 @@ def test_double_annotation_files_match_the_assignment_and_stay_blind():
     cfg = load_config(BENCHMARK_CONFIG)
     expected: dict[str, set[str]] = {}
     for item_id, annotator in assign_double_annotation(
-        list(raw.values()), dev_ids=dev, dev_only_annotators=tuple(cfg["dev_only_annotators"])
+        list(raw.values()),
+        dev_ids=dev,
+        dev_only_annotators=tuple(cfg["dev_only_annotators"]),
+        excluded_annotators=tuple(cfg["excluded_annotators"]),
+        annotator_caps=cfg["annotator_caps"],
     ):
         expected.setdefault(annotator, set()).add(item_id)
 
     files = {p.stem: _rows(p) for p in DOUBLE_DIR.glob("*.jsonl")}
     assert {a: {r["id"] for r in rows} for a, rows in files.items()} == expected
+    assert not set(files) & set(cfg["excluded_annotators"])  # no template for excluded annotators
     for rows in files.values():
         for r in rows:
             assert set(r) == KEYS  # nothing copied from the original item (author, gold, notes, ...)
