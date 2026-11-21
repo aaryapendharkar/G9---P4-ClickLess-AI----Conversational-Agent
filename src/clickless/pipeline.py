@@ -409,10 +409,44 @@ class Pipeline:
         if not verified_itineraries:
             return [], planning_notes, []
 
-        ranked_itineraries = self.ranker.rank(
-            verified_itineraries,
-            request,
+        # Config C's weighted ranker exposes an evidence-aware capability.
+        # Configs A/B, and the C-without-KG ablation, keep the standard Ranker
+        # interface and therefore receive no evidence credit.
+        rank_with_evidence = getattr(
+            self.ranker,
+            "rank_with_evidence",
+            None,
         )
+
+        has_candidate_evidence = any(
+            candidate.evidence
+            for candidate in candidates
+        )
+
+        evidence_ranking_available = (
+            self.enricher is not None
+            and rank_with_evidence is not None
+        )
+
+        if evidence_ranking_available and has_candidate_evidence:
+            ranked_itineraries = rank_with_evidence(
+                verified_itineraries,
+                request,
+                candidates,
+            )
+            planning_notes.append("evidence ranking: on")
+        else:
+            ranked_itineraries = self.ranker.rank(
+                verified_itineraries,
+                request,
+            )
+
+            if evidence_ranking_available:
+                planning_notes.append(
+                    "evidence ranking: off "
+                    "(no KG evidence on candidates)"
+                )
+
         alternatives = self.selector.select(
             ranked_itineraries,
             request,

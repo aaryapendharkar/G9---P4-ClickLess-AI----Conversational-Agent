@@ -77,7 +77,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | filters | v1: native connectors at any level + documented adapters at DC fast ports; a stated connector override only narrows (ADR 0012) |
 | planner | v4 forward label-setting search with Pareto pruning, separate +15% consumption robustness, and comfort meal-stop top-ups to the pre-taper threshold |
 | verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; generated boundary tests cover tolerances and charge limits |
-| weighted cost, trade-off selector | v0 implemented |
+| weighted cost, trade-off selector | v1: B uses minutes-equivalent weighted cost; C additionally credits exact KG support for displayed station, selected-port and amenity facts (maximum configured in `tradeoffs.yaml`) |
 | logreg ranker | standardized training, validation, save/load, probability ranking, and missing-model fallback implemented; final model awaits labeled DEV plans |
 | template explainer, trade-off presenter | template explanation v0; natural, contract-grounded alternative comparisons implemented |
 | Maps URL + approval gate | segmentation done (3 waypoints per URL, ADR 0010) |
