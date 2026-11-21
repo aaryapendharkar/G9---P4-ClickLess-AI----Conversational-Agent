@@ -1,7 +1,6 @@
 # ADR 0012: Connector compatibility with documented adapters
 
-- Status: accepted (required approvals: Hriday 2026-11-09, Aarya 2026-11-14). Deepti's confirmation of the
-  override rule is still pending; it does not block acceptance.
+- Status: accepted (approvals: Hriday 2026-11-09, Aarya 2026-11-14, Deepti 2026-11-14)
 - Date: 2026-11-07 (approvals section added 2026-11-08, PR #39 review; accepted 2026-11-14)
 - Owner: Manas (learning swap in `planning/filters.py`)
 - Approvers: Hriday (planning owner), Aarya (vehicle table), Deepti (parser fills `connectors_override`)
@@ -63,4 +62,4 @@ accepted. Merge needs both required approvals.
 |---|---|---|---|
 | Hriday (planning owner) | Adapters count only at DC fast ports; native ports come first; the filter, planner and verifier keep sharing `compatible_ports` | yes | approved 2026-11-09 ([PR #39 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/39#issuecomment-6732988526)) |
 | Aarya (vehicle table, ADR 0009) | The DC-fast-only rule loses no documented adapter: all 14 adapters in `data/curated/vehicles.csv` are cited to DC fast-charging sources, and any AC adapter added later waits for a contract field | yes | approved 2026-11-14 ([PR #39 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/39#issuecomment-6873851394)) |
-| Deepti (parser) | `connectors_override` only narrows the vehicle's compatible set, so a grounded LLM `connectors` value can never widen it | for the override rule | pending (her PR #39 review covered ADR 0013 only) |
+| Deepti (parser) | `connectors_override` only narrows the vehicle's compatible set, so a grounded LLM `connectors` value can never widen it | for the override rule | approved 2026-11-14 ([PR #67 review](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/67#pullrequestreview-5906869476)) |
