@@ -78,3 +78,23 @@ def test_clarifier_orders_multiple_missing_safety_fields(parser):
 
     assert parse_result.missing_fields == ["vehicle_id", "start_soc_pct"]
     assert question.field == "vehicle_id"
+
+
+def test_parses_arrival_soc_when_i_arrive(parser):
+    request = parser.parse(
+        "Drive from Phoenix to Las Vegas in my Model Y, starting at 70%, and want at least 20% when I arrive.",
+        "arrival-1",
+    ).request
+
+    assert request.start_soc_pct == 70
+    assert request.arrival_soc_pct_min == 20
+
+
+def test_parses_arrival_soc_on_arrival_without_reusing_start_percentage(parser):
+    request = parser.parse(
+        "Route from Phoenix to Albuquerque in my BMW i4 with 80% battery and at least 20% on arrival.",
+        "arrival-2",
+    ).request
+
+    assert request.start_soc_pct == 80
+    assert request.arrival_soc_pct_min == 20
