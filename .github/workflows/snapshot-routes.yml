@@ -17,6 +17,10 @@ on:
         description: "OSRM server"
         default: https://router.project-osrm.org
         required: true
+      fix_area_matches:
+        description: "Re-geocode places stored as a county/state instead of the town, and rebuild their routes"
+        type: boolean
+        default: true
 
 permissions:
   contents: write  # update the release
@@ -43,7 +47,7 @@ jobs:
           mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
           python -m clickless.data.snapshot_report --verify-only
       - name: Geocode new benchmark places (Nominatim)
-        run: python -m clickless.data.add_places --dir data/snapshot
+        run: python -m clickless.data.add_places --dir data/snapshot ${{ inputs.fix_area_matches && '--fix-area-matches' || '' }}
       - name: Build the route cache (OSRM)
         run: python scripts/build_route_cache.py --snapshot-dir data/snapshot --osrm-url "${{ inputs.osrm_url }}"
       - name: Check the routes and update the manifest
@@ -57,6 +61,10 @@ jobs:
           p, r = sources["places"], sources["routes"]
           print(f"- Places: {p['resolved']} geocoded ({len(p.get('added', []))} added on {p.get('added_at', '-')}); "
                 f"unresolved: {', '.join(p['unresolved']) or 'none'}")
+          for f in p.get("refreshed", []):
+              print(f"  - re-geocoded {f['place']}: was {f['was']} {f['was_at']}, now {f['now']} {f['now_at']}")
+          if p.get("routes_removed"):
+              print(f"  - {len(p['routes_removed'])} route files that used the old points were removed and rebuilt")
           print(f"- Routes: {r['files']} files ({r['distinct_routes']} distinct routes), OSRM {r['osrm_server']}, "
                 f"retrieved {r['retrieved_window'][0]} to {r['retrieved_window'][1]}; "
                 f"pairs failed: {r['pairs_failed'] or 'none'}; benchmark items skipped: {r['items_skipped']}")
