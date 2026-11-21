@@ -1,7 +1,9 @@
-# Adds the OSRM route cache to a published snapshot and republishes it (issue #36). Owner: Aarya.
-# Actions tab -> "snapshot routes" -> Run workflow. Builds every benchmark origin -> destination route
-# with scripts/build_route_cache.py (public OSRM demo server, 1 request/s), checks the files and
-# re-hashes MANIFEST.json (python -m clickless.data.add_routes), then replaces the release's zip.
+# Adds the OSRM route cache to a published snapshot and republishes it (issues #36, #103). Owner: Aarya.
+# Actions tab -> "snapshot routes" -> Run workflow. First geocodes benchmark places the snapshot doesn't
+# have yet (python -m clickless.data.add_places, Nominatim, 1 request/s; nothing new = no change), then
+# builds every missing benchmark origin -> destination route with scripts/build_route_cache.py (public
+# OSRM demo server, 1 request/s), checks the files and re-hashes MANIFEST.json
+# (python -m clickless.data.add_routes), then replaces the release's zip.
 name: snapshot routes
 
 on:
@@ -40,6 +42,8 @@ jobs:
           gh release download "${{ inputs.release }}" --pattern '*.zip' --dir downloaded
           mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
           python -m clickless.data.snapshot_report --verify-only
+      - name: Geocode new benchmark places (Nominatim)
+        run: python -m clickless.data.add_places --dir data/snapshot
       - name: Build the route cache (OSRM)
         run: python scripts/build_route_cache.py --snapshot-dir data/snapshot --osrm-url "${{ inputs.osrm_url }}"
       - name: Check the routes and update the manifest
@@ -49,7 +53,10 @@ jobs:
           python -m clickless.data.snapshot_report --pack "results/${{ inputs.release }}.zip" --out results/snapshot-report.md
           python - <<'PY' > results/routes.md
           import json
-          r = json.load(open("data/snapshot/MANIFEST.json"))["sources"]["routes"]
+          sources = json.load(open("data/snapshot/MANIFEST.json"))["sources"]
+          p, r = sources["places"], sources["routes"]
+          print(f"- Places: {p['resolved']} geocoded ({len(p.get('added', []))} added on {p.get('added_at', '-')}); "
+                f"unresolved: {', '.join(p['unresolved']) or 'none'}")
           print(f"- Routes: {r['files']} files ({r['distinct_routes']} distinct routes), OSRM {r['osrm_server']}, "
                 f"retrieved {r['retrieved_window'][0]} to {r['retrieved_window'][1]}; "
                 f"pairs failed: {r['pairs_failed'] or 'none'}; benchmark items skipped: {r['items_skipped']}")
@@ -57,7 +64,7 @@ jobs:
           {
             echo "**Draft snapshot: stations + amenities + routes. Not frozen.** Issue #36."
             echo
-            echo "Routes added by the \`snapshot routes\` workflow (run ${{ github.run_id }}) with \`scripts/build_route_cache.py\` and \`python -m clickless.data.add_routes\`. Stations, vehicles, places and amenities are unchanged. OSM data © OpenStreetMap contributors, ODbL."
+            echo "Routes added by the \`snapshot routes\` workflow (run ${{ github.run_id }}) with \`scripts/build_route_cache.py\` and \`python -m clickless.data.add_routes\`. New benchmark places, if any, were geocoded first by \`python -m clickless.data.add_places\`; places already in the snapshot keep their coordinates. Stations, vehicles and amenities are unchanged. OSM data © OpenStreetMap contributors, ODbL."
             echo
             cat results/routes.md
             echo
