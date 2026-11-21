@@ -22,7 +22,14 @@ from clickless.contracts import (
 )
 from clickless.data import DataStore
 from clickless.pipeline import build_pipeline
-from clickless.retrieval.kg.build import DEFAULT_AMENITY_RADIUS_M, build_graph, derived_provenance, near_pairs
+from clickless.retrieval.kg.build import (
+    DEFAULT_AMENITY_RADIUS_M,
+    amenity_uri,
+    build_graph,
+    derived_provenance,
+    near_pairs,
+    station_uri,
+)
 from clickless.retrieval.kg.enrich import KGEnricher, evidence_id
 from clickless.retrieval.tfidf_matcher import TfidfMatcher
 
@@ -207,6 +214,142 @@ def test_kg_near_links_are_the_corridor_links(pipe_a, store, demo_text):
         ids = {e.evidence_id for e in c.evidence}
         for na in c.amenities:
             assert evidence_id(c.station.station_id, f"near[{na.amenity.amenity_id}].distance_m") in ids
+
+
+# ------------------------------------------------------------------ request-scoped graph
+
+
+def test_explicit_empty_scope_does_not_build_the_complete_store(store):
+    """An empty route must stay small instead of interpreting empty as all records."""
+
+    from rdflib import RDF
+
+    from clickless.retrieval.kg import vocab as cc
+
+    graph = build_graph(
+        store,
+        stations=[],
+        amenities=[],
+    )
+
+    assert not list(graph.subjects(RDF.type, cc.Station))
+    assert not list(graph.subjects(RDF.type, cc.Amenity))
+
+
+def test_runtime_graph_contains_only_candidate_records(pipe_a, store, demo_text):
+    """Runtime enrichment excludes unrelated national-snapshot records."""
+
+    from rdflib import RDF
+
+    from clickless.retrieval.kg import vocab as cc
+
+    candidates, request = _demo_candidates(pipe_a, demo_text)
+    selected_candidate = next(
+        candidate
+        for candidate in candidates
+        if candidate.amenities
+    )
+    selected_amenity_ids = {
+        nearby_amenity.amenity.amenity_id
+        for nearby_amenity in selected_candidate.amenities
+    }
+    unrelated_station = next(
+        station
+        for station in store.stations.values()
+        if station.station_id != selected_candidate.station.station_id
+    )
+    unrelated_amenity = next(
+        amenity
+        for amenity in store.amenities
+        if amenity.amenity_id not in selected_amenity_ids
+    )
+
+    enricher = KGEnricher(store, {})
+    enricher.enrich([selected_candidate], request)
+    graph = enricher.graph
+
+    assert (
+        station_uri(selected_candidate.station.station_id),
+        RDF.type,
+        cc.Station,
+    ) in graph
+    assert (
+        station_uri(unrelated_station.station_id),
+        RDF.type,
+        cc.Station,
+    ) not in graph
+    assert all(
+        (amenity_uri(amenity_id), RDF.type, cc.Amenity) in graph
+        for amenity_id in selected_amenity_ids
+    )
+    assert (
+        amenity_uri(unrelated_amenity.amenity_id),
+        RDF.type,
+        cc.Amenity,
+    ) not in graph
+
+
+def test_runtime_graph_is_reused_for_the_same_candidate_scope(
+    pipe_a,
+    store,
+    demo_text,
+):
+    """Relaxation attempts on the same route reuse the already-built graph."""
+
+    candidates, request = _demo_candidates(pipe_a, demo_text)
+    selected_candidate = candidates[0]
+    enricher = KGEnricher(store, {})
+
+    enricher.enrich([selected_candidate], request)
+    first_graph = enricher.graph
+
+    fresh_candidates, fresh_request = _demo_candidates(pipe_a, demo_text)
+    same_candidate = next(
+        candidate
+        for candidate in fresh_candidates
+        if candidate.station.station_id == selected_candidate.station.station_id
+    )
+    enricher.enrich([same_candidate], fresh_request)
+
+    assert enricher.graph is first_graph
+
+
+def test_runtime_graph_is_replaced_for_a_different_candidate_scope(
+    pipe_a,
+    store,
+    demo_text,
+):
+    """A later route cannot read station facts left by an earlier route."""
+
+    from rdflib import RDF
+
+    from clickless.retrieval.kg import vocab as cc
+
+    candidates, request = _demo_candidates(pipe_a, demo_text)
+    first_candidate = candidates[0]
+    second_candidate = next(
+        candidate
+        for candidate in candidates
+        if candidate.station.station_id != first_candidate.station.station_id
+    )
+    enricher = KGEnricher(store, {})
+
+    enricher.enrich([first_candidate], request)
+    first_graph = enricher.graph
+    enricher.enrich([second_candidate], request)
+    second_graph = enricher.graph
+
+    assert second_graph is not first_graph
+    assert (
+        station_uri(first_candidate.station.station_id),
+        RDF.type,
+        cc.Station,
+    ) not in second_graph
+    assert (
+        station_uri(second_candidate.station.station_id),
+        RDF.type,
+        cc.Station,
+    ) in second_graph
 
 
 # ------------------------------------------------------------------ graph and pipeline

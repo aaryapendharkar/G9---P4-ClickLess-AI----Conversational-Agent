@@ -29,7 +29,15 @@ What each candidate gets (`contracts.Evidence`, one atomic, citable fact each; A
 
 from __future__ import annotations
 
-from ...contracts import Candidate, DataStatus, Evidence, Provenance, TripRequest
+from ...contracts import (
+    Amenity,
+    Candidate,
+    DataStatus,
+    Evidence,
+    Provenance,
+    Station,
+    TripRequest,
+)
 from .build import (
     DEFAULT_AMENITY_RADIUS_M,
     DEFAULT_ONTOLOGY,
@@ -56,33 +64,137 @@ class KGEnricher:
         self.store = store
         self.kg_cfg = kg_cfg
         self._graph = None
+        self._graph_scope_key: tuple[
+            tuple[str, ...],
+            tuple[str, ...],
+        ] | None = None
         self._station_facts: dict[str, list[Evidence]] = {}
         self._amenity_facts: dict[str, list[Evidence]] = {}
         self._near_facts: dict[tuple[str, str], list[Evidence]] = {}
 
     @property
     def graph(self):
-        """The rdflib graph of the whole store, built on first use (building a C pipeline stays cheap)."""
+        """Return the active RDF graph.
+
+        Direct access before enrichment keeps the historical complete-graph
+        behavior used by offline and exploratory callers. Normal Config C
+        requests activate a route-scoped graph in ``enrich()`` first.
+        """
+
         if self._graph is None:
             self._graph = build_graph(
                 self.store,
                 self.kg_cfg.get("ontology", DEFAULT_ONTOLOGY),
-                amenity_radius_m=float(self.kg_cfg.get("amenity_radius_m", DEFAULT_AMENITY_RADIUS_M)),
+                amenity_radius_m=float(
+                    self.kg_cfg.get(
+                        "amenity_radius_m",
+                        DEFAULT_AMENITY_RADIUS_M,
+                    )
+                ),
             )
+
         return self._graph
 
-    def enrich(self, candidates: list[Candidate], request: TripRequest) -> list[Candidate]:
-        for c in candidates:
-            station_id = c.station.station_id
+    def _candidate_scope(
+        self,
+        candidates: list[Candidate],
+    ) -> tuple[
+        tuple[Station, ...],
+        tuple[Amenity, ...],
+        tuple[tuple[str, ...], tuple[str, ...]],
+    ]:
+        """Resolve the candidate scope through the authoritative DataStore.
+
+        Candidate objects normally originate from this store, but resolving by
+        ID prevents copied or fabricated candidate records from entering the
+        KG. Missing records remain missing and therefore produce no evidence.
+        """
+
+        station_ids = {
+            candidate.station.station_id
+            for candidate in candidates
+            if candidate.station.station_id in self.store.stations
+        }
+        selected_stations = tuple(
+            self.store.stations[station_id]
+            for station_id in sorted(station_ids)
+        )
+
+        amenities_by_id = {
+            amenity.amenity_id: amenity
+            for amenity in self.store.amenities
+        }
+        amenity_ids = {
+            nearby.amenity.amenity_id
+            for candidate in candidates
+            for nearby in candidate.amenities
+            if nearby.amenity.amenity_id in amenities_by_id
+        }
+        selected_amenities = tuple(
+            amenities_by_id[amenity_id]
+            for amenity_id in sorted(amenity_ids)
+        )
+
+        scope_key = (
+            tuple(station.station_id for station in selected_stations),
+            tuple(amenity.amenity_id for amenity in selected_amenities),
+        )
+        return selected_stations, selected_amenities, scope_key
+
+    def _activate_candidate_graph(
+        self,
+        candidates: list[Candidate],
+    ) -> None:
+        """Build the route graph once and reuse it for the same candidate set."""
+
+        stations, amenities, scope_key = self._candidate_scope(candidates)
+
+        if self._graph is not None and self._graph_scope_key == scope_key:
+            return
+
+        self._graph = build_graph(
+            self.store,
+            self.kg_cfg.get("ontology", DEFAULT_ONTOLOGY),
+            amenity_radius_m=float(
+                self.kg_cfg.get(
+                    "amenity_radius_m",
+                    DEFAULT_AMENITY_RADIUS_M,
+                )
+            ),
+            stations=stations,
+            amenities=amenities,
+        )
+        self._graph_scope_key = scope_key
+
+        # Evidence objects are derived from the active graph. They must not
+        # survive when a later request activates a different route subgraph.
+        self._station_facts.clear()
+        self._amenity_facts.clear()
+        self._near_facts.clear()
+
+    def enrich(
+        self,
+        candidates: list[Candidate],
+        request: TripRequest,
+    ) -> list[Candidate]:
+        self._activate_candidate_graph(candidates)
+
+        for candidate in candidates:
+            station_id = candidate.station.station_id
             facts = list(self.station_evidence(station_id))
-            for nearby in c.amenities:
-                facts += self.near_evidence(station_id, nearby.amenity.amenity_id)
-                facts += self.amenity_evidence(nearby.amenity.amenity_id)
-            seen = {e.evidence_id for e in c.evidence}
-            for e in facts:
-                if e.evidence_id not in seen:
-                    seen.add(e.evidence_id)
-                    c.evidence.append(e)
+            for nearby_amenity in candidate.amenities:
+                amenity_id = nearby_amenity.amenity.amenity_id
+                facts += self.near_evidence(station_id, amenity_id)
+                facts += self.amenity_evidence(amenity_id)
+
+            seen_evidence_ids = {
+                evidence.evidence_id
+                for evidence in candidate.evidence
+            }
+            for evidence in facts:
+                if evidence.evidence_id not in seen_evidence_ids:
+                    seen_evidence_ids.add(evidence.evidence_id)
+                    candidate.evidence.append(evidence)
         return candidates
 
     # ------------------------------------------------------------------ facts per subject
