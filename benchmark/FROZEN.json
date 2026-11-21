@@ -1,0 +1,59 @@
+{
+  "files": {
+    "benchmark/requests/dev/dev.jsonl": "65fa9877bb91c61ac6a7a9288ab9ea12413bc1049af66d6d05cec7abe20e10f1",
+    "benchmark/requests/test/test.jsonl": "ff4090e4ed5c28bf15fd5336ef20df9c286b27cdf10d66901ca863a4805e5ed5"
+  },
+  "seed": 573,
+  "counts": {
+    "dev": {
+      "n": 50,
+      "author": {
+        "aarya": 15,
+        "deepti": 30,
+        "hriday": 4,
+        "manas": 1
+      },
+      "category": {
+        "accessibility": 5,
+        "conflicting_prefs": 4,
+        "incomplete": 8,
+        "multi_stop": 7,
+        "priority_tradeoff": 4,
+        "rural": 7,
+        "sparse_charging": 7,
+        "urban": 8
+      },
+      "route_type": {
+        "mixed": 21,
+        "rural": 19,
+        "urban": 10
+      }
+    },
+    "test": {
+      "n": 100,
+      "author": {
+        "aarya": 15,
+        "hriday": 26,
+        "ian": 30,
+        "manas": 29
+      },
+      "category": {
+        "accessibility": 10,
+        "conflicting_prefs": 11,
+        "incomplete": 12,
+        "multi_stop": 13,
+        "priority_tradeoff": 6,
+        "rural": 18,
+        "sparse_charging": 13,
+        "urban": 17
+      },
+      "route_type": {
+        "mixed": 35,
+        "rural": 36,
+        "urban": 29
+      }
+    }
+  },
+  "git_commit": "8cb863f83b3cd7ca7e73d907b275f4bcc76ff88d",
+  "frozen_at": "2026-11-21T06:31:35+00:00"
+}
