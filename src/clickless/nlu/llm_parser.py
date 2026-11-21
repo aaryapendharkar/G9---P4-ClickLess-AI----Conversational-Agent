@@ -68,6 +68,8 @@ _EXTRACTION_SCHEMA = {
 
 def _json_object(raw_response: str) -> dict[str, Any]:
     """Accept JSON-only output plus a fenced JSON response, rejecting other text."""
+    if not isinstance(raw_response, str):
+        raise ExtractionValidationError("LLM response must be a string")
     cleaned_response = raw_response.strip()
     fenced_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", cleaned_response, re.DOTALL | re.IGNORECASE)
     if fenced_match:
@@ -131,6 +133,16 @@ def _validate_extraction(extracted: dict[str, Any]) -> None:
                 raise ExtractionValidationError(f"amenity {boolean_field} must be boolean")
 
 
+MAX_FALLBACK_REASON_LENGTH = 500
+
+
+def _bounded_reason(reason: str) -> str:
+    """Keep diagnostics useful without storing unbounded provider messages in results."""
+    if len(reason) <= MAX_FALLBACK_REASON_LENGTH:
+        return reason
+    return reason[: MAX_FALLBACK_REASON_LENGTH - 3] + "..."
+
+
 class ExtractionValidationError(ValueError):
     """Model output failed the extraction schema or field validation."""
 
@@ -189,7 +201,7 @@ class LLMParser:
         """Keep the app usable offline while making the fallback visible to evaluation and UI."""
         deterministic_result = RulesParser(self.store).parse(text, request_id)
         return deterministic_result.model_copy(
-            update={"parser": "rules_fallback", "fallback_reason": reason}
+            update={"parser": "rules_fallback", "fallback_reason": _bounded_reason(reason)}
         )
 
     def _ground(self, extracted: dict[str, Any], text: str, request_id: str) -> ParseResult:

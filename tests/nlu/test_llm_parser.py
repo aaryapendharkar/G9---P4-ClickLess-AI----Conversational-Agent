@@ -1,6 +1,7 @@
 import json
 
 import pytest
+import requests
 
 from clickless.nlu import llm_parser
 from clickless.nlu.llm_parser import LLMParser
@@ -164,3 +165,35 @@ def test_internal_parser_error_is_not_treated_as_unavailable(parser, monkeypatch
 
     with pytest.raises(RuntimeError, match="internal bug"):
         parser.parse("plan my Phoenix to Flagstaff trip", "llm-internal-error")
+
+
+def test_timeout_fallback_metadata_is_bounded(parser, monkeypatch):
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: (_ for _ in ()).throw(
+        requests.ReadTimeout("x" * 5000)
+    ))
+
+    result = parser.parse("Phoenix to Flagstaff in my spark", "fallback-timeout")
+
+    assert result.parser == "rules_fallback"
+    assert result.fallback_reason.startswith("unavailable: ReadTimeout")
+    assert len(result.fallback_reason) <= llm_parser.MAX_FALLBACK_REASON_LENGTH
+
+
+def test_connection_error_fallback_metadata(parser, monkeypatch):
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: (_ for _ in ()).throw(
+        requests.ConnectionError("connection refused")
+    ))
+
+    result = parser.parse("Phoenix to Flagstaff in my spark", "fallback-connection")
+
+    assert result.parser == "rules_fallback"
+    assert result.fallback_reason.startswith("unavailable: ConnectionError")
+
+
+def test_non_string_model_response_is_repaired_or_falls_back(parser, monkeypatch):
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: None)
+
+    result = parser.parse("Phoenix to Flagstaff in my spark", "fallback-none")
+
+    assert result.parser == "rules_fallback"
+    assert result.fallback_reason.startswith("invalid_output: attempt 2")
