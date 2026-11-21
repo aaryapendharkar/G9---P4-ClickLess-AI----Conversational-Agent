@@ -1,6 +1,6 @@
 # Configuration C -- hybrid: B + KG enrichment, clarification, provenance labels, grounded explanation.
 name: C
-description: LLM extraction + clarification, SBERT, corridor + KG, weighted + evidence ranking, grounded LLM explanation.
+description: LLM extraction + clarification, SBERT, corridor + KG, evidence-grounded template explanation with trade-offs.
 components:
   parser: llm
   matcher: sbert
