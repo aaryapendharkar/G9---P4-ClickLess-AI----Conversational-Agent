@@ -1,0 +1,38 @@
+# Ablation "C without KG": Configuration C with corridor retrieval only (no KG enrichment), so
+# Candidate.evidence and PlanResult.evidence stay empty. Everything else is identical to
+# configs/config_c.yaml, including `name: C` (tests/test_config_c_nokg.py checks that the only
+# loaded difference is components.retriever). The lines below are a copy of config_c.yaml.
+# Configuration C -- hybrid: B + KG enrichment, clarification, provenance labels, grounded explanation.
+name: C
+description: LLM extraction + clarification, SBERT, corridor + KG, weighted + evidence ranking, grounded LLM explanation.
+components:
+  parser: llm
+  matcher: sbert
+  retriever: corridor
+  ranker: weighted+evidence
+  selector: tradeoff
+  incomplete_request: clarify
+  explainer: grounded_llm
+  provenance_labels: true
+llm:
+  base_url_env: VOYAGER_BASE_URL
+  api_key_env: VOYAGER_API_KEY
+  model: qwen3:8b        # pinned Config B/C model; Ollama digest 500a1f067a9f, Q4_K_M
+  think: false           # keep extraction latency and output deterministic
+  temperature: 0
+kg:
+  ontology: src/clickless/retrieval/kg/ontology.ttl
+data:
+  source: fixtures
+  fixtures_dir: data/fixtures
+  snapshot_dir: data/snapshot
+routing:
+  mode: cache
+  osrm_base_url_env: OSRM_BASE_URL
+handoff:
+  max_waypoints: 3           # Google Maps URLs: up to 3 waypoints on mobile, 9 elsewhere (ADR 0010)
+includes:
+  energy: configs/energy.yaml
+  tradeoffs: configs/tradeoffs.yaml
+  relaxation: configs/relaxation.yaml
+  retrieval: configs/retrieval.yaml
