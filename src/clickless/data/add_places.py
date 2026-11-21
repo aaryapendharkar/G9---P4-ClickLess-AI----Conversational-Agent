@@ -72,7 +72,9 @@ def add_places(
         print(f"Places: all {len(wanted)} benchmark places are already in places.json; nothing to add")
         return 0
 
-    print(f"Geocoding {len(new)} new place(s) ...", flush=True)
+    print(f"Geocoding {len(new)} new place(s):", flush=True)
+    for place in new:
+        print(f"  {place}", flush=True)
     fresh = geocode.geocode_places(new, cache_dir, endpoint=endpoint, pause_s=pause_s)
     results = {**known, **fresh}
     geocode.write_places(results, places_path)
