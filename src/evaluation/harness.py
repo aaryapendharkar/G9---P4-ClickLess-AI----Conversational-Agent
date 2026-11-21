@@ -14,6 +14,9 @@ without an LLM component (Config A) record "n/a" for the LLM fields and make no 
 
 Every row records `parser_used` ("llm", "rules_fallback", or the non-LLM parser's name) and
 `fallback_reason`, so items an LLM config silently parsed with rules are visible (parser_trace).
+
+The run metadata also records the data the run used (`snapshot_id`, `snapshot_manifest_sha256`), so a report
+built later with `--from` knows which snapshot each config ran on.
 """
 
 from __future__ import annotations
@@ -46,6 +49,7 @@ from .metrics.request_understanding import (
 )
 from .parser_trace import ParserTrace
 from .schema import load_items
+from .snapshot_id import snapshot_info
 
 NA = "n/a"
 _DIGEST_COMMENT = re.compile(r"digest\s+([0-9a-f]{12,64})\b", re.IGNORECASE)
@@ -130,6 +134,7 @@ def run_metadata(
     env = os.environ if env is None else env
     meta: dict[str, Any] = {"config": cfg["name"], **(commit if commit is not None else git_commit())}
     meta["prompt_version"] = _prompt_version(cfg)
+    meta.update(snapshot_info(cfg, env))
     if not _uses_llm(cfg):
         meta.update(model=NA, ollama_version=NA, endpoint_host=NA, model_digest=NA,
                     expected_digest=NA, digest_check=NA)

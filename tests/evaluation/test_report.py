@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from evaluation.report import (
+    MixedSnapshots,
     SplitRefused,
     build_report,
     check_split,
@@ -17,6 +18,7 @@ from evaluation.report import (
     paired,
     run_all,
 )
+from evaluation.report import main as report_main
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -249,6 +251,22 @@ def test_paired_b_vs_c_identical_outcomes(run_dir):
     assert rows["field_f1"]["statistic"] is None  # every difference is zero -> Wilcoxon undefined
 
 
+def test_paired_a_vs_c_is_in_the_report(run_dir):
+    """A vs C (full system against the baseline) is reported, with the same tests as the other pairs."""
+    runs, _ = load_runs(run_dir)
+    expected = paired(runs["A"], runs["C"])
+    assert [r["pair"] for r in expected] == ["A vs C"] * 5
+    build_report(run_dir, n_boot=100)
+    written = [r for r in read_csv(run_dir / "paired.csv") if r["pair"] == "A vs C"]
+    assert [(r["outcome"], r["test"], r["n"]) for r in written] == [
+        (e["outcome"], e["test"], str(e["n"])) for e in expected
+    ]
+    em = next(r for r in expected if r["outcome"] == "exact_match")
+    ab = next(r for r in paired(runs["A"], runs["B"]) if r["outcome"] == "exact_match")
+    assert em["rate_a"] == ab["rate_a"]  # A's side is the same A run in both pairs
+    assert "| A vs C | exact_match | McNemar |" in (run_dir / "report.md").read_text(encoding="utf-8")
+
+
 # --------------------------------------------------------------------------- full report
 
 
@@ -279,8 +297,8 @@ def test_build_report_writes_every_section_and_csv(run_dir):
     assert "0.900 [0.800, 0.970]" in c_line and "0.050 [CI n/a]" in c_line and "0.950 [CI n/a]" in c_line
 
     pairs = read_csv(run_dir / "paired.csv")
-    assert {r["pair"] for r in pairs} == {"A vs B", "B vs C"}
-    assert len(pairs) == 2 * 5  # 3 McNemar + 2 Wilcoxon outcomes per pair
+    assert [r["pair"] for r in pairs[::5]] == ["A vs B", "A vs C", "B vs C"]  # in PAIRS order
+    assert len(pairs) == 3 * 5  # 3 McNemar + 2 Wilcoxon outcomes per pair
 
     br = read_csv(run_dir / "breakdown.csv")
     a_author = {r["group"]: r for r in br if r["config"] == "A" and r["dimension"] == "author"}
@@ -310,6 +328,7 @@ def test_missing_config_shows_failed_and_skips_its_pair(tmp_path, run_dir):
     (run_dir / "report_inputs.json").write_text(json.dumps(inputs), encoding="utf-8")
     text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
     assert "- C: RuntimeError: config C uses an LLM" in text
+    assert "A vs C: n/a (C missing)" in text
     assert "B vs C: n/a (C missing)" in text
     c_line = next(line for line in text.splitlines() if line.startswith("| C |"))
     assert c_line.count("n/a") == 9  # every headline metric
@@ -473,3 +492,66 @@ def test_building_a_report_loads_no_system_module():
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == ""
+
+
+# --------------------------------------------------------------------------- snapshot id
+
+
+SNAP_A = "snapshot:93983c110571 (draft, created 2026-11-19T04:43:00Z)"
+SNAP_B = "snapshot:0123456789ab (draft, created 2026-11-21T01:00:00Z)"
+
+
+def _from_dir(tmp_path, snapshots, inputs=None):
+    """A results dir like `report --from` sees after separate harness runs (no report_inputs.json
+    unless given); snapshots maps config -> the snapshot_id in that run's own run_metadata."""
+    items = write_items(tmp_path / "items.jsonl")
+    d = tmp_path / "from_dir"
+    d.mkdir()
+    for config, snap in snapshots.items():
+        meta = {} if snap is None else {"snapshot_id": snap}
+        (d / f"{config}_items.json").write_text(
+            json.dumps(payload(config, items, rows_b(), meta=meta)), encoding="utf-8"
+        )
+    if inputs is not None:
+        (d / "report_inputs.json").write_text(json.dumps(inputs), encoding="utf-8")
+    return d
+
+
+def test_from_report_takes_the_snapshot_from_each_runs_metadata(tmp_path):
+    d = _from_dir(tmp_path, {"A": SNAP_A, "B": SNAP_A})
+    text = build_report(d, n_boot=50).read_text(encoding="utf-8")
+    meta = {r["config"]: r for r in read_csv(d / "metadata.csv")}
+    assert meta["A"]["snapshot_id"] == SNAP_A and meta["B"]["snapshot_id"] == SNAP_A
+    b_line = next(line for line in text[text.index("## Run metadata") :].splitlines() if line.startswith("| B |"))
+    assert "snapshot:93983c110571" in b_line
+
+
+def test_report_refuses_configs_on_different_snapshots(tmp_path):
+    d = _from_dir(tmp_path, {"A": SNAP_A, "B": SNAP_B})
+    with pytest.raises(MixedSnapshots, match="different data") as e:
+        build_report(d, n_boot=50)
+    assert "A: snapshot:93983c110571" in str(e.value) and "B: snapshot:0123456789ab" in str(e.value)
+    assert not (d / "report.md").exists() and not (d / "headline.csv").exists()
+
+
+def test_report_refuses_fixtures_mixed_with_a_snapshot(tmp_path):
+    with pytest.raises(MixedSnapshots):
+        build_report(_from_dir(tmp_path, {"A": "fixtures", "B": SNAP_A}), n_boot=50)
+
+
+def test_report_refuses_when_run_all_and_the_run_disagree(tmp_path):
+    inputs = {"configs": ["A"], "snapshot_id": {"A": SNAP_B}, "failed": {}, "outputs": {}}
+    with pytest.raises(MixedSnapshots, match="report_inputs.json says"):
+        build_report(_from_dir(tmp_path, {"A": SNAP_A}, inputs), n_boot=50)
+
+
+def test_cli_from_exits_with_refused_on_mixed_snapshots(tmp_path):
+    d = _from_dir(tmp_path, {"A": SNAP_A, "B": SNAP_B})
+    with pytest.raises(SystemExit, match="refused: configs in one report ran on different data"):
+        report_main(["--from", str(d), "--n-boot", "50"])
+
+
+def test_old_results_without_a_snapshot_id_still_build(tmp_path):
+    d = _from_dir(tmp_path, {"A": None, "B": None})
+    build_report(d, n_boot=50)
+    assert {r["snapshot_id"] for r in read_csv(d / "metadata.csv")} == {""}
