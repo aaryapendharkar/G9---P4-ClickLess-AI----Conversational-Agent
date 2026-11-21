@@ -20,8 +20,13 @@ _OD_PATTERNS = [
     re.compile(rf"(?:^|:\s*){_PLACE}\s+to\s+{_PLACE}{_STOP}"),
     re.compile(rf"^(?:drive\s+|driving\s+|trip\s+)?{_PLACE}\s+to\s+{_PLACE}{_STOP}"),
 ]
-_ARRIVAL = re.compile(
-    r"arriv\w*(?:\s+\w+){0,3}?\s+with\s+(?:at\s+least\s+|>=?\s*)?(\d{1,3})\s*(?:%|percent)"
+_ARRIVAL_PATTERNS = (
+    re.compile(
+        r"arriv\w*(?:\s+\w+){0,3}?\s+with\s+(?:at\s+least\s+|>=?\s*)?(\d{1,3})\s*(?:%|percent)"
+    ),
+    re.compile(
+        r"(?:with\s+)?(?:at\s+least\s+|>=?\s*)(\d{1,3})\s*(?:%|percent)\s+(?:when\s+i\s+arrive|on\s+arrival)"
+    ),
 )
 _PCT = re.compile(r"(\d{1,3})\s*(?:%|percent)")
 _VAGUE_BATTERY = re.compile(
@@ -66,10 +71,13 @@ class RulesParser:
             ambiguous["vehicle_id"] = [v.vehicle_id for v in vehicles]
 
         rest = low
-        arrival_match = _ARRIVAL.search(low)
-        if arrival_match:
-            req.arrival_soc_pct_min = float(arrival_match.group(1))
-            rest = low[: arrival_match.start()] + low[arrival_match.end() :]
+        arrival_match = None
+        for arrival_pattern in _ARRIVAL_PATTERNS:
+            arrival_match = arrival_pattern.search(low)
+            if arrival_match:
+                req.arrival_soc_pct_min = float(arrival_match.group(1))
+                rest = low[: arrival_match.start()] + low[arrival_match.end() :]
+                break
         percentage_match = _PCT.search(rest)
         if percentage_match:
             req.start_soc_pct = float(percentage_match.group(1))
