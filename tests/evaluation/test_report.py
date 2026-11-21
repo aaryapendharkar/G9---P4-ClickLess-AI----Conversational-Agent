@@ -702,3 +702,52 @@ def test_old_results_without_a_snapshot_id_still_build(tmp_path):
     d = _from_dir(tmp_path, {"A": None, "B": None})
     build_report(d, n_boot=50)
     assert {r["snapshot_id"] for r in read_csv(d / "metadata.csv")} == {""}
+
+
+# --------------------------------------------------------------------------- nothing evaluated: say why at the top
+
+
+def _single_config_dir(tmp_path, rows=None, failed=None):
+    items = write_items(tmp_path / "items.jsonl")
+    d = tmp_path / "20261120T000000Z"
+    d.mkdir()
+    if rows is not None:
+        (d / "A_items.json").write_text(json.dumps(payload("A", items, rows)), encoding="utf-8")
+    inputs = {"split": None, "items": [str(items)], "final": False, "configs": ["A"],
+              "snapshot_id": {"A": "fixtures"}, "failed": failed or {}, "outputs": {}}
+    (d / "report_inputs.json").write_text(json.dumps(inputs), encoding="utf-8")
+    return d
+
+
+def _crash(item_id, message="'route destination' appears before 'X' on the route"):
+    return {"id": item_id, "status": "error", "error": f"ValueError: {message}", "error_type": "ValueError",
+            "latency_ms": 10.0}
+
+
+def _top(text):
+    return text.split("## Headline")[0]
+
+
+def test_failed_config_says_nothing_was_evaluated_and_why(tmp_path):
+    d = _single_config_dir(tmp_path, failed={"A": "ValueError: 'route destination' appears before 'X'"})
+    top = _top(build_report(d, n_boot=100).read_text(encoding="utf-8"))
+    assert "**Nothing was evaluated in this run.**" in top
+    assert "- A: the config failed before writing results (ValueError: 'route destination' appears before 'X')" in top
+
+
+def test_every_item_errored_is_explained_at_the_top(tmp_path):
+    d = _single_config_dir(tmp_path, rows=[_crash(i) for i, *_ in ITEMS])
+    top = _top(build_report(d, n_boot=100).read_text(encoding="utf-8"))
+    assert "**Nothing was evaluated in this run.**" in top
+    assert "- A: all 6 items errored: ValueError x6 (first: i1: ValueError: 'route destination' appears" in top
+
+
+def test_some_items_errored_are_listed_and_the_rest_is_scored(tmp_path):
+    rows = [_crash("i4") if i == "i4" else row(i, "needs_clarification" if inc else "ok") for i, *_, inc in ITEMS]
+    d = _single_config_dir(tmp_path, rows=rows)
+    text = build_report(d, n_boot=100).read_text(encoding="utf-8")
+    top = _top(text)
+    assert "Nothing" not in top
+    assert "- A: 1 of 6 items: ValueError x1 (first: i4: ValueError:" in top
+    a_line = next(line for line in text.splitlines() if line.startswith("| A |"))
+    assert a_line.startswith("| A | 6 |") and "0.167" in a_line  # error rate 1/6; the other 5 are scored

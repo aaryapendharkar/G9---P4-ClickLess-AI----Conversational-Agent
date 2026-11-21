@@ -215,3 +215,27 @@ def test_exception_stage():
     except ValueError as e:
         assert harness.exception_stage(e, parser) == "parse"
         assert harness.exception_stage(e, object()) == "planning"
+
+
+def test_harness_records_a_crashing_item_and_keeps_going(tmp_path, monkeypatch):
+    real = harness.build_pipeline
+
+    def crashing_pipeline(cfg):
+        pipe = real(cfg)
+        run_one = pipe.run
+
+        def run_item(text, request_id):
+            if request_id == "smoke-001":
+                raise ValueError("'route destination' appears before 'X' on the route")
+            return run_one(text, request_id=request_id)
+
+        pipe.run = run_item
+        return pipe
+
+    monkeypatch.setattr(harness, "build_pipeline", crashing_pipeline)
+    out = run("A", items_paths=["benchmark/requests/dev/fixture_smoke.jsonl"], out_dir=str(tmp_path), n_boot=50)
+    rows = {r["id"]: r for r in json.loads(out.read_text())["rows"]}
+    assert len(rows) == 3  # the run went on after the crash
+    assert rows["smoke-001"]["status"] == "error" and rows["smoke-001"]["error_type"] == "ValueError"
+    assert rows["smoke-001"]["error"] == "ValueError: 'route destination' appears before 'X' on the route"
+    assert rows["smoke-002"]["status"] == "rejected_incomplete"
