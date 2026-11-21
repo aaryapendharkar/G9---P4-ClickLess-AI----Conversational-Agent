@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from evaluation.report import (
+    MixedSnapshots,
     SplitRefused,
     build_report,
     check_split,
@@ -17,6 +18,7 @@ from evaluation.report import (
     paired,
     run_all,
 )
+from evaluation.report import main as report_main
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
@@ -473,3 +475,65 @@ def test_building_a_report_loads_no_system_module():
     )
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == ""
+
+
+# --------------------------------------------------------------------------- snapshot id
+
+
+SNAP_A = "snapshot:93983c110571 (draft, created 2026-11-19T04:43:00Z)"
+SNAP_B = "snapshot:0123456789ab (draft, created 2026-11-21T01:00:00Z)"
+
+
+def _from_dir(tmp_path, snapshots, inputs=None):
+    """A results dir like `report --from` sees after separate harness runs (no report_inputs.json
+    unless given); snapshots maps config -> the snapshot_id in that run's own run_metadata."""
+    items = write_items(tmp_path / "items.jsonl")
+    d = tmp_path / "from_dir"
+    d.mkdir()
+    for config, snap in snapshots.items():
+        meta = {} if snap is None else {"snapshot_id": snap}
+        (d / f"{config}_items.json").write_text(json.dumps(payload(config, items, rows_b(), meta=meta)),
+                                                encoding="utf-8")
+    if inputs is not None:
+        (d / "report_inputs.json").write_text(json.dumps(inputs), encoding="utf-8")
+    return d
+
+
+def test_from_report_takes_the_snapshot_from_each_runs_metadata(tmp_path):
+    d = _from_dir(tmp_path, {"A": SNAP_A, "B": SNAP_A})
+    text = build_report(d, n_boot=50).read_text(encoding="utf-8")
+    meta = {r["config"]: r for r in read_csv(d / "metadata.csv")}
+    assert meta["A"]["snapshot_id"] == SNAP_A and meta["B"]["snapshot_id"] == SNAP_A
+    b_line = next(line for line in text[text.index("## Run metadata"):].splitlines() if line.startswith("| B |"))
+    assert "snapshot:93983c110571" in b_line
+
+
+def test_report_refuses_configs_on_different_snapshots(tmp_path):
+    d = _from_dir(tmp_path, {"A": SNAP_A, "B": SNAP_B})
+    with pytest.raises(MixedSnapshots, match="different data") as e:
+        build_report(d, n_boot=50)
+    assert "A: snapshot:93983c110571" in str(e.value) and "B: snapshot:0123456789ab" in str(e.value)
+    assert not (d / "report.md").exists() and not (d / "headline.csv").exists()
+
+
+def test_report_refuses_fixtures_mixed_with_a_snapshot(tmp_path):
+    with pytest.raises(MixedSnapshots):
+        build_report(_from_dir(tmp_path, {"A": "fixtures", "B": SNAP_A}), n_boot=50)
+
+
+def test_report_refuses_when_run_all_and_the_run_disagree(tmp_path):
+    inputs = {"configs": ["A"], "snapshot_id": {"A": SNAP_B}, "failed": {}, "outputs": {}}
+    with pytest.raises(MixedSnapshots, match="report_inputs.json says"):
+        build_report(_from_dir(tmp_path, {"A": SNAP_A}, inputs), n_boot=50)
+
+
+def test_cli_from_exits_with_refused_on_mixed_snapshots(tmp_path):
+    d = _from_dir(tmp_path, {"A": SNAP_A, "B": SNAP_B})
+    with pytest.raises(SystemExit, match="refused: configs in one report ran on different data"):
+        report_main(["--from", str(d), "--n-boot", "50"])
+
+
+def test_old_results_without_a_snapshot_id_still_build(tmp_path):
+    d = _from_dir(tmp_path, {"A": None, "B": None})
+    build_report(d, n_boot=50)
+    assert {r["snapshot_id"] for r in read_csv(d / "metadata.csv")} == {""}

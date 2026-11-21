@@ -19,6 +19,10 @@ Steps
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
        metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id
 
+Snapshot: each config's snapshot id comes from its own run_metadata (recorded by the process
+that ran it), so `--from` reports have it too. A report refuses to build (MixedSnapshots) when
+its configs ran on different snapshots, or when run_all's record disagrees with a run's own.
+
 Metric sources (no metric is reimplemented here)
   * Request understanding (field F1, exact match, clarification F1, silent-assumption rate) is
     recomputed from the per-item rows with evaluation.metrics.request_understanding, and its CIs
@@ -42,10 +46,8 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
-import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,6 +68,7 @@ from .metrics.request_understanding import (
 )
 from .metrics.stats import bootstrap_ci, mcnemar, wilcoxon
 from .schema import BenchmarkItem, load_items
+from .snapshot_id import snapshot_info
 
 CONFIGS = ("A", "B", "C")
 PAIRS = (("A", "B"), ("B", "C"))
@@ -95,6 +98,10 @@ class SplitRefused(ValueError):
     """Raised when the test split is requested without --final and a frozen benchmark."""
 
 
+class MixedSnapshots(ValueError):
+    """Raised when the configs in one report ran on different data (snapshots or fixtures)."""
+
+
 # --------------------------------------------------------------------------- step 1: run
 
 
@@ -111,18 +118,27 @@ def check_split(split: str, final: bool, frozen_file: Path | None = None) -> Non
 
 def snapshot_id(config: str) -> str:
     """'fixtures', or 'snapshot:<first 12 hex of sha256(MANIFEST.json)> (<draft|frozen>, created <ts>)'."""
-    cfg = load_config(config)
-    data = cfg.get("data", {})
-    source = os.environ.get("CLICKLESS_DATA_SOURCE", "").strip().lower() or data.get("source", "fixtures")
-    if source != "snapshot":
-        return source
-    manifest = repo_path(data.get("snapshot_dir", "data/snapshot")) / "MANIFEST.json"
-    if not manifest.is_file():
-        return "snapshot (no MANIFEST.json)"
-    raw = manifest.read_bytes()
-    meta = json.loads(raw)
-    kind = "frozen" if meta.get("frozen") else "draft"
-    return f"snapshot:{hashlib.sha256(raw).hexdigest()[:12]} ({kind}, created {meta.get('created_at', '?')})"
+    return str(snapshot_info(load_config(config))["snapshot_id"])
+
+
+def report_snapshots(
+    configs: Sequence[str], runs: Mapping[str, ConfigRun], recorded: Mapping[str, str]
+) -> dict[str, str | None]:
+    """Snapshot id per config: the run's own run_metadata first, else run_all's record (results
+    written before the harness recorded it). Raises MixedSnapshots if two configs differ, or if
+    run_all's record disagrees with what the run itself recorded."""
+    out: dict[str, str | None] = {}
+    for config in configs:
+        own = runs[config].meta.get("snapshot_id") if config in runs else None
+        parent = recorded.get(config)
+        if own and parent and own != parent:
+            raise MixedSnapshots(f"config {config}: run_metadata says {own!r} but report_inputs.json says {parent!r}")
+        out[config] = own or parent
+    used = {c: s for c, s in out.items() if s and c in runs}
+    if len(set(used.values())) > 1:
+        detail = "; ".join(f"{c}: {s}" for c, s in sorted(used.items()))
+        raise MixedSnapshots(f"configs in one report ran on different data ({detail})")
+    return out
 
 
 def run_all(
@@ -480,7 +496,7 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     runs, inputs = load_runs(run_dir)
     configs = list(inputs.get("configs") or sorted(runs))
     failed: dict[str, str] = dict(inputs.get("failed") or {})
-    snapshot: dict[str, str] = dict(inputs.get("snapshot_id") or {})
+    snapshot = report_snapshots(configs, runs, dict(inputs.get("snapshot_id") or {}))
 
     fallback = {c: parser_fallback(runs[c]) for c in configs if c in runs}
 
@@ -727,9 +743,9 @@ def main(argv: list[str] | None = None) -> None:
             if args.from_dir
             else run_all(args.configs, args.split, args.final, args.out, args.items, args.n_boot)
         )
-    except SplitRefused as e:
+        print(build_report(run_dir, n_boot=args.n_boot))
+    except (SplitRefused, MixedSnapshots) as e:
         raise SystemExit(f"refused: {e}") from e
-    print(build_report(run_dir, n_boot=args.n_boot))
 
 
 if __name__ == "__main__":
