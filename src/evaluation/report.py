@@ -14,7 +14,8 @@ Steps
   2. build_report(): reads every result JSON in the directory and writes
        report.md          all sections below
        headline.csv       one row per config, value + 95 % CI per metric, LLM fallback counts
-       paired.csv         A vs B, A vs C, B vs C: McNemar (success rates), Wilcoxon (per-item scores)
+       paired.csv         A vs B, A vs C, B vs C, C vs C-noKG (when run): McNemar (success rates),
+                          Wilcoxon (per-item scores)
        breakdown.csv      by author / category / route_type, with item counts
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
        metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id,
@@ -73,7 +74,12 @@ from .schema import BenchmarkItem, load_items
 from .snapshot_id import snapshot_info
 
 CONFIGS = ("A", "B", "C")
-PAIRS = (("A", "B"), ("A", "C"), ("B", "C"))  # A vs C: the full system against the baseline
+PAIRS = (
+    ("A", "B"),
+    ("A", "C"),  # the full system against the baseline
+    ("B", "C"),
+    ("C", "C-noKG"),  # the KG ablation (configs/config_c_nokg.yaml), when it was run
+)
 BREAKDOWNS = ("author", "category", "route_type")
 INPUTS_FILE = "report_inputs.json"
 NA = "n/a"
@@ -567,7 +573,7 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     for a, b in PAIRS:
         if a in runs and b in runs:
             pair_rows += paired(runs[a], runs[b])
-        else:
+        elif a in configs and b in configs:  # an ablation nobody asked for is not "missing"
             skipped_pairs.append(f"{a} vs {b}: n/a ({', '.join(c for c in (a, b) if c not in runs)} missing)")
     pair_fields = ["pair", "outcome", "test", "n", "rate_a", "rate_b", "b", "c", "statistic", "p_value", "note"]
     _write_csv(run_dir / "paired.csv", pair_rows, pair_fields)

@@ -1,9 +1,10 @@
 # Ablation "C without KG": Configuration C with corridor retrieval only (no KG enrichment), so
 # Candidate.evidence and PlanResult.evidence stay empty. Everything else is identical to
-# configs/config_c.yaml, including `name: C` (tests/test_config_c_nokg.py checks that the only
-# loaded difference is components.retriever). The lines below are a copy of config_c.yaml.
+# configs/config_c.yaml except the name, so results files and the report keep it apart from C
+# (tests/test_config_c_nokg.py checks that the only loaded differences are name and retriever).
+# Run it with `--config C-noKG`. The lines below are a copy of config_c.yaml.
 # Configuration C -- hybrid: B + KG enrichment, clarification, provenance labels, grounded explanation.
-name: C
+name: C-noKG
 description: LLM extraction + clarification, SBERT, corridor + KG, weighted + evidence ranking, grounded LLM explanation.
 components:
   parser: llm

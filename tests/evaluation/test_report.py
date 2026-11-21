@@ -313,6 +313,29 @@ def test_gpu_share_warnings_tolerate_rounding():
 # --------------------------------------------------------------------------- full report
 
 
+def test_c_nokg_ablation_gets_its_own_column_and_pair(run_dir):
+    """A C-noKG result file is its own config: a headline row and a C vs C-noKG paired comparison."""
+    c_payload = json.loads(next(run_dir.glob("C_*.json")).read_text(encoding="utf-8"))
+    c_payload["config"] = "C-noKG"
+    (run_dir / "C-noKG_items.json").write_text(json.dumps(c_payload), encoding="utf-8")
+    inputs = json.loads((run_dir / "report_inputs.json").read_text(encoding="utf-8"))
+    inputs["configs"] = ["A", "B", "C", "C-noKG"]
+    (run_dir / "report_inputs.json").write_text(json.dumps(inputs), encoding="utf-8")
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+    assert {r["config"] for r in read_csv(run_dir / "headline.csv")} == {"A", "B", "C", "C-noKG"}
+    assert "| C-noKG | 6 |" in text
+    pairs = read_csv(run_dir / "paired.csv")
+    assert [r["pair"] for r in pairs[::5]] == ["A vs B", "A vs C", "B vs C", "C vs C-noKG"]
+    em = next(r for r in pairs if r["pair"] == "C vs C-noKG" and r["outcome"] == "exact_match")
+    assert (em["b"], em["c"]) == ("0", "0")  # same rows on both sides
+
+
+def test_report_without_the_ablation_does_not_list_it_as_missing(run_dir):
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+    assert "C-noKG" not in text
+    assert {r["pair"] for r in read_csv(run_dir / "paired.csv")} == {"A vs B", "A vs C", "B vs C"}
+
+
 def test_build_report_writes_every_section_and_csv(run_dir):
     report = build_report(run_dir, n_boot=200)
     text = report.read_text(encoding="utf-8")

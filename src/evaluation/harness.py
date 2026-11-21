@@ -83,9 +83,15 @@ def _uses_llm(cfg: Mapping[str, Any]) -> bool:
     return comp.get("parser") == "llm" or comp.get("explainer") == "grounded_llm"
 
 
+# Named ablations: config name (as in results files and the report) -> config file.
+ABLATIONS = {"C-noKG": "configs/config_c_nokg.yaml"}
+
+
 def _config_path(config: str) -> Path:
     if config.upper() in {"A", "B", "C"}:
         return repo_path(f"configs/config_{config.lower()}.yaml")
+    if config in ABLATIONS:
+        return repo_path(ABLATIONS[config])
     return repo_path(config)
 
 
@@ -183,8 +189,8 @@ def run(
     items_paths: list[str] | None = None,
     n_boot: int = 10_000,
 ) -> Path:
-    cfg = load_config(config)
     cfg_path = _config_path(config)
+    cfg = load_config(str(cfg_path))
     meta = run_metadata(cfg, cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else "")
     pipe = build_pipeline(cfg)
     trace = ParserTrace(pipe.parser)
