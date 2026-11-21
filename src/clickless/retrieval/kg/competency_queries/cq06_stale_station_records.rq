@@ -1,18 +1,21 @@
 # CQ6: Which stations' records were last updated at the source more than N days before retrieval?
 # Author: Aarya (learning swap). SPARQL 1.1 has no portable dateTime subtraction, so the caller
-# substitutes ?cutoff = snapshot retrieval time - N days (e.g. N = 365, the stale threshold in
-# data/provenance.py). Stations without any source update date are not returned here; their
-# age cannot be judged (labelled "source update date unknown" in explanations).
+# binds ?cutoff = clickless.data.provenance.stale_cutoff(retrieved_at). A record is stale exactly
+# when its source update time is <= ?cutoff, the same rule as provenance.is_stale (more than
+# STALE_AFTER_DAYS = 365 whole days). One ?cutoff assumes one retrieval time for the stations
+# queried, which holds for a snapshot (every AFDC record is retrieved in the same run).
+# Static reference data and stations without a source update date are not returned: their age
+# cannot be judged (is_stale gives None; "source update date unknown" in explanations).
 PREFIX cc:  <https://example.org/clickless#>
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 SELECT ?station ?sourceUpdatedAt ?retrievedAt
 WHERE {
-  VALUES ?cutoff { "2025-11-03T00:00:00Z"^^xsd:dateTime }
+  VALUES ?cutoff { cc:cutoff_REPLACE_ME }
   ?station a cc:Station ;
            cc:hasProvenance ?source .
   ?source  cc:retrievedAt     ?retrievedAt ;
+           cc:dataStatus      ?status ;
            cc:sourceUpdatedAt ?sourceUpdatedAt .
-  FILTER (?sourceUpdatedAt < ?cutoff)
+  FILTER (?status != "static" && ?sourceUpdatedAt <= ?cutoff)
 }
-ORDER BY ?sourceUpdatedAt
+ORDER BY ?sourceUpdatedAt ?station

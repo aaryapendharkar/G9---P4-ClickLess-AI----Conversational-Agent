@@ -16,4 +16,4 @@ WHERE {
            cc:retrievedAt   ?retrievedAt .
   OPTIONAL { ?source cc:sourceUpdatedAt ?sourceUpdatedAt }
 }
-ORDER BY DESC(?power)
+ORDER BY DESC(?power) ?port

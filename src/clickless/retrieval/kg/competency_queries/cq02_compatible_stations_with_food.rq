@@ -14,4 +14,4 @@ WHERE {
   ?station  cc:near         ?amenity .
   ?amenity  cc:amenityCategory "food" .
 }
-ORDER BY ?station ?amenity
+ORDER BY ?station ?amenity ?connector
