@@ -255,3 +255,48 @@ def test_double_annotation_requires_cross_checks():
     items[3]["cross_checked_by"] = None
     with pytest.raises(ValueError, match="cross-check"):
         assign_double_annotation(items)
+
+
+def _dev_ids(items) -> set[str]:
+    return {i.id for i in stratified_split(items).dev}
+
+
+def test_dev_only_annotator_gets_only_dev_items():
+    raw = make_items(SHARED)
+    items = {x["id"]: BenchmarkItem.model_validate(x) for x in raw}
+    dev = _dev_ids(raw)
+    pairs = assign_double_annotation(raw, dev_ids=dev, dev_only_annotators=("deepti",))
+    assert len(pairs) == 40 and Counter(items[i].author for i, _ in pairs) == {a: 8 for a in AUTHORS}
+    for item_id, second in pairs:
+        it = items[item_id]
+        assert second not in (it.author, it.cross_checked_by)
+        if second == "deepti":
+            assert item_id in dev
+    for a in AUTHORS:  # still one item per category
+        assert sorted(items[i].category for i, _ in pairs if items[i].author == a) == sorted(set(MIX))
+    assert Counter(s for _, s in pairs)["deepti"] == 8  # still a full, balanced load
+    shuffled = raw[:]
+    random.Random(3).shuffle(shuffled)
+    assert assign_double_annotation(shuffled, dev_ids=dev, dev_only_annotators=("deepti",)) == pairs
+
+
+def test_no_dev_only_annotators_leaves_the_assignment_unchanged():
+    raw = make_items(SHARED)
+    assert assign_double_annotation(raw, dev_ids=_dev_ids(raw)) == assign_double_annotation(raw)
+
+
+def test_dev_only_annotators_need_the_dev_split():
+    with pytest.raises(ValueError, match="dev_ids"):
+        assign_double_annotation(make_items(), dev_only_annotators=("deepti",))
+
+
+def test_dev_only_rule_fails_loudly_when_unsatisfiable():
+    with pytest.raises(ValueError, match="no valid second annotator"):
+        assign_double_annotation(make_items(), dev_ids=set(), dev_only_annotators=("deepti", "ian"))
+
+
+def test_benchmark_config_makes_the_parser_owner_dev_only():
+    from clickless.config import load_config
+    from evaluation.splits import BENCHMARK_CONFIG, PARSER_OWNER
+
+    assert load_config(BENCHMARK_CONFIG)["dev_only_annotators"] == [PARSER_OWNER]
