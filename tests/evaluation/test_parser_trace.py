@@ -12,7 +12,7 @@ from clickless.nlu import llm_parser
 from clickless.nlu.llm_parser import LLMParser
 from clickless.nlu.rules_parser import RulesParser
 from evaluation import harness
-from evaluation.parser_trace import NO_LOGGED_REASON, RULES_FALLBACK, ParserTrace
+from evaluation.parser_trace import RULES_FALLBACK, ParserTrace
 
 TEXT = "From Phoenix to Flagstaff in my Spark LR, I have 65% battery and want to arrive with at least 20%"
 VALID = {
@@ -50,7 +50,7 @@ def test_timeout_is_recorded_as_rules_fallback_with_the_reason(llm, monkeypatch)
     trace = ParserTrace(llm)
     traced = trace.parse(TEXT, "t-timeout")
     assert trace.last["parser_used"] == RULES_FALLBACK
-    assert "LLM extraction unavailable" in trace.last["fallback_reason"]
+    assert trace.last["fallback_reason"].startswith("unavailable: ReadTimeout")
     assert "Read timed out" in trace.last["fallback_reason"]
     # observation only: the parse result is exactly what the untraced parser returns
     assert traced == llm.parse(TEXT, "t-timeout")
@@ -60,9 +60,8 @@ def test_two_invalid_responses_record_both_validation_errors(llm, monkeypatch):
     monkeypatch.setattr(llm_parser, "chat", lambda *a, **k: "not json")
     trace = ParserTrace(llm)
     trace.parse(TEXT, "t-invalid")
-    reason = trace.last["fallback_reason"]
     assert trace.last["parser_used"] == RULES_FALLBACK
-    assert "attempt 1 failed validation" in reason and "attempt 2 failed validation" in reason
+    assert trace.last["fallback_reason"].startswith("invalid_output: attempt 2")
 
 
 def test_repaired_response_is_not_a_fallback(llm, monkeypatch):
@@ -78,7 +77,8 @@ def test_fallback_without_a_warning_still_counts(llm, monkeypatch):
     monkeypatch.setattr(logging.getLogger("clickless.nlu.llm_parser"), "disabled", True)
     trace = ParserTrace(llm)
     trace.parse(TEXT, "t-silent")
-    assert trace.last == {"parser_used": RULES_FALLBACK, "fallback_reason": NO_LOGGED_REASON}
+    assert trace.last["parser_used"] == RULES_FALLBACK
+    assert trace.last["fallback_reason"].startswith("unavailable: ReadTimeout")
 
 
 def test_non_llm_parser_is_recorded_by_name(store):

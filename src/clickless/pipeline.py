@@ -249,6 +249,8 @@ class Pipeline:
             config=self.name,
             status="ok",
             request=req,
+            parser=parse.parser,
+            fallback_reason=parse.fallback_reason,
             timings_ms=timings,
         )
 
