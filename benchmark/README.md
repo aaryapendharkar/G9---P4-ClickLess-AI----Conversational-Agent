@@ -5,6 +5,7 @@ requests/raw/<author>.jsonl   # each member writes 30 items here (one JSON objec
 requests/dev/                 # produced by evaluation.splits (50 items) + fixture_smoke.jsonl
 requests/test/                # produced by evaluation.splits (100 items) -- FROZEN, never hand-edit
 labels/relevance/             # graded relevance labels for nDCG@3 (30 test items, 2 annotators)
+labels/double/<annotator>.jsonl  # blind double annotation, 40 items over 4 annotators (labels/double/README.md)
 FROZEN.json                   # hash + date of the test split, written at freeze time
 ```
 

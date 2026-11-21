@@ -3,3 +3,12 @@
 # Annotators who may only be second annotator on DEV items. Deepti owns the parser, which is the
 # same reason every item she authors goes to dev (proposal §II): she must not see test gold.
 dev_only_annotators: [deepti]
+
+# Not second annotators at all: their annotation would not be blind. Ian is the benchmark owner
+# and reviewed nearly every item's gold (all cross-check PRs, including the full #102 review).
+# Their own items are still double-annotated (8 per author) by the others.
+excluded_annotators: [ian]
+
+# Fixed maximum loads; everyone else shares the remaining items evenly. Deepti is capped at 8,
+# since her dev-only pool is small; the other three take the rest (~10-11 each).
+annotator_caps: {deepti: 8}
