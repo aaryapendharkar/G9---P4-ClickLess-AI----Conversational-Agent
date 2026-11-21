@@ -57,4 +57,6 @@ dinner"), `accessibility`, `priority_tradeoff`, `infeasible`.
 - Every item is cross-checked by your learning buddy (ring order in `TEAM_PLAN.md`): fix typos,
   flag disagreements in `notes`, never silently change someone's gold.
 - 40 items are independently re-annotated (blind) for Cohen's κ / field agreement
-  (`evaluation/agreement.py`). Ian assigns them.
+  (`evaluation/agreement.py`). Ian assigns them (`python -m evaluation.splits assign-double`);
+  each second annotator fills in `benchmark/labels/double/<you>.jsonl` from the request text
+  alone, without opening the original item or its gold. Steps: `benchmark/labels/double/README.md`.
