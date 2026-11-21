@@ -5,7 +5,7 @@
 # Run it with `--config C-noKG`. The lines below are a copy of config_c.yaml.
 # Configuration C -- hybrid: B + KG enrichment, clarification, provenance labels, grounded explanation.
 name: C-noKG
-description: LLM extraction + clarification, SBERT, corridor + KG, weighted + evidence ranking, grounded LLM explanation.
+description: LLM extraction + clarification, SBERT, corridor + KG, evidence-grounded template explanation with trade-offs.
 components:
   parser: llm
   matcher: sbert
