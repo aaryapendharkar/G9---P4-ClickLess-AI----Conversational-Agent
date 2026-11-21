@@ -13,7 +13,7 @@ Steps
      exists, so nothing is ever tuned on held-out items by accident.
   2. build_report(): reads every result JSON in the directory and writes
        report.md          all sections below
-       headline.csv       one row per config, value + 95 % CI per metric
+       headline.csv       one row per config, value + 95 % CI per metric, LLM fallback counts
        paired.csv         A vs B and B vs C: McNemar (success rates), Wilcoxon (per-item scores)
        breakdown.csv      by author / category / route_type, with item counts
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
@@ -30,6 +30,9 @@ Metric sources (no metric is reimplemented here)
     the block's "ci95": {key: [lo, hi]} when the metric provides one, else shown as n/a. A block
     that is missing or {"not_implemented": ...} is shown as n/a.
   * Paired tests use evaluation.metrics.stats.mcnemar / wilcoxon on the items both configs ran.
+  * LLM fallback rate: items whose row says parser_used == "rules_fallback" over the items an LLM
+    parser handled ("llm" + "rules_fallback"). Any fallback puts a warning at the top of
+    report.md, because those items measure the rules parser, not the configured LLM.
 
 Independence: building a report imports no system code. Only run_all() imports the harness (which
 runs the pipeline), lazily; tests/evaluation/test_report.py checks both.
@@ -70,6 +73,7 @@ BREAKDOWNS = ("author", "category", "route_type")
 INPUTS_FILE = "report_inputs.json"
 NA = "n/a"
 _ERROR_STATUSES = ("error", "not_implemented")
+LLM_PARSED = ("llm", "rules_fallback")
 _REPORT_FILES = {INPUTS_FILE}
 
 # (column, label, where the value comes from). "understanding" metrics are recomputed from rows;
@@ -405,6 +409,44 @@ def breakdown(run: ConfigRun) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------- step 2: write
 
 
+def parser_fallback(run: ConfigRun) -> dict[str, Any]:
+    """LLM fallback counts from the rows' parser_used / fallback_reason (written by the harness).
+
+    rate is None when no item was handled by an LLM parser (Config A, or results written before
+    the harness recorded parser_used; "recorded" tells the two apart)."""
+    used = [r.get("parser_used") for r in run.rows]
+    llm_rows = [r for r in run.rows if r.get("parser_used") in LLM_PARSED]
+    fell_back = [r for r in llm_rows if r.get("parser_used") == "rules_fallback"]
+    reasons: dict[str, int] = {}
+    for r in fell_back:
+        reason = str(r.get("fallback_reason") or "no reason recorded")
+        reasons[reason] = reasons.get(reason, 0) + 1
+    parsers = sorted({u for u in used if u and u != "rules_fallback"} | ({"llm"} if fell_back else set()))
+    return {
+        "recorded": any(u is not None for u in used),
+        "parsers": parsers,
+        "n_llm_parsed": len(llm_rows),
+        "n_fallback": len(fell_back),
+        "rate": len(fell_back) / len(llm_rows) if llm_rows else None,
+        "fallback_ids": sorted(r["id"] for r in fell_back),
+        "reasons": sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0])),
+    }
+
+
+def _fallback_cell(fb: Mapping[str, Any]) -> list[str]:
+    if not fb["recorded"]:
+        return [NA, NA, NA, NA, "not recorded (results predate parser_used)"]
+    if fb["rate"] is None:
+        return [", ".join(fb["parsers"]) or NA, "0", "0", NA, "no LLM parser"]
+    reasons = "; ".join(f"{n}x {_short(reason)}" for reason, n in fb["reasons"][:3]) or "-"
+    return [", ".join(fb["parsers"]), str(fb["n_llm_parsed"]), str(fb["n_fallback"]), _fmt(fb["rate"]), reasons]
+
+
+def _short(text: str, limit: int = 120) -> str:
+    text = " ".join(text.split()).replace("|", "/")
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
 def _fmt(v: Any, digits: int = 3) -> str:
     v2 = _num(v) if not isinstance(v, str) else v
     if v2 is None:
@@ -440,16 +482,22 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     failed: dict[str, str] = dict(inputs.get("failed") or {})
     snapshot: dict[str, str] = dict(inputs.get("snapshot_id") or {})
 
+    fallback = {c: parser_fallback(runs[c]) for c in configs if c in runs}
+
     # Headline
     head_rows: list[dict[str, Any]] = []
     md_head: list[list[str]] = []
     for config in configs:
         run = runs.get(config)
         values = headline(run, n_boot) if run else {}
+        fb = fallback.get(config)
         row: dict[str, Any] = {
             "config": config,
             "n_items": len(run.items) if run else 0,
             "status": "ok" if run else ("failed: " + failed.get(config, "no result JSON")),
+            "llm_parsed": fb["n_llm_parsed"] if fb and fb["recorded"] else None,
+            "llm_fallbacks": fb["n_fallback"] if fb and fb["recorded"] else None,
+            "llm_fallback_rate": fb["rate"] if fb else None,
         }
         md = [config, str(row["n_items"])]
         for column, _label, _src in HEADLINE:
@@ -462,7 +510,7 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         md_head.append(md)
     head_fields = ["config", "status", "n_items"] + [
         f for c, _l, _s in HEADLINE for f in (c, f"{c}_ci_lo", f"{c}_ci_hi")
-    ]
+    ] + ["llm_parsed", "llm_fallbacks", "llm_fallback_rate"]
     _write_csv(run_dir / "headline.csv", head_rows, head_fields)
 
     # Paired comparisons
@@ -540,6 +588,16 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         f"Configs: {', '.join(configs) or NA}. Bootstrap: {n_boot} resamples, seed 573, percentile 95 % CI.",
         "",
     ]
+    fell_back = [c for c in configs if c in fallback and fallback[c]["n_fallback"]]
+    if fell_back:
+        lines += ["> **Warning: LLM parser fallback.** These items were parsed by the rules fallback, "
+                  "not the configured LLM, so their results measure rules parsing:", ">"]
+        lines += [
+            f"> - {c}: {fallback[c]['n_fallback']}/{fallback[c]['n_llm_parsed']} items "
+            f"({fallback[c]['rate']:.1%}), e.g. {_short(fallback[c]['reasons'][0][0], 160)}"
+            for c in fell_back
+        ]
+        lines += [">", "> See \"LLM parser fallback\" below.", ""]
     if failed:
         lines += ["**Failed configs:**", ""] + [f"- {c}: {msg}" for c, msg in sorted(failed.items())] + [""]
     lines += [
@@ -549,6 +607,21 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "",
     ]
     lines += _md_table(["Config", "n"] + [label for _c, label, _s in HEADLINE], md_head)
+    lines += [
+        "",
+        "## LLM parser fallback",
+        "",
+        "Items an LLM parser handled, and how many it handed to the rules fallback (timeout, unreachable "
+        "endpoint, or two invalid responses). Reasons are the parser's logged warnings.",
+        "",
+    ]
+    lines += _md_table(
+        ["Config", "Parser", "LLM-parsed", "Fallbacks", "Fallback rate", "Reasons"],
+        [[c, *_fallback_cell(fallback[c])] if c in fallback else [c, NA, NA, NA, NA, "no result JSON"]
+         for c in configs],
+    )
+    for c in fell_back:
+        lines.append(f"- {c} fallback items: {', '.join(fallback[c]['fallback_ids'])}")
     lines += [
         "",
         "## Paired comparisons",

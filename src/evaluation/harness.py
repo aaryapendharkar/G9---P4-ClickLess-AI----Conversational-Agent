@@ -11,6 +11,9 @@ Every output records run metadata (`run_metadata`): config name, git commit, pro
 model, Ollama version, endpoint host (never the API key) and the full model digest from the
 endpoint's /api/tags, checked against the short digest pinned in the config. Configurations
 without an LLM component (Config A) record "n/a" for the LLM fields and make no network calls.
+
+Every row records `parser_used` ("llm", "rules_fallback", or the non-LLM parser's name) and
+`fallback_reason`, so items an LLM config silently parsed with rules are visible (parser_trace).
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ from .metrics.request_understanding import (
     silent_assumption_rate,
     understanding_cis,
 )
+from .parser_trace import ParserTrace
 from .schema import load_items
 
 NA = "n/a"
@@ -177,6 +181,8 @@ def run(
     cfg_path = _config_path(config)
     meta = run_metadata(cfg, cfg_path.read_text(encoding="utf-8") if cfg_path.exists() else "")
     pipe = build_pipeline(cfg)
+    trace = ParserTrace(pipe.parser)
+    pipe.parser = trace
     if items_paths:
         items = [i for p in items_paths for i in load_items(repo_path(p))][:limit]
         source = [str(p) for p in items_paths]
@@ -186,14 +192,15 @@ def run(
     results, rows = [], []
     for item in items:
         t0 = time.perf_counter()
+        trace.last = trace.empty()
         try:
             res = pipe.run(item.text, request_id=item.id)
         except NotImplementedError as e:
-            rows.append({"id": item.id, "status": "not_implemented", "error": str(e)})
+            rows.append({"id": item.id, "status": "not_implemented", "error": str(e), **trace.last})
             continue
         results.append(res)
         rows.append({"id": item.id, "status": res.status, "latency_ms": (time.perf_counter() - t0) * 1000,
-                     "result": json.loads(res.model_dump_json())})
+                     **trace.last, "result": json.loads(res.model_dump_json())})
     by_id = {r.request_id: r for r in results}
     done = [i for i in items if i.id in by_id]
     ordered = [by_id[i.id] for i in done]

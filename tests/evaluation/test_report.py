@@ -316,6 +316,63 @@ def test_missing_config_shows_failed_and_skips_its_pair(tmp_path, run_dir):
     assert {r["pair"] for r in read_csv(run_dir / "paired.csv")} == {"A vs B"}
 
 
+# --------------------------------------------------------------------------- LLM parser fallback
+
+
+TIMEOUT_REASON = "LLM extraction unavailable: Read timed out. (read timeout=60.0)"
+
+
+def _with_parsers(d, config, used):
+    """Rewrite config's result JSON so row i uses used[i] (parser_used) with a matching reason."""
+    path = d / f"{config}_items.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for r, u in zip(data["rows"], used, strict=True):
+        r["parser_used"] = u
+        r["fallback_reason"] = TIMEOUT_REASON if u == "rules_fallback" else None
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def test_fallback_rate_per_config_and_warning_at_the_top(run_dir):
+    _with_parsers(run_dir, "A", ["rules"] * 6)
+    _with_parsers(run_dir, "B", ["llm", "rules_fallback", "llm", "rules_fallback", "llm", "llm"])
+    _with_parsers(run_dir, "C", ["llm"] * 6)
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+
+    warning = text.index("Warning: LLM parser fallback")
+    assert warning < text.index("## Headline")
+    assert "> - B: 2/6 items (33.3%), e.g. LLM extraction unavailable: Read timed out" in text
+    assert "> - C:" not in text and "> - A:" not in text
+
+    section = text[text.index("## LLM parser fallback"):text.index("## Paired comparisons")]
+    table = [line for line in section.splitlines() if line.startswith("| ") and "---" not in line]
+    lines = {line.split("|")[1].strip(): line for line in table}
+    assert "| rules | 0 | 0 | n/a | no LLM parser |" in lines["A"]
+    assert "| llm | 6 | 2 | 0.333 | 2x LLM extraction unavailable" in lines["B"]
+    assert "| llm | 6 | 0 | 0.000 | - |" in lines["C"]
+    assert "- B fallback items: i2, i4" in section
+
+    head = {r["config"]: r for r in read_csv(run_dir / "headline.csv")}
+    assert float(head["B"]["llm_fallback_rate"]) == pytest.approx(1 / 3)
+    assert (head["B"]["llm_parsed"], head["B"]["llm_fallbacks"]) == ("6", "2")
+    assert float(head["C"]["llm_fallback_rate"]) == 0.0
+    assert head["A"]["llm_fallback_rate"] == "" and head["A"]["llm_fallbacks"] == "0"
+
+
+def test_no_warning_when_nothing_fell_back(run_dir):
+    for c in ("B", "C"):
+        _with_parsers(run_dir, c, ["llm"] * 6)
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+    assert "Warning: LLM parser fallback" not in text
+    assert "## LLM parser fallback" in text
+
+
+def test_results_without_parser_used_say_not_recorded(run_dir):
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")  # fixture rows predate parser_used
+    assert "Warning: LLM parser fallback" not in text
+    assert "not recorded (results predate parser_used)" in text
+    assert read_csv(run_dir / "headline.csv")[1]["llm_fallback_rate"] == ""
+
+
 # --------------------------------------------------------------------------- split guard and run_all
 
 
