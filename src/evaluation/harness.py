@@ -38,6 +38,7 @@ import requests
 from clickless.config import load_config, repo_path
 from clickless.pipeline import build_pipeline
 
+from .llm_residency import LLMResidency
 from .metrics.grounding import claim_support, freshness_mislabel_rate
 from .metrics.request_understanding import (
     city_level_place_prf,
@@ -188,6 +189,11 @@ def run(
     pipe = build_pipeline(cfg)
     trace = ParserTrace(pipe.parser)
     pipe.parser = trace
+    # LLM configs: warm the model up and keep it loaded, and record its GPU share per item, so
+    # latency compares like with like (evaluation/llm_residency.py).
+    residency = LLMResidency.from_config(cfg) if _uses_llm(cfg) else None
+    if residency is not None:
+        meta.update(residency.warm_up())
     if items_paths:
         items = [i for p in items_paths for i in load_items(repo_path(p))][:limit]
         source = [str(p) for p in items_paths]
@@ -195,17 +201,22 @@ def run(
         items = load_items(repo_path(f"benchmark/requests/{split}"))[:limit]
         source = [f"benchmark/requests/{split}"]
     results, rows = [], []
-    for item in items:
-        t0 = time.perf_counter()
-        trace.last = trace.empty()
-        try:
-            res = pipe.run(item.text, request_id=item.id)
-        except NotImplementedError as e:
-            rows.append({"id": item.id, "status": "not_implemented", "error": str(e), **trace.last})
-            continue
-        results.append(res)
-        rows.append({"id": item.id, "status": res.status, "latency_ms": (time.perf_counter() - t0) * 1000,
-                     **trace.last, "result": json.loads(res.model_dump_json())})
+    try:
+        for item in items:
+            gpu = residency.before_item() if residency is not None else {}
+            t0 = time.perf_counter()
+            trace.last = trace.empty()
+            try:
+                res = pipe.run(item.text, request_id=item.id)
+            except NotImplementedError as e:
+                rows.append({"id": item.id, "status": "not_implemented", "error": str(e), **trace.last, **gpu})
+                continue
+            results.append(res)
+            rows.append({"id": item.id, "status": res.status, "latency_ms": (time.perf_counter() - t0) * 1000,
+                         **trace.last, **gpu, "result": json.loads(res.model_dump_json())})
+    finally:
+        if residency is not None:
+            residency.release()
     by_id = {r.request_id: r for r in results}
     done = [i for i in items if i.id in by_id]
     ordered = [by_id[i.id] for i in done]
