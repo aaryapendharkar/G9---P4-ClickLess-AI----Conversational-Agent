@@ -14,7 +14,7 @@ Steps
   2. build_report(): reads every result JSON in the directory and writes
        report.md          all sections below
        headline.csv       one row per config, value + 95 % CI per metric, LLM fallback counts
-       paired.csv         A vs B and B vs C: McNemar (success rates), Wilcoxon (per-item scores)
+       paired.csv         A vs B, A vs C, B vs C: McNemar (success rates), Wilcoxon (per-item scores)
        breakdown.csv      by author / category / route_type, with item counts
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
        metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id
@@ -71,7 +71,7 @@ from .schema import BenchmarkItem, load_items
 from .snapshot_id import snapshot_info
 
 CONFIGS = ("A", "B", "C")
-PAIRS = (("A", "B"), ("B", "C"))
+PAIRS = (("A", "B"), ("A", "C"), ("B", "C"))  # A vs C: the full system against the baseline
 BREAKDOWNS = ("author", "category", "route_type")
 INPUTS_FILE = "report_inputs.json"
 NA = "n/a"
