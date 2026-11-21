@@ -85,7 +85,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
 | AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
-| KG build + enrichment (C) | v0.2: rdflib graph fills `Candidate.evidence`; the pipeline copies only facts for displayed normal or relaxed alternatives into `PlanResult.evidence` (ADR 0015) |
+| KG build + enrichment (C) | v0.3: runtime rdflib graphs contain only the current route's corridor candidates and amenities; full graphs remain available for offline competency queries. The pipeline copies facts for displayed normal or relaxed alternatives into `PlanResult.evidence` (ADR 0015, issue #115) |
 | LLM parser, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
