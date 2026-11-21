@@ -1,0 +1,5 @@
+# Benchmark split / double-annotation settings (owner: Ian). Read by `python -m evaluation.splits`.
+
+# Annotators who may only be second annotator on DEV items. Deepti owns the parser, which is the
+# same reason every item she authors goes to dev (proposal §II): she must not see test gold.
+dev_only_annotators: [deepti]
