@@ -135,10 +135,10 @@ def test_harness_releases_the_model_even_when_the_run_fails(monkeypatch, tmp_pat
     _llm_run(monkeypatch, residency)
 
     def boom(*a, **k):
-        raise RuntimeError("pipeline crashed")
+        raise KeyboardInterrupt  # an ordinary exception becomes an error row; this one aborts the run
 
     monkeypatch.setattr(harness, "build_pipeline", lambda cfg: type("P", (), {"run": boom, "parser": object()})())
-    with pytest.raises(RuntimeError, match="pipeline crashed"):
+    with pytest.raises(KeyboardInterrupt):
         harness.run("A", items_paths=[SMOKE], out_dir=str(tmp_path))
     assert residency.calls == ["warm_up", "before_item", "release"]
 
