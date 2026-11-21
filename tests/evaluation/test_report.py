@@ -316,6 +316,24 @@ def test_missing_config_shows_failed_and_skips_its_pair(tmp_path, run_dir):
     assert {r["pair"] for r in read_csv(run_dir / "paired.csv")} == {"A vs B"}
 
 
+def test_metadata_shows_which_ollama_produced_the_results(run_dir):
+    path = run_dir / "B_items.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["run_metadata"].update(ollama_version="0.40.17", endpoint_host="127.0.0.1:11434",
+                                model_digest="500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41")
+    path.write_text(json.dumps(data), encoding="utf-8")
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+
+    meta = {r["config"]: r for r in read_csv(run_dir / "metadata.csv")}
+    assert meta["B"]["ollama_version"] == "0.40.17" and meta["B"]["endpoint_host"] == "127.0.0.1:11434"
+    assert meta["B"]["model_digest"].startswith("500a1f067a9f")
+    assert meta["A"]["ollama_version"] == ""  # not recorded in A's fixture metadata
+    section = text[text.index("## Run metadata"):]
+    assert "| Ollama |" in section
+    b_line = next(line for line in section.splitlines() if line.startswith("| B |"))
+    assert "0.40.17" in b_line and "500a1f067a9f" in b_line
+
+
 # --------------------------------------------------------------------------- LLM parser fallback
 
 

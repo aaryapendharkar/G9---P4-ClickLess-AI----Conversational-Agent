@@ -17,7 +17,7 @@ Steps
        paired.csv         A vs B and B vs C: McNemar (success rates), Wilcoxon (per-item scores)
        breakdown.csv      by author / category / route_type, with item counts
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
-       metadata.csv       git commit, model, digest, prompt version, snapshot id
+       metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id
 
 Metric sources (no metric is reimplemented here)
   * Request understanding (field F1, exact match, clarification F1, silent-assumption rate) is
@@ -561,6 +561,8 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
                 "model": meta.get("model"),
                 "model_digest": meta.get("model_digest"),
                 "digest_check": meta.get("digest_check"),
+                "ollama_version": meta.get("ollama_version"),
+                "endpoint_host": meta.get("endpoint_host"),
                 "prompt_version": meta.get("prompt_version"),
                 "snapshot_id": snapshot.get(config),
             }
@@ -572,6 +574,8 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "model",
         "model_digest",
         "digest_check",
+        "ollama_version",
+        "endpoint_host",
         "prompt_version",
         "snapshot_id",
     ]
@@ -684,13 +688,14 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         lines.append("None recorded (no planning block with findings in these results).")
     lines += ["", "## Run metadata", ""]
     lines += _md_table(
-        ["Config", "Git commit", "Model", "Digest", "Prompt", "Snapshot"],
+        ["Config", "Git commit", "Model", "Digest", "Ollama", "Prompt", "Snapshot"],
         [
             [
                 r["config"],
                 _fmt(r["git_commit"]) + (" (dirty)" if r["git_dirty"] else ""),
                 _fmt(r["model"]),
                 _fmt(r["model_digest"]),
+                _fmt(r["ollama_version"]),
                 _fmt(r["prompt_version"]),
                 _fmt(r["snapshot_id"]),
             ]
