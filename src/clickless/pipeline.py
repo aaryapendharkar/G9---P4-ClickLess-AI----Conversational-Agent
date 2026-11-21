@@ -251,6 +251,9 @@ class Pipeline:
             request=req,
             timings_ms=timings,
         )
+        # PlanResult validation stores a copy of the dict, so the later laps must write into the
+        # result's own dict; otherwise only "parse" reaches the saved result (#125).
+        timings = result.timings_ms
 
         if parse.needs_input:
             if self.clarifier:
