@@ -3,7 +3,7 @@
 - Status: proposed
 - Date: 2026-11-21
 - Owner: Ian (evaluation)
-- Approvers: Hriday (planning, integration), Manas (retrieval); two approvals needed (`docs/TEAM_PLAN.md`)
+- Approvers: Hriday (planning, integration), Aarya (data, evaluation); two approvals needed (`docs/TEAM_PLAN.md`)
 - Related: #106, #105, PR #133, #134 (closed)
 
 ## Context
