@@ -48,6 +48,12 @@ _CONNECTOR_ALIASES = {
     "chademo": Connector.CHADEMO,
     "j1772": Connector.J1772,
 }
+_CONNECTOR_MENTIONS = (
+    (Connector.CCS1, re.compile(r"\b(?:ccs(?:\s*1)?|ccs\s+combo\s*1|combo\s*1|j1772\s+combo)\b", re.I)),
+    (Connector.NACS, re.compile(r"\b(?:nacs|tesla\s+(?:plug|connector))\b", re.I)),
+    (Connector.CHADEMO, re.compile(r"\bchademo\b", re.I)),
+    (Connector.J1772, re.compile(r"\bj1772\b(?!\s+combo)", re.I)),
+)
 
 _EXTRACTION_SCHEMA = {
     "type": "object",
@@ -87,6 +93,11 @@ def _normalize_connector(value: str) -> Connector:
         return _CONNECTOR_ALIASES[normalized_value]
     except KeyError as error:
         raise ExtractionValidationError(f"unsupported connector: {value}") from error
+
+
+def _explicitly_mentioned_connectors(text: str) -> set[Connector]:
+    """Return connectors named by the driver, never inferred from vehicle or power."""
+    return {connector for connector, pattern in _CONNECTOR_MENTIONS if pattern.search(text)}
 
 
 def _validate_extraction(extracted: dict[str, Any]) -> None:
@@ -209,6 +220,14 @@ class LLMParser:
         origin_text = extracted.get("origin")
         destination_text = extracted.get("destination")
         vehicle_text = extracted.get("vehicle")
+        explicitly_mentioned_connectors = _explicitly_mentioned_connectors(text)
+        connector_overrides = list(
+            dict.fromkeys(
+                normalized
+                for value in extracted.get("connectors", [])
+                if (normalized := _normalize_connector(value)) in explicitly_mentioned_connectors
+            )
+        )
         request = TripRequest(
             request_id=request_id,
             raw_text=text,
@@ -222,7 +241,7 @@ class LLMParser:
             arrival_soc_pct_min=extracted.get("arrival_soc_pct_min"),
             max_detour_min=extracted.get("max_detour_min"),
             min_power_kw=extracted.get("min_power_kw"),
-            connectors_override=[_normalize_connector(value) for value in extracted.get("connectors", [])] or None,
+            connectors_override=connector_overrides or None,
             tradeoff_profile=detect_profile(text),
             weight_overrides=detect_weight_overrides(text),
         )
