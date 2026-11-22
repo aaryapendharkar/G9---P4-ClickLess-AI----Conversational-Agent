@@ -17,8 +17,9 @@ from .contracts import PlanResult
 from .pipeline import build_pipeline
 
 # Notes kept in PlanResult (and --json / saved eval results) for debugging, but not printed for
-# the driver: the explanation already says what happened (#140).
-_DEBUG_ONLY_NOTE_PREFIXES = (NO_CACHED_ROUTE_NOTE,)
+# the driver: the explanation already says what happened (#140), or sums them up in one
+# "Not used:" line (#139, per-station "skipped <id>: <reason>" notes).
+_DEBUG_ONLY_NOTE_PREFIXES = (NO_CACHED_ROUTE_NOTE, "skipped ")
 
 
 def _display_result(

@@ -93,9 +93,9 @@ class TemplateExplainer:
             f"~{it.total_time_min:.0f} min total ({it.total_detour_min:.0f} min of detour)."
         )
         lines.append(render_cost_breakdown(rec.cost))
-        skipped_stations = [note.removeprefix("skipped ") for note in result.notes if note.startswith("skipped ")]
-        if skipped_stations:
-            lines.append("Not used: " + "; ".join(skipped_stations) + ".")
+        skipped_summary = _skipped_summary(result.notes)
+        if skipped_summary:
+            lines.append(skipped_summary)
         if len(result.alternatives) > 1:
             lines.append("Other options:")
             lines += ["  " + render_alternative(alternative) for alternative in result.alternatives[1:]]
@@ -106,3 +106,31 @@ class TemplateExplainer:
 
 def _route_not_cached(result: PlanResult) -> bool:
     return any(note.startswith(NO_CACHED_ROUTE_NOTE) for note in result.notes)
+
+
+# Driver-facing wording for the hard-constraint filter's reasons (planning/filters.py).
+_SKIP_REASON_LABELS = {
+    "access:restricted": "restricted access",
+    "connector": "incompatible connector",
+    "power": "below your minimum power",
+    "detour": "detour too long",
+}
+
+
+def _skipped_summary(notes: list[str]) -> str | None:
+    """One line for the stations the filter ruled out, counted by reason (#139).
+
+    The per-station "skipped <id>: <reason>" notes stay in PlanResult.notes for evaluation; the
+    driver only sees the counts.
+    """
+    counts: dict[str, int] = {}
+    for note in notes:
+        if note.startswith("skipped "):
+            reason = note.rsplit(": ", 1)[-1]
+            label = _SKIP_REASON_LABELS.get(reason) or reason.removeprefix("status:").replace("_", " ")
+            counts[label] = counts.get(label, 0) + 1
+    if not counts:
+        return None
+    total = sum(counts.values())
+    by_reason = ", ".join(f"{n} {label}" for label, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    return f"Not used: {total} station{'s' if total != 1 else ''} on the route ({by_reason})."
