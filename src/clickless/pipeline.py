@@ -285,6 +285,8 @@ class Pipeline:
                     config=self.name,
                     status="rejected_incomplete",
                     request=merged.request,
+                    parser=pending.parse.parser,
+                    fallback_reason=pending.parse.fallback_reason,
                     notes=merged.missing_fields + [
                         f"ambiguous {field}" for field in merged.ambiguous_fields
                     ],
@@ -306,6 +308,8 @@ class Pipeline:
                 status="needs_clarification",
                 request=merged.request,
                 clarification=next_question,
+                parser=pending.parse.parser,
+                fallback_reason=pending.parse.fallback_reason,
                 notes=[
                     f"clarified {pending.question.field} from answer: {answer!r}"
                 ] if answer_accepted else [],
@@ -318,6 +322,8 @@ class Pipeline:
             config=self.name,
             status="ok",
             request=merged.request,
+            parser=pending.parse.parser,
+            fallback_reason=pending.parse.fallback_reason,
             notes=[f"clarified {pending.question.field} from answer: {answer!r}"],
         )
         return self.plan_request(merged.request, result)

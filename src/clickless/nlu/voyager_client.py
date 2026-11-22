@@ -40,4 +40,7 @@ def chat(
         timeout=timeout_s,
     )
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    try:
+        return resp.json()["choices"][0]["message"]["content"]
+    except (IndexError, KeyError, TypeError) as error:
+        raise RuntimeError("Voyager response has an invalid chat completion shape") from error
