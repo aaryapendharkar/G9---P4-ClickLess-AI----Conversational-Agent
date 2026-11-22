@@ -64,10 +64,13 @@ class KGEnricher:
         self.store = store
         self.kg_cfg = kg_cfg
         self._graph = None
-        self._graph_scope_key: tuple[
-            tuple[str, ...],
-            tuple[str, ...],
-        ] | None = None
+        self._graph_scope_key: (
+            tuple[
+                tuple[str, ...],
+                tuple[str, ...],
+            ]
+            | None
+        ) = None
         self._station_facts: dict[str, list[Evidence]] = {}
         self._amenity_facts: dict[str, list[Evidence]] = {}
         self._near_facts: dict[tuple[str, str], list[Evidence]] = {}
@@ -115,25 +118,16 @@ class KGEnricher:
             for candidate in candidates
             if candidate.station.station_id in self.store.stations
         }
-        selected_stations = tuple(
-            self.store.stations[station_id]
-            for station_id in sorted(station_ids)
-        )
+        selected_stations = tuple(self.store.stations[station_id] for station_id in sorted(station_ids))
 
-        amenities_by_id = {
-            amenity.amenity_id: amenity
-            for amenity in self.store.amenities
-        }
+        amenities_by_id = {amenity.amenity_id: amenity for amenity in self.store.amenities}
         amenity_ids = {
             nearby.amenity.amenity_id
             for candidate in candidates
             for nearby in candidate.amenities
             if nearby.amenity.amenity_id in amenities_by_id
         }
-        selected_amenities = tuple(
-            amenities_by_id[amenity_id]
-            for amenity_id in sorted(amenity_ids)
-        )
+        selected_amenities = tuple(amenities_by_id[amenity_id] for amenity_id in sorted(amenity_ids))
 
         scope_key = (
             tuple(station.station_id for station in selected_stations),
@@ -187,10 +181,7 @@ class KGEnricher:
                 facts += self.near_evidence(station_id, amenity_id)
                 facts += self.amenity_evidence(amenity_id)
 
-            seen_evidence_ids = {
-                evidence.evidence_id
-                for evidence in candidate.evidence
-            }
+            seen_evidence_ids = {evidence.evidence_id for evidence in candidate.evidence}
             for evidence in facts:
                 if evidence.evidence_id not in seen_evidence_ids:
                     seen_evidence_ids.add(evidence.evidence_id)

@@ -168,7 +168,7 @@ def test_unknown_values_are_explicit_and_never_guessed(tmp_path):
 
 def test_a_station_the_kg_does_not_hold_gets_no_evidence(tmp_path, store):
     _, station, _ = _osm_like_store(tmp_path)
-    candidate =Candidate(station=station, route_index=0, along_route_km=0, offroute_km=0)
+    candidate = Candidate(station=station, route_index=0, along_route_km=0, offroute_km=0)
 
     assert KGEnricher(store, {}).enrich([candidate], request=None)[0].evidence == []
 
@@ -244,25 +244,12 @@ def test_runtime_graph_contains_only_candidate_records(pipe_a, store, demo_text)
     from clickless.retrieval.kg import vocab as cc
 
     candidates, request = _demo_candidates(pipe_a, demo_text)
-    selected_candidate = next(
-        candidate
-        for candidate in candidates
-        if candidate.amenities
-    )
-    selected_amenity_ids = {
-        nearby_amenity.amenity.amenity_id
-        for nearby_amenity in selected_candidate.amenities
-    }
+    selected_candidate = next(candidate for candidate in candidates if candidate.amenities)
+    selected_amenity_ids = {nearby_amenity.amenity.amenity_id for nearby_amenity in selected_candidate.amenities}
     unrelated_station = next(
-        station
-        for station in store.stations.values()
-        if station.station_id != selected_candidate.station.station_id
+        station for station in store.stations.values() if station.station_id != selected_candidate.station.station_id
     )
-    unrelated_amenity = next(
-        amenity
-        for amenity in store.amenities
-        if amenity.amenity_id not in selected_amenity_ids
-    )
+    unrelated_amenity = next(amenity for amenity in store.amenities if amenity.amenity_id not in selected_amenity_ids)
 
     enricher = KGEnricher(store, {})
     enricher.enrich([selected_candidate], request)
@@ -278,10 +265,7 @@ def test_runtime_graph_contains_only_candidate_records(pipe_a, store, demo_text)
         RDF.type,
         cc.Station,
     ) not in graph
-    assert all(
-        (amenity_uri(amenity_id), RDF.type, cc.Amenity) in graph
-        for amenity_id in selected_amenity_ids
-    )
+    assert all((amenity_uri(amenity_id), RDF.type, cc.Amenity) in graph for amenity_id in selected_amenity_ids)
     assert (
         amenity_uri(unrelated_amenity.amenity_id),
         RDF.type,
@@ -328,9 +312,7 @@ def test_runtime_graph_is_replaced_for_a_different_candidate_scope(
     candidates, request = _demo_candidates(pipe_a, demo_text)
     first_candidate = candidates[0]
     second_candidate = next(
-        candidate
-        for candidate in candidates
-        if candidate.station.station_id != first_candidate.station.station_id
+        candidate for candidate in candidates if candidate.station.station_id != first_candidate.station.station_id
     )
     enricher = KGEnricher(store, {})
 

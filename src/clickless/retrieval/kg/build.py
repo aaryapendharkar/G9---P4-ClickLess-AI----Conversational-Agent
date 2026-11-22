@@ -261,10 +261,7 @@ def build_graph(
     try:
         from rdflib import Graph
     except ImportError as error:
-        raise ImportError(
-            'the Config C knowledge graph needs the kg extra: '
-            'pip install -e ".[kg]"'
-        ) from error
+        raise ImportError('the Config C knowledge graph needs the kg extra: pip install -e ".[kg]"') from error
 
     graph = Graph()
     graph.bind("cc", CC_NS)

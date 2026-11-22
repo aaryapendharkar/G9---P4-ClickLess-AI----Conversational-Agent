@@ -3,8 +3,10 @@
   * per-field precision / recall / F1 against gold_request; complete-request exact match
   * preference-matching precision / recall (TF-IDF vs SBERT on identical labelled matches)
   * clarification-decision F1
-  * silent-assumption rate: share of incomplete safety-critical items where the system
-    proceeded without clarifying or rejecting (target for C: <= 2 %)
+  * silent-assumption rate: share of incomplete safety-critical items with a parsed request
+    where the system proceeded without clarifying or rejecting (target for C: <= 2 %).
+    "Proceeded" is any status other than needs_clarification / rejected_incomplete, so a
+    planning error (e.g. route not cached) after an unasked-for assumption still counts.
   * priority-phrase accuracy: predicted tradeoff_profile vs gold (TA-feedback category)
 
 Per-field counting (gold = item.gold_request, prediction = result.request):
@@ -24,9 +26,15 @@ Normalization (`normalize_field`):
     two-letter code only when written in capitals ("Bend OR"), or, in a prediction, in lower case
     when it equals the gold's state code ("phoenix az" vs gold "Phoenix, AZ"). "downtown la" is
     therefore never read as Louisiana unless the gold place is in Louisiana.
-    Strict match (primary): city and state both equal, so "Phoenix" != "Phoenix, AZ".
-    City-level match (secondary, `level="city"`, reported separately by city_level_place_prf):
-    cities equal and the states equal or either one missing; two different states never match.
+    City-level match (primary, `level="city"`): cities equal and the states equal or either one
+    missing; two different states never match ("Portland, OR" != "Portland, ME").
+    Strict match (secondary, the "*_strict" keys): city and state both equal, so
+    "Phoenix" != "Phoenix, AZ".
+    Why city level is primary: gold places carry a state because docs/ANNOTATION_GUIDE.md
+    (rule 4) asks annotators to write the place "as you'd geocode it" ("Flagstaff, AZ"), not
+    because the driver said it. Most requests name no state ("San Jose to Palo Alto"), so a
+    parser that returns the place as the driver wrote it would be penalized for a suffix that
+    exists only for geocoding. Strict matching stays as a secondary column for transparency.
   * vehicle_id: exact string; numeric fields: exact float equality
   * connectors_override: a set (order-insensitive), compared as one value; [] == absent
   * amenities: set of (category, priority, wheelchair_required) with the contract defaults
@@ -65,7 +73,6 @@ SCORED_FIELDS: tuple[str, ...] = (
     "tradeoff_profile",
 )
 _SET_VALUED = ("amenities",)  # set-based P/R (element counts); everything else is one value
-_PROCEED = ("ok", "infeasible")  # statuses that mean "planned without asking"
 _ASKED = ("needs_clarification", "rejected_incomplete")  # clarify (C) or reject (A/B)
 
 Counts = tuple[int, int, int]  # (tp, fp, fn)
@@ -227,9 +234,16 @@ def item_field_counts(item, result, level: str = "strict") -> dict[str, Counts]:
     return {f: field_counts(f, item.gold_request.get(f), _get(pred, f), level) for f in SCORED_FIELDS}
 
 
-def item_exact_match(item, result) -> bool:
-    """True iff every scored field matches (both absent counts as a match)."""
-    return all(fp == 0 and fn == 0 for _, fp, fn in item_field_counts(item, result).values())
+def _all_match(counts: dict[str, Counts]) -> bool:
+    return all(fp == 0 and fn == 0 for _, fp, fn in counts.values())
+
+
+def item_exact_match(item, result, level: str = "city") -> bool:
+    """True iff every scored field matches (both absent counts as a match).
+
+    level="city" (primary) compares places at city level; level="strict" also requires the state.
+    """
+    return _all_match(item_field_counts(item, result, level=level))
 
 
 def prf(tp: int, fp: int, fn: int) -> dict[str, float]:
@@ -252,27 +266,32 @@ def _sum_counts(per_item: Sequence[dict[str, Counts]], fields: Sequence[str]) ->
 def extraction_prf(items, results) -> dict[str, float]:
     """Micro and per-field P/R/F1 over SCORED_FIELDS plus complete-request exact match.
 
-    Keys: micro_{precision,recall,f1}, exact_match, n, and for each field
+    Primary keys use city-level place matching (see the module docstring for why):
+    micro_{precision,recall,f1}, exact_match, n, and for each field
     "<field>.{precision,recall,f1,tp,fp,fn}".
+    Secondary strict keys (place state must match too): micro_{precision,recall,f1}_strict,
+    exact_match_strict, and "<place field>.{precision,recall,f1,tp,fp,fn}_strict" for
+    origin / destination (the other fields are identical at both levels).
     """
     pairs = _check_pairs(items, results)
-    per_item = [item_field_counts(i, r) for i, r in pairs]
+    nan = float("nan")
     out: dict[str, float] = {"n": len(pairs)}
-    out.update({f"micro_{k}": v for k, v in prf(*_sum_counts(per_item, SCORED_FIELDS)).items()})
-    out["exact_match"] = (
-        sum(item_exact_match(i, r) for i, r in pairs) / len(pairs) if pairs else float("nan")
-    )
-    for f in SCORED_FIELDS:
-        tp, fp, fn = _sum_counts(per_item, [f])
-        out.update({f"{f}.{k}": v for k, v in prf(tp, fp, fn).items()})
-        out.update({f"{f}.tp": tp, f"{f}.fp": fp, f"{f}.fn": fn})
+    for level, suffix in (("city", ""), ("strict", "_strict")):
+        per_item = [item_field_counts(i, r, level=level) for i, r in pairs]
+        out.update({f"micro_{k}{suffix}": v for k, v in prf(*_sum_counts(per_item, SCORED_FIELDS)).items()})
+        out[f"exact_match{suffix}"] = sum(map(_all_match, per_item)) / len(pairs) if pairs else nan
+        for f in SCORED_FIELDS if level == "city" else PLACE_FIELDS:
+            tp, fp, fn = _sum_counts(per_item, [f])
+            out.update({f"{f}.{k}{suffix}": v for k, v in prf(tp, fp, fn).items()})
+            out.update({f"{f}.tp{suffix}": tp, f"{f}.fp{suffix}": fp, f"{f}.fn{suffix}": fn})
     return out
 
 
 def city_level_place_prf(items, results) -> dict[str, float]:
-    """Secondary place metric: P/R/F1 for origin, destination and both pooled ("places.*"),
-    counting a prediction as correct when it matches at city level (a missing state suffix on
-    either side is ignored). Reported separately; extraction_prf stays strict.
+    """Place P/R/F1 at city level for origin, destination and both pooled ("places.*").
+
+    origin/destination equal extraction_prf's primary keys; this block adds the pooled
+    "places.*" numbers.
     """
     pairs = _check_pairs(items, results)
     per_item = [item_field_counts(i, r, level="city") for i, r in pairs]
@@ -330,13 +349,21 @@ def missing_field_match(items, results) -> dict[str, float]:
     }
 
 
+def _silent(item, result) -> bool | None:
+    """None if the item doesn't count (not incomplete, or no parsed request); else proceeded?"""
+    if not item.clarification_required or getattr(result, "request", None) is None:
+        return None
+    return not asked(result)
+
+
 def silent_assumption_rate(items, results) -> dict[str, float]:
-    """Proceeded (status ok/infeasible) on an item with clarification_required=True."""
-    flagged = [(i, r) for i, r in zip(items, results, strict=True) if i.clarification_required]
-    if not flagged:
+    """Share of incomplete items (clarification_required=True) with a parsed request where the
+    system did not ask or reject: status ok, infeasible, or a planning error. Every outcome
+    after parsing counts, not only ok ones, so a missing route cannot hide an assumption."""
+    flags = [s for i, r in zip(items, results, strict=True) if (s := _silent(i, r)) is not None]
+    if not flags:
         return {"silent_assumption_rate": float("nan"), "n_incomplete": 0}
-    silent = sum(r.status in ("ok", "infeasible") for _, r in flagged)
-    return {"silent_assumption_rate": silent / len(flagged), "n_incomplete": len(flagged)}
+    return {"silent_assumption_rate": sum(flags) / len(flags), "n_incomplete": len(flags)}
 
 
 # --------------------------------------------------------------------------- bootstrap CIs
@@ -345,7 +372,8 @@ def silent_assumption_rate(items, results) -> dict[str, float]:
 def understanding_cis(items, results, n: int = 10_000, seed: int = 573) -> dict[str, list[float]]:
     """95 % percentile bootstrap CIs (resampling items) for the headline RQ1 numbers.
 
-    Keys: micro_f1, exact_match, "<field>.f1", "city_level.{origin,destination,places}.f1",
+    Keys: micro_f1, exact_match, "<field>.f1" (city-level places, primary), micro_f1_strict,
+    exact_match_strict, "{origin,destination}.f1_strict", "city_level.{origin,destination,places}.f1",
     clarification_f1, silent_assumption_rate.
     Each value is [lo, hi]. Every statistic uses the same seed, so the resampled item sets are
     identical across statistics.
@@ -353,16 +381,17 @@ def understanding_cis(items, results, n: int = 10_000, seed: int = 573) -> dict[
     pairs = _check_pairs(items, results)
     recs = [
         {
-            "counts": item_field_counts(i, r),
-            "city": item_field_counts(i, r, level="city"),
-            "exact": item_exact_match(i, r),
+            "city": (city := item_field_counts(i, r, level="city")),
+            "strict": (strict := item_field_counts(i, r, level="strict")),
+            "exact": _all_match(city),
+            "exact_strict": _all_match(strict),
             "clar": (i.clarification_required, asked(r)),
-            "silent": (r.status in _PROCEED) if i.clarification_required else None,
+            "silent": _silent(i, r),
         }
         for i, r in pairs
     ]
 
-    def f1_of(fields: Sequence[str], key: str = "counts") -> Callable[[list[dict]], float]:
+    def f1_of(fields: Sequence[str], key: str = "city") -> Callable[[list[dict]], float]:
         return lambda s: prf(*_sum_counts([x[key] for x in s], fields))["f1"]
 
     def clar_f1(s: list[dict]) -> float:
@@ -379,6 +408,9 @@ def understanding_cis(items, results, n: int = 10_000, seed: int = 573) -> dict[
         "micro_f1": f1_of(SCORED_FIELDS),
         "exact_match": lambda s: sum(x["exact"] for x in s) / len(s),
         **{f"{f}.f1": f1_of([f]) for f in SCORED_FIELDS},
+        "micro_f1_strict": f1_of(SCORED_FIELDS, "strict"),
+        "exact_match_strict": lambda s: sum(x["exact_strict"] for x in s) / len(s),
+        **{f"{f}.f1_strict": f1_of([f], "strict") for f in PLACE_FIELDS},
         "city_level.origin.f1": f1_of(["origin"], "city"),
         "city_level.destination.f1": f1_of(["destination"], "city"),
         "city_level.places.f1": f1_of(PLACE_FIELDS, "city"),
