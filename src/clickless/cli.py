@@ -86,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.no_input or not sys.stdin.isatty():
             return 0
 
-        clarification_answer = _read_optional_input("\nAnswer clarification or press Ctrl+Z then Enter to skip: ")
+        clarification_answer = _read_optional_input("\nAnswer clarification, or close input to skip: ")
         if clarification_answer is None:
             return 0
 
