@@ -6,6 +6,7 @@ its linked datastore records. The template does not recompute planning decisions
 
 from __future__ import annotations
 
+from ..common.errors import NO_CACHED_ROUTE_NOTE
 from ..contracts import Claim, PlanResult
 from ..data import DataStore
 from ..data.provenance import status_label
@@ -65,6 +66,9 @@ class TemplateExplainer:
             if result.relaxation:
                 text += " If you allow: " + "; ".join(result.relaxation.changes) + ", a plan exists."
             return text, []
+        if result.status == "error" and result.request and _route_not_cached(result):
+            trip = f"{result.request.origin.text} -> {result.request.destination.text}"
+            return f"I don't have route data for {trip} yet, so I can't plan this trip offline.", []
         if result.status != "ok" or not result.alternatives:
             return "Something went wrong while planning.", []
 
@@ -98,3 +102,7 @@ class TemplateExplainer:
             lines.append("Say 'prioritize food' or choose an option to change the ranking.")
         lines.append("Open this route in Google Maps? (approval required)")
         return "\n".join(lines), []
+
+
+def _route_not_cached(result: PlanResult) -> bool:
+    return any(note.startswith(NO_CACHED_ROUTE_NOTE) for note in result.notes)

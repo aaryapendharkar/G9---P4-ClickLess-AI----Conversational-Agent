@@ -11,9 +11,14 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .common.errors import NO_CACHED_ROUTE_NOTE
 from .config import load_config
 from .contracts import PlanResult
 from .pipeline import build_pipeline
+
+# Notes kept in PlanResult (and --json / saved eval results) for debugging, but not printed for
+# the driver: the explanation already says what happened (#140).
+_DEBUG_ONLY_NOTE_PREFIXES = (NO_CACHED_ROUTE_NOTE,)
 
 
 def _display_result(
@@ -25,8 +30,9 @@ def _display_result(
 
     print(result.model_dump_json(indent=2) if as_json else result.explanation)
 
-    if result.notes and not as_json:
-        print("\n[notes] " + "\n[notes] ".join(result.notes))
+    notes = [note for note in result.notes if not note.startswith(_DEBUG_ONLY_NOTE_PREFIXES)]
+    if notes and not as_json:
+        print("\n[notes] " + "\n[notes] ".join(notes))
 
 
 def _read_optional_input(prompt: str) -> str | None:
