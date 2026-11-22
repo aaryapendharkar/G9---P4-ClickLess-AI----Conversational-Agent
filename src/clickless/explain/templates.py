@@ -7,7 +7,7 @@ its linked datastore records. The template does not recompute planning decisions
 from __future__ import annotations
 
 from ..common.errors import NO_CACHED_ROUTE_NOTE
-from ..contracts import Claim, PlanResult
+from ..contracts import Amenity, AmenityCategory, Claim, PlanResult, TripRequest
 from ..data import DataStore
 from ..data.provenance import status_label
 from .tradeoff_presenter import render_alternative, render_cost_breakdown
@@ -17,6 +17,13 @@ class TemplateExplainer:
     def __init__(self, store: DataStore, provenance_labels: bool = False) -> None:
         self.store = store
         self.provenance_labels = provenance_labels
+        self._amenities_by_id: dict[str, Amenity] | None = None
+
+    @property
+    def amenities_by_id(self) -> dict[str, Amenity]:
+        if self._amenities_by_id is None:
+            self._amenities_by_id = {amenity.amenity_id: amenity for amenity in self.store.amenities}
+        return self._amenities_by_id
 
     def _connector_infeasibility(self, result: PlanResult) -> str | None:
         """Explain a connector dead-end using only the grounded vehicle record."""
@@ -85,9 +92,9 @@ class TemplateExplainer:
             )
             if self.provenance_labels:
                 lines.append("  Source: " + status_label(self.store.station(s.station_id).provenance))
-            names = [a.name for a in self.store.amenities if a.amenity_id in s.amenity_ids]
-            if names:
-                lines.append("  Nearby (requested): " + ", ".join(n for n in names if n))
+            nearby = requested_amenity_labels(s.amenity_ids, self.amenities_by_id, req)
+            if nearby:
+                lines.append("  Nearby (requested): " + ", ".join(label for label, _ in nearby))
         lines.append(
             f"Arrive in {req.destination.text} with about {it.arrival_soc_pct:.0f}% after "
             f"~{it.total_time_min:.0f} min total ({it.total_detour_min:.0f} min of detour)."
@@ -134,3 +141,59 @@ def _skipped_summary(notes: list[str]) -> str | None:
     total = sum(counts.values())
     by_reason = ", ".join(f"{n} {label}" for label, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
     return f"Not used: {total} station{'s' if total != 1 else ''} on the route ({by_reason})."
+
+
+# How an amenity with no OSM name is shown: by its category (#137).
+_UNNAMED_NOUNS = {
+    AmenityCategory.FOOD: "place to eat",
+    AmenityCategory.COFFEE: "coffee shop",
+    AmenityCategory.RESTROOM: "restroom",
+    AmenityCategory.GROCERY: "grocery store",
+    AmenityCategory.LODGING: "place to stay",
+    AmenityCategory.OTHER: "amenity",
+}
+
+
+def amenity_label(amenity: Amenity) -> str:
+    """The amenity's name, or for an unnamed one its category, e.g. "an accessible restroom".
+
+    "accessible" is only said for an explicit wheelchair=yes (ADR 0011: unknown is never accessible).
+    """
+    if amenity.name:
+        return amenity.name
+    noun = _UNNAMED_NOUNS[amenity.category]
+    if amenity.wheelchair == "yes":
+        return f"an accessible {noun}"
+    return f"{'an' if noun[0] in 'aeiou' else 'a'} {noun}"
+
+
+def requested_amenity_labels(
+    amenity_ids: list[str], amenities_by_id: dict[str, Amenity], request: TripRequest | None
+) -> list[tuple[str, Amenity]]:
+    """(label, amenity) for a stop's matched amenities, in the order the driver asked for them (#137).
+
+    Amenities are grouped by the request's preferences (in request order), so a requested
+    accessible restroom is not pushed to the end behind a list of named cafés. Two unnamed
+    amenities with the same label are shown once. Ids missing from the store are left out, so the
+    list is empty (and the "Nearby (requested):" line omitted) when there is nothing to show.
+    The full amenity_ids stay on the itinerary stop in the saved result.
+    """
+    amenities = [amenities_by_id[a] for a in amenity_ids if a in amenities_by_id]
+    preferences = request.amenities if request is not None else []
+
+    def preference_rank(amenity: Amenity) -> int:
+        for rank, preference in enumerate(preferences):
+            if preference.category == amenity.category and (
+                not preference.wheelchair_required or amenity.wheelchair == "yes"
+            ):
+                return rank
+        return len(preferences)
+
+    labelled: list[tuple[str, Amenity]] = []
+    seen: set[str] = set()
+    for amenity in sorted(amenities, key=preference_rank):  # stable: keeps the stop's order within a group
+        label = amenity_label(amenity)
+        if label not in seen:
+            seen.add(label)
+            labelled.append((label, amenity))
+    return labelled
