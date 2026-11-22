@@ -62,6 +62,7 @@ from .metrics.request_understanding import (
     city_level_place_prf,
     clarification_prf,
     extraction_prf,
+    invented_constraint_rate,
     missing_field_match,
     silent_assumption_rate,
     understanding_cis,
@@ -337,6 +338,7 @@ def run(
         "clarification": _safe(clarification_prf, done, ordered),
         "missing_fields": _safe(missing_field_match, done, ordered),
         "silent_assumption": _safe(silent_assumption_rate, done, ordered),
+        "invented_constraint": _safe(invented_constraint_rate, done, ordered),
         "bootstrap_ci95": _safe(understanding_cis, done, ordered, n_boot),
         "grounding": _safe(claim_support, ordered),  # each result's own evidence only (ADR 0015)
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),

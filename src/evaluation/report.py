@@ -27,7 +27,8 @@ that ran it), so `--from` reports have it too. A report refuses to build (MixedS
 its configs ran on different snapshots, or when run_all's record disagrees with a run's own.
 
 Metric sources (no metric is reimplemented here)
-  * Request understanding (field F1, exact match, clarification F1, silent-assumption rate) is
+  * Request understanding (field F1, exact match, clarification F1, silent-assumption rate,
+    invented-constraint rate) is
     recomputed from the per-item rows with evaluation.metrics.request_understanding, and its CIs
     with understanding_cis (percentile bootstrap, seed 573). Field F1 and exact match use
     city-level place matching (primary); the "(strict)" columns also require the gold's state
@@ -72,6 +73,8 @@ from .metrics.request_understanding import (
     asked,
     clarification_prf,
     extraction_prf,
+    invented_constraint_rate,
+    invented_constraints,
     item_exact_match,
     item_field_counts,
     prf,
@@ -107,6 +110,7 @@ HEADLINE: tuple[tuple[str, str, tuple], ...] = (
     ("exact_match_strict", "Exact match (strict)", ("understanding", "exact_match_strict")),
     ("clarification_f1", "Clarification F1", ("understanding", "clarification_f1")),
     ("silent_assumption_rate", "Silent-assumption rate", ("understanding", "silent_assumption_rate")),
+    ("invented_constraint_rate", "Invented-constraint rate", ("understanding", "invented_constraint_rate")),
     ("parse_error_rate", "Parse error rate", ("error_rate", "parse")),
     ("planning_error_rate", "Planning error rate", ("error_rate", "planning")),
     ("plan_feasibility_rate", "Plan feasibility", ("block", ("planning", "feasibility"), "plan_feasibility_rate")),
@@ -329,6 +333,7 @@ def _understanding(items, results, n_boot: int) -> dict[str, tuple[float | None,
     ext = extraction_prf(items, results)
     clar = clarification_prf(items, results)
     silent = silent_assumption_rate(items, results)
+    invented = invented_constraint_rate(items, results)
     cis = understanding_cis(items, results, n=n_boot)
     return {
         "micro_f1": (_num(ext["micro_f1"]), _ci(cis.get("micro_f1"))),
@@ -337,6 +342,10 @@ def _understanding(items, results, n_boot: int) -> dict[str, tuple[float | None,
         "exact_match_strict": (_num(ext["exact_match_strict"]), _ci(cis.get("exact_match_strict"))),
         "clarification_f1": (_num(clar["f1"]), _ci(cis.get("clarification_f1"))),
         "silent_assumption_rate": (_num(silent["silent_assumption_rate"]), _ci(cis.get("silent_assumption_rate"))),
+        "invented_constraint_rate": (
+            _num(invented["invented_constraint_rate"]),
+            _ci(cis.get("invented_constraint_rate")),
+        ),
     }
 
 
@@ -369,6 +378,7 @@ def per_item(run: ConfigRun, item_id: str) -> dict[str, Any]:
             "exact_match": False,
             "clarification_correct": False,
             "no_error": False,
+            "no_invented_constraint": None,
             "field_f1": None,
             "latency_ms": run.latency.get(item_id),
         }
@@ -380,12 +390,14 @@ def per_item(run: ConfigRun, item_id: str) -> dict[str, Any]:
         "exact_match": item_exact_match(item, result),
         "clarification_correct": bool(item.clarification_required) == asked(result),
         "no_error": not run.errored(item_id),
+        # None (left out of the paired test) when there is no parsed request to judge
+        "no_invented_constraint": None if (inv := invented_constraints(item, result)) is None else not inv,
         "field_f1": _num(f1),
         "latency_ms": run.latency.get(item_id),
     }
 
 
-SUCCESS_OUTCOMES = ("exact_match", "clarification_correct", "no_error")
+SUCCESS_OUTCOMES = ("exact_match", "clarification_correct", "no_error", "no_invented_constraint")
 SCORE_OUTCOMES = ("field_f1", "latency_ms")
 
 
@@ -420,21 +432,26 @@ def gpu_share_warnings(shares: Mapping[str, Mapping[str, Any]]) -> list[str]:
 
 
 def paired(a: ConfigRun, b: ConfigRun) -> list[dict[str, Any]]:
-    """McNemar on success outcomes and Wilcoxon on per-item scores, over items both configs ran."""
+    """McNemar on success outcomes and Wilcoxon on per-item scores, over items both configs ran.
+
+    An outcome that is None for an item in either config (no_invented_constraint without a parsed
+    request) leaves that item out of that outcome's test only.
+    """
     common = sorted(set(a.items) & set(b.items))
     pa = {i: per_item(a, i) for i in common}
     pb = {i: per_item(b, i) for i in common}
     rows: list[dict[str, Any]] = []
     for outcome in SUCCESS_OUTCOMES:
-        xa = [bool(pa[i][outcome]) for i in common]
-        xb = [bool(pb[i][outcome]) for i in common]
+        both = [i for i in common if pa[i][outcome] is not None and pb[i][outcome] is not None]
+        xa = [bool(pa[i][outcome]) for i in both]
+        xb = [bool(pb[i][outcome]) for i in both]
         test = mcnemar(xa, xb)
         rows.append(
             {
                 "pair": f"{a.config} vs {b.config}",
                 "outcome": outcome,
                 "test": "McNemar",
-                "n": len(common),
+                "n": len(both),
                 "rate_a": sum(xa) / len(xa) if xa else None,
                 "rate_b": sum(xb) / len(xb) if xb else None,
                 "b": test["b"],
@@ -483,6 +500,7 @@ def breakdown(run: ConfigRun) -> list[dict[str, Any]]:
             ext = extraction_prf(items, results) if items else {}
             clar = clarification_prf(items, results) if items else {}
             silent = silent_assumption_rate(items, results) if items else {}
+            invented = invented_constraint_rate(items, results) if items else {}
             out.append(
                 {
                     "config": run.config,
@@ -497,6 +515,7 @@ def breakdown(run: ConfigRun) -> list[dict[str, Any]]:
                     "exact_match_strict": _num(ext.get("exact_match_strict")),
                     "clarification_f1": _num(clar.get("f1")),
                     "silent_assumption_rate": _num(silent.get("silent_assumption_rate")),
+                    "invented_constraint_rate": _num(invented.get("invented_constraint_rate")),
                 }
             )
     return out
@@ -691,8 +710,23 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "exact_match_strict",
         "clarification_f1",
         "silent_assumption_rate",
+        "invented_constraint_rate",
     ]
     _write_csv(run_dir / "breakdown.csv", br_rows, br_fields)
+
+    # Invented hard constraints (#145), per item
+    inv_rows = [
+        {
+            "config": c,
+            "item_id": d["id"],
+            "fields": " ".join(d["fields"]),
+            "parsed_values": "; ".join(f"{k}={v}" for k, v in d["fields"].items()),
+        }
+        for c in configs
+        if c in runs
+        for d in invented_constraint_rate(*runs[c].pairs())["items"]
+    ]
+    _write_csv(run_dir / "invented_constraints.csv", inv_rows, ["config", "item_id", "fields", "parsed_values"])
 
     # Errors by stage and type
     err_rows = [r for c in configs if c in runs for r in error_groups(runs[c])]
@@ -869,7 +903,7 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
             continue
         lines += _md_table(
             ["Config", dim, "n", "Parse err", "Planning err", "Field F1", "F1 (strict)", "Exact match",
-             "EM (strict)", "Clarification F1", "Silent-assumption"],
+             "EM (strict)", "Clarification F1", "Silent-assumption", "Invented-constraint"],
             [
                 [
                     r["config"],
@@ -883,12 +917,28 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
                     _fmt(r["exact_match_strict"]),
                     _fmt(r["clarification_f1"]),
                     _fmt(r["silent_assumption_rate"]),
+                    _fmt(r["invented_constraint_rate"]),
                 ]
                 for r in rows
             ],
         )
         lines.append("")
-    lines += ["## Findings (planner/oracle disagreements)", ""]
+    lines += [
+        "## Invented constraints",
+        "",
+        "Items whose parsed request has a hard constraint (connector, minimum power, maximum detour, "
+        "minimum arrival SoC) that the gold request does not have (#145). Separate from silent "
+        "assumptions, which only cover incomplete requests.",
+        "",
+    ]
+    if inv_rows:
+        lines += _md_table(
+            ["Config", "Item", "Invented", "Parsed values"],
+            [[r["config"], r["item_id"], r["fields"], r["parsed_values"]] for r in inv_rows],
+        )
+    else:
+        lines.append("None.")
+    lines += ["", "## Findings (planner/oracle disagreements)", ""]
     if find_rows:
         lines += _md_table(
             ["Config", "Item", "Kind", "Detail"],
