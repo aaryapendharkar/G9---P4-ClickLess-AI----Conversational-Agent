@@ -204,6 +204,9 @@ def test_a_faster_unusable_station_never_pushes_out_a_slower_usable_one(store, k
         for c in CorridorRetriever(world, 8.0, 400.0, 20, method=method, usable=usable).candidates(route, req)
     }
     assert len(ids) == 20 and all(i.startswith("good-") for i in ids)
+    # with the production per-stretch bound the bad stations still never take a usable one's place
+    bounded = CorridorRetriever(world, 8.0, 400.0, 20, method=method, usable=usable, per_bin=1).candidates(route, req)
+    assert len(bounded) == 20 and all(c.station.station_id.startswith("good-") for c in bounded)
     # without the usable check, the 350 kW unusable stations would take the slots (the bug)
     blind = {
         c.station.station_id for c in CorridorRetriever(world, 8.0, 400.0, 20, method=method).candidates(route, req)
@@ -218,3 +221,28 @@ def test_the_pipeline_passes_the_planner_station_checks_to_retrieval(pipe_a):
     assert pipe_a.retriever.usable is not None
     assert pipe_a.retriever.usable(restricted, req) is False
     assert pipe_a.retriever.usable(station, TripRequest(request_id="r", raw_text="t")) is True  # no vehicle
+
+
+# --------------------------------------------------------------------------- per-stretch bound (#133 review)
+
+
+def test_at_most_per_bin_usable_entries_per_stretch_fastest_first():
+    along = [0.0, 1.0, 2.0, 3.0, 30.0, 31.0, 60.0]  # 3 stretches of 25 km on a 75 km route
+    power = [50.0, 350.0, 150.0, 7.0, 50.0, 50.0, 11.0]
+    keep = select_distributed(along, 60, 75.0, power_kw=power, usable=[True] * 7, per_bin=2)
+    assert keep == [1, 2, 4, 5, 6]  # the 350 and 150 kW chargers at the origin; the other stretches fit
+
+
+def test_per_bin_applies_even_under_the_cap_and_unusable_entries_still_fill_in():
+    along = [0.0] * 10 + [5.0, 6.0]
+    usable = [True] * 10 + [False, False]
+    keep = select_distributed(along, 60, 20.0, usable=usable, per_bin=2)
+    assert keep == [0, 1, 10, 11]  # 2 usable (ties: list order), then the unusable ones; others dropped
+
+
+def test_per_bin_without_usable_bounds_every_entry():
+    assert select_distributed([0.0] * 10, 60, 20.0, per_bin=3) == [0, 1, 2]
+
+
+def test_production_config_bounds_usable_candidates_per_stretch(pipe_a):
+    assert pipe_a.retriever.per_bin == 2

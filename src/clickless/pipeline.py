@@ -182,6 +182,7 @@ class Pipeline:
             r["amenity_radius_m"],
             r["max_candidates"],
             usable=self._station_usable,
+            per_bin=r.get("max_usable_per_stretch"),
         )
         self.enricher = (
             KGEnricher(store, cfg.get("kg", {}))

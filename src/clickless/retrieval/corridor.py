@@ -34,6 +34,12 @@ along-route prefix of usable stations already reaches every bin it is kept, so s
 sparse corridors keep their old candidates. Both methods apply the same selection to the same
 sorted list.
 
+per_bin (config `max_usable_per_stretch`, #133 review) bounds the planner's search: only the
+fastest per_bin usable stations of each bin_km stretch compete at all. Letting every usable
+station through (up to 60) made planning time explode (max 356 s on the dev set); 2 per stretch
+keeps every dev item and demo trip feasible with max 6.2 s and better plans than the fastest-first
+cut. None (the retriever's default) means no bound.
+
 TODO(Manas): a BallTree / R-tree could replace the grids; the equivalence tests stay the contract.
 """
 
@@ -97,6 +103,7 @@ def select_distributed(
     bin_km: float = DEFAULT_BIN_KM,
     power_kw: Sequence[float] | None = None,
     usable: Sequence[bool] | None = None,
+    per_bin: int | None = None,
 ) -> list[int]:
     """Indices into an along_route_km-sorted list to keep under the cap, ascending (#106).
 
@@ -112,16 +119,25 @@ def select_distributed(
       are dropped; the filter would reject them anyway.
 
     Without `usable` (no request or vehicle), every entry counts as usable.
+
+    `per_bin` bounds the planner's search: at most that many usable entries per bin_km stretch
+    (fastest first) compete at all, so a dense stretch of compatible chargers cannot hand the
+    planner dozens of near-equivalent stops.
     """
     n = len(along_km)
-    if n <= max_candidates:
-        return list(range(n))
     if max_candidates <= 0:
         return []
+    if per_bin is None and n <= max_candidates:
+        return list(range(n))
     good = [i for i in range(n) if usable is None or usable[i]]
-    if usable is not None and len(good) <= max_candidates:
-        rest = [i for i in range(n) if not usable[i]][: max_candidates - len(good)]
-        return sorted(good + rest)
+    if per_bin is not None:
+        good = _per_bin_quota(good, along_km, route_km, bin_km, power_kw, per_bin)
+    if len(good) <= max_candidates:
+        chosen = set(good)
+        rest = [i for i in range(n) if i not in chosen and (usable is None or not usable[i])]
+        if per_bin is not None:  # a usable entry over its stretch's quota stays out
+            rest = [i for i in rest if usable is not None]
+        return sorted(good + rest[: max_candidates - len(good)])
     picked = _spread(
         [along_km[i] for i in good],
         max_candidates,
@@ -130,6 +146,28 @@ def select_distributed(
         None if power_kw is None else [power_kw[i] for i in good],
     )
     return [good[j] for j in picked]
+
+
+def _per_bin_quota(
+    idx: list[int],
+    along_km: Sequence[float],
+    route_km: float,
+    bin_km: float,
+    power_kw: Sequence[float] | None,
+    per_bin: int,
+) -> list[int]:
+    """The fastest `per_bin` of `idx` in each bin_km stretch of the route, ascending."""
+    n_bins = max(1, math.ceil(route_km / bin_km)) if route_km > 0 else 1
+    width = route_km / n_bins if route_km > 0 else 1.0
+    bins: dict[int, list[int]] = {}
+    for i in idx:
+        bins.setdefault(min(n_bins - 1, max(0, int(along_km[i] / width))), []).append(i)
+    keep: list[int] = []
+    for b in bins.values():
+        if power_kw is not None:
+            b = sorted(b, key=lambda i: (-power_kw[i], i))
+        keep += b[:per_bin]
+    return sorted(keep)
 
 
 def _spread(
@@ -175,6 +213,7 @@ class CorridorRetriever:
         method: str = "indexed",
         bin_km: float = DEFAULT_BIN_KM,
         usable: Callable[[Station, TripRequest], bool] | None = None,
+        per_bin: int | None = None,
     ):
         if method not in METHODS:
             raise ValueError(f"method must be one of {METHODS}, got {method!r}")
@@ -186,6 +225,7 @@ class CorridorRetriever:
         # Station-level hard constraints for the capped selection, injected by the pipeline (it wraps
         # the planner's filter); retrieval itself knows nothing about vehicles or connectors.
         self.usable = usable
+        self.per_bin = per_bin  # at most this many usable candidates per bin_km stretch (None: no bound)
         self.method = method
         self._station_grid: dict[Cell, list[int]] | None = None  # built lazily, rebuilt if the store changes
         self._stations: list = []
@@ -228,6 +268,7 @@ class CorridorRetriever:
             self.bin_km,
             [max_power_kw(c.station) for c in out],
             self._usable_flags([c.station for c in out], request),
+            self.per_bin,
         )
         return [out[i] for i in keep]
 
@@ -286,6 +327,7 @@ class CorridorRetriever:
             self.bin_km,
             [max_power_kw(self._stations[f[1]]) for f in found],
             self._usable_flags([self._stations[f[1]] for f in found], request),
+            self.per_bin,
         )
         out = []
         for along, si, seg, off_km in (found[i] for i in keep):
