@@ -37,6 +37,7 @@ def test_amenities_linked_within_radius(pipe_a, demo_text):
 @pytest.mark.xfail(reason="TODO(Manas): real TF-IDF should score related phrasing, not just category")
 def test_tfidf_matches_cuisine_phrase(store):
     from clickless.retrieval.tfidf_matcher import TfidfMatcher
+
     kitchen = next(a for a in store.amenities if a.amenity_id == "fix:a05")
     burgers = next(a for a in store.amenities if a.amenity_id == "fix:a03")
     pref = AmenityPreference(category=AmenityCategory.FOOD, phrase="mexican food")
@@ -76,8 +77,15 @@ def _assert_identical(store, route, **kw):
 def _route(points, rid="r"):
     geo = [LatLon(lat=a, lon=b) for a, b in points]
     prov = Provenance(source="SYNTHETIC", retrieved_at="2026-11-19T00:00:00Z", status="cached")
-    return Route(route_id=rid, origin=geo[0], destination=geo[-1], geometry=geo, distance_km=1.0,
-                 duration_min=1.0, provenance=prov)
+    return Route(
+        route_id=rid,
+        origin=geo[0],
+        destination=geo[-1],
+        geometry=geo,
+        distance_km=1.0,
+        duration_min=1.0,
+        provenance=prov,
+    )
 
 
 def test_unknown_method_rejected(store):
@@ -121,9 +129,16 @@ def test_indexed_equals_brute_force_on_adversarial_world(store, center):
         stations.append(base[k % len(base)].model_copy(update={"station_id": f"adv-{k}", "lat": lat, "lon": lon}))
         if k % 7 == 0:  # an exact duplicate position -> equal along_route_km, order decided by store order
             stations.append(stations[-1].model_copy(update={"station_id": f"adv-{k}-dup"}))
-    amenities = [a.model_copy(update={"amenity_id": f"am-{j}", "lat": s.lat + rng.uniform(-0.005, 0.005),
-                                      "lon": s.lon + rng.uniform(-0.005, 0.005)})
-                 for j, (s, a) in enumerate(zip(stations, store.amenities * 1000, strict=False))]
+    amenities = [
+        a.model_copy(
+            update={
+                "amenity_id": f"am-{j}",
+                "lat": s.lat + rng.uniform(-0.005, 0.005),
+                "lon": s.lon + rng.uniform(-0.005, 0.005),
+            }
+        )
+        for j, (s, a) in enumerate(zip(stations, store.amenities * 1000, strict=False))
+    ]
     world = DataStore(stations, list(store.vehicles.values()), amenities, dict(store.places), store.routes_dir)
     for buffer_km in (0.5, 8.0, 25.0):
         expected = _assert_identical(world, route, buffer_km=buffer_km, max_candidates=10_000)
@@ -136,8 +151,13 @@ def test_single_point_route_matches_brute_force(store):
 
 
 def test_index_rebuilt_when_the_store_changes(store):
-    world = DataStore(list(store.stations.values()), list(store.vehicles.values()), list(store.amenities),
-                      dict(store.places), store.routes_dir)
+    world = DataStore(
+        list(store.stations.values()),
+        list(store.vehicles.values()),
+        list(store.amenities),
+        dict(store.places),
+        store.routes_dir,
+    )
     payload = json.loads(repo_path("data/fixtures/routes/phoenix__flagstaff.json").read_text(encoding="utf-8"))
     payload.pop("_meta", None)
     route = Route.model_validate(payload)
@@ -162,14 +182,19 @@ def _snapshot_subset(tmp_path: Path, route: Route, pad_deg: float = 0.2) -> Data
     for name, pad in (("stations.json", 0.0), ("amenities.json", 0.05), ("vehicles.json", None), ("places.json", None)):
         data = json.loads((SNAPSHOT / name).read_text(encoding="utf-8"))
         if pad is not None:
-            data["records"] = [r for r in data["records"] if lo_lat - pad <= r["lat"] <= hi_lat + pad
-                               and lo_lon - pad <= r["lon"] <= hi_lon + pad]
+            data["records"] = [
+                r
+                for r in data["records"]
+                if lo_lat - pad <= r["lat"] <= hi_lat + pad and lo_lon - pad <= r["lon"] <= hi_lon + pad
+            ]
         (tmp_path / name).write_text(json.dumps(data), encoding="utf-8")
     return DataStore.from_dir(tmp_path)
 
 
-@pytest.mark.skipif(not (SNAPSHOT / "MANIFEST.json").is_file() or not (SNAPSHOT / "routes").is_dir(),
-                    reason="needs the downloaded snapshot with its route cache (#36, #92)")
+@pytest.mark.skipif(
+    not (SNAPSHOT / "MANIFEST.json").is_file() or not (SNAPSHOT / "routes").is_dir(),
+    reason="needs the downloaded snapshot with its route cache (#36, #92)",
+)
 @pytest.mark.parametrize("route_file", SNAPSHOT_ROUTES)
 def test_indexed_equals_brute_force_on_snapshot_routes(tmp_path, route_file):
     path = SNAPSHOT / "routes" / route_file
@@ -183,8 +208,12 @@ def test_indexed_equals_brute_force_on_snapshot_routes(tmp_path, route_file):
     assert len(expected) > 0
     cut = _assert_identical(world, route, max_candidates=60)  # and the production cut (#106: distributed)
     poly = [(p.lat, p.lon) for p in route.geometry]
-    keep = select_distributed([c["along_route_km"] for c in expected], 60, polyline_km(poly),
-                              power_kw=[max((p["power_kw"] or 0.0) for p in c["station"]["ports"]) for c in expected])
+    keep = select_distributed(
+        [c["along_route_km"] for c in expected],
+        60,
+        polyline_km(poly),
+        power_kw=[max((p["power_kw"] or 0.0) for p in c["station"]["ports"]) for c in expected],
+    )
     assert cut == [expected[i] for i in keep]
 
 

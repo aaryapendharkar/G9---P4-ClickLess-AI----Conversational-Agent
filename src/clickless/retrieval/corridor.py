@@ -25,11 +25,14 @@ Two paths with identical output (issue #94):
 The cut to max_candidates (#106): taking the first max_candidates by along_route_km let a dense
 origin (494 stations within 1 km of downtown Los Angeles) use the whole budget, so a long route
 reached the planner with no station past the first kilometre. select_distributed keeps the cap but
-spreads it along the route: the route is split into equal-width distance bins (about bin_km each)
-and the budget is shared round-robin across the bins that hold corridor stations, each bin giving
-its fastest stations first. When the plain along-route prefix already reaches every
-non-empty bin it is returned unchanged, so short routes and sparse corridors keep their old
-candidates. Both methods apply the same selection to the same sorted list.
+spreads it along the route. Only stations the request's vehicle can use (status, access,
+connector, power; the planner's station-level checks, injected by the pipeline as `usable`)
+compete for the slots. If they fit, all are kept and the other stations fill the rest in route
+order. Otherwise the route is split into equal-width distance bins (about bin_km each) and the
+slots are shared round-robin across the bins, fastest usable station first in each bin. When the
+along-route prefix of usable stations already reaches every bin it is kept, so short routes and
+sparse corridors keep their old candidates. Both methods apply the same selection to the same
+sorted list.
 
 TODO(Manas): a BallTree / R-tree could replace the grids; the equivalence tests stay the contract.
 """
@@ -38,10 +41,10 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from ..common.geo import EARTH_RADIUS_KM, haversine_km, nearest_on_polyline, point_segment_km
-from ..contracts import Candidate, NearbyAmenity, Route, TripRequest
+from ..contracts import Candidate, NearbyAmenity, Route, Station, TripRequest
 from ..data import DataStore
 
 METHODS = ("indexed", "brute_force")
@@ -87,25 +90,59 @@ def max_power_kw(station) -> float:
     return max((p.power_kw or 0.0 for p in station.ports), default=0.0)
 
 
-def select_distributed(along_km: Sequence[float], max_candidates: int, route_km: float,
-                       bin_km: float = DEFAULT_BIN_KM, power_kw: Sequence[float] | None = None) -> list[int]:
+def select_distributed(
+    along_km: Sequence[float],
+    max_candidates: int,
+    route_km: float,
+    bin_km: float = DEFAULT_BIN_KM,
+    power_kw: Sequence[float] | None = None,
+    usable: Sequence[bool] | None = None,
+) -> list[int]:
     """Indices into an along_route_km-sorted list to keep under the cap, ascending (#106).
 
-    The route is split into n = clamp(ceil(route_km / bin_km), 1, max_candidates) bins of equal
-    width. If the first max_candidates entries already include one from every non-empty bin, that
-    prefix is kept (the pre-#106 behaviour). Otherwise the budget is filled round-robin across the
-    non-empty bins, so every stretch of the route that has stations keeps some. Within a bin,
-    stations go fastest port first (power_kw, descending), then by position: a dense city bin is
-    mostly Level 2 posts, and nearest-first would spend its share on them and drop the DC fast
-    chargers a plan actually stops at. The order uses only station data, never the request; the
-    hard-constraint filter still runs on whatever is kept. Deterministic: ties fall back to the
-    list order.
+    `usable[i]` says whether the request's vehicle can ever stop at entry i (status, access,
+    connector, power: the planner's station-level hard constraints, passed in by the pipeline).
+    Only usable entries compete for the slots, so an unusable station can never displace a usable
+    one (#133 review):
+
+    * at most max_candidates usable entries: all of them are kept, and the remaining slots go to
+      the other entries in along-route order. When every usable entry is already among the first
+      max_candidates, this is exactly that prefix (the pre-#106 cut);
+    * more usable entries than slots: they are spread along the route (_spread). Unusable entries
+      are dropped; the filter would reject them anyway.
+
+    Without `usable` (no request or vehicle), every entry counts as usable.
     """
     n = len(along_km)
     if n <= max_candidates:
         return list(range(n))
     if max_candidates <= 0:
         return []
+    good = [i for i in range(n) if usable is None or usable[i]]
+    if usable is not None and len(good) <= max_candidates:
+        rest = [i for i in range(n) if not usable[i]][: max_candidates - len(good)]
+        return sorted(good + rest)
+    picked = _spread(
+        [along_km[i] for i in good],
+        max_candidates,
+        route_km,
+        bin_km,
+        None if power_kw is None else [power_kw[i] for i in good],
+    )
+    return [good[j] for j in picked]
+
+
+def _spread(
+    along_km: Sequence[float], max_candidates: int, route_km: float, bin_km: float, power_kw: Sequence[float] | None
+) -> list[int]:
+    """max_candidates indices (ascending) of an along-sorted list longer than max_candidates.
+
+    The route is split into n = clamp(ceil(route_km / bin_km), 1, max_candidates) bins of equal
+    width. If the first max_candidates entries already include one from every non-empty bin, that
+    prefix is kept. Otherwise the budget is filled round-robin across the non-empty bins, so every
+    stretch of the route that has stations keeps some. Within a bin, stations go fastest port first
+    (power_kw, descending), then by position. Deterministic: ties fall back to the list order.
+    """
     n_bins = max(1, min(max_candidates, math.ceil(route_km / bin_km))) if route_km > 0 else 1
     width = route_km / n_bins if route_km > 0 else 1.0
     bins: list[list[int]] = [[] for _ in range(n_bins)]
@@ -137,6 +174,7 @@ class CorridorRetriever:
         max_candidates: int,
         method: str = "indexed",
         bin_km: float = DEFAULT_BIN_KM,
+        usable: Callable[[Station, TripRequest], bool] | None = None,
     ):
         if method not in METHODS:
             raise ValueError(f"method must be one of {METHODS}, got {method!r}")
@@ -145,6 +183,9 @@ class CorridorRetriever:
         self.amenity_radius_m = amenity_radius_m
         self.max_candidates = max_candidates
         self.bin_km = bin_km
+        # Station-level hard constraints for the capped selection, injected by the pipeline (it wraps
+        # the planner's filter); retrieval itself knows nothing about vehicles or connectors.
+        self.usable = usable
         self.method = method
         self._station_grid: dict[Cell, list[int]] | None = None  # built lazily, rebuilt if the store changes
         self._stations: list = []
@@ -153,13 +194,18 @@ class CorridorRetriever:
         self._route_scans: dict[tuple, list[tuple[float, int, int, float]]] = {}  # insertion-ordered memo
         self._store_signature: tuple | None = None  # what the grids and memos were built from
 
-    def candidates(self, route: Route, request: TripRequest) -> list[Candidate]:
+    def candidates(self, route: Route, request: TripRequest | None) -> list[Candidate]:
         if self.method == "brute_force":
-            return self._candidates_brute_force(route)
-        return self._candidates_indexed(route)
+            return self._candidates_brute_force(route, request)
+        return self._candidates_indexed(route, request)
+
+    def _usable_flags(self, stations: Sequence[Station], request: TripRequest | None) -> list[bool] | None:
+        if self.usable is None or request is None:
+            return None
+        return [self.usable(st, request) for st in stations]
 
     # ------------------------------------------------------------------ reference implementation
-    def _candidates_brute_force(self, route: Route) -> list[Candidate]:
+    def _candidates_brute_force(self, route: Route, request: TripRequest | None = None) -> list[Candidate]:
         poly = [(p.lat, p.lon) for p in route.geometry]
         out: list[Candidate] = []
         for st in self.store.stations.values():
@@ -175,8 +221,14 @@ class CorridorRetriever:
                 Candidate(station=st, route_index=seg, along_route_km=along, offroute_km=off_km, amenities=nearby)
             )
         out.sort(key=lambda c: c.along_route_km)
-        keep = select_distributed([c.along_route_km for c in out], self.max_candidates, polyline_km(poly),
-                                  self.bin_km, [max_power_kw(c.station) for c in out])
+        keep = select_distributed(
+            [c.along_route_km for c in out],
+            self.max_candidates,
+            polyline_km(poly),
+            self.bin_km,
+            [max_power_kw(c.station) for c in out],
+            self._usable_flags([c.station for c in out], request),
+        )
         return [out[i] for i in keep]
 
     # ------------------------------------------------------------------ indexed implementation
@@ -202,19 +254,23 @@ class CorridorRetriever:
     def _check_store(self) -> None:
         """Drop the grids and memos if the store's station or amenity collections were replaced or
         resized since they were built (nothing does this today; it keeps the index honest if it does)."""
-        signature = (id(self.store.stations), len(self.store.stations), id(self.store.amenities),
-                     len(self.store.amenities))
+        signature = (
+            id(self.store.stations),
+            len(self.store.stations),
+            id(self.store.amenities),
+            len(self.store.amenities),
+        )
         if signature != self._store_signature:
             self._station_grid, self._stations, self._amenity_grid = None, [], None
             self._amenity_links.clear()
             self._route_scans.clear()
             self._store_signature = signature
 
-    def _candidates_indexed(self, route: Route) -> list[Candidate]:
+    def _candidates_indexed(self, route: Route, request: TripRequest | None = None) -> list[Candidate]:
         self._check_store()
         poly = [(p.lat, p.lon) for p in route.geometry]
         if len(poly) < 2:  # degenerate route: nearest_on_polyline has no segment to measure
-            return self._candidates_brute_force(route)
+            return self._candidates_brute_force(route, request)
         key = (route.route_id, len(poly), hash(tuple(poly)))
         found = self._route_scans.get(key)
         if found is None:
@@ -223,14 +279,18 @@ class CorridorRetriever:
             while len(self._route_scans) > _ROUTE_MEMO:
                 del self._route_scans[next(iter(self._route_scans))]
 
-        keep = select_distributed([f[0] for f in found], self.max_candidates, polyline_km(poly), self.bin_km,
-                                  [max_power_kw(self._stations[f[1]]) for f in found])
+        keep = select_distributed(
+            [f[0] for f in found],
+            self.max_candidates,
+            polyline_km(poly),
+            self.bin_km,
+            [max_power_kw(self._stations[f[1]]) for f in found],
+            self._usable_flags([self._stations[f[1]] for f in found], request),
+        )
         out = []
         for along, si, seg, off_km in (found[i] for i in keep):
             st = self._stations[si]
-            nearby = [
-                NearbyAmenity(amenity=self.store.amenities[ai], distance_m=d) for ai, d in self._links_for(st)
-            ]
+            nearby = [NearbyAmenity(amenity=self.store.amenities[ai], distance_m=d) for ai, d in self._links_for(st)]
             out.append(
                 Candidate(station=st, route_index=seg, along_route_km=along, offroute_km=off_km, amenities=nearby)
             )

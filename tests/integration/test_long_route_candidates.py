@@ -27,8 +27,11 @@ def snapshot_pipe():
 
 
 def _dev_request(store, item_id):
-    line = next(ln for ln in repo_path("benchmark/requests/dev/dev.jsonl").read_text(encoding="utf-8").splitlines()
-                if f'"id": "{item_id}"' in ln or f'"id":"{item_id}"' in ln)
+    line = next(
+        ln
+        for ln in repo_path("benchmark/requests/dev/dev.jsonl").read_text(encoding="utf-8").splitlines()
+        if f'"id": "{item_id}"' in ln or f'"id":"{item_id}"' in ln
+    )
     gold = dict(json.loads(line)["gold_request"])
     gold["origin"], gold["destination"] = store.geocode(gold["origin"]), store.geocode(gold["destination"])
     return TripRequest.model_validate({"request_id": item_id, "raw_text": item_id, **gold})
@@ -54,10 +57,16 @@ def test_issue_105_items_get_a_verified_plan(snapshot_pipe, item_id):
 @needs_snapshot
 def test_los_angeles_to_san_francisco_demo_gets_a_verified_plan(snapshot_pipe):
     store = snapshot_pipe.store
-    req = TripRequest(request_id="la-sf", raw_text="LA to SF", origin=store.geocode("Los Angeles, CA"),
-                      destination=store.geocode("San Francisco, CA"), vehicle_id="chevrolet-bolt-euv-2023",
-                      start_soc_pct=90, arrival_soc_pct_min=15,
-                      amenities=[AmenityPreference(category=AmenityCategory.FOOD, phrase="lunch stop")])
+    req = TripRequest(
+        request_id="la-sf",
+        raw_text="LA to SF",
+        origin=store.geocode("Los Angeles, CA"),
+        destination=store.geocode("San Francisco, CA"),
+        vehicle_id="chevrolet-bolt-euv-2023",
+        start_soc_pct=90,
+        arrival_soc_pct_min=15,
+        amenities=[AmenityPreference(category=AmenityCategory.FOOD, phrase="lunch stop")],
+    )
     result = _plan(snapshot_pipe, req)
     assert result.status == "ok" and result.verification is not None and result.verification.ok
     assert len(result.alternatives[0].itinerary.stops) >= 2  # a 612 km trip in a Bolt is multi-stop

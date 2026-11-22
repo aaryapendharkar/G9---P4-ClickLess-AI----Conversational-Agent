@@ -2,8 +2,18 @@
 
 import pytest
 
-from clickless.contracts import LatLon, Provenance, Route
+from clickless.contracts import (
+    ChargerLevel,
+    ChargingPort,
+    Connector,
+    LatLon,
+    Provenance,
+    Route,
+    StationStatus,
+    TripRequest,
+)
 from clickless.data import DataStore
+from clickless.planning.filters import DefaultHardConstraintFilter
 from clickless.retrieval.corridor import CorridorRetriever, polyline_km, select_distributed
 
 # --------------------------------------------------------------------------- select_distributed
@@ -68,18 +78,28 @@ def test_never_more_than_the_cap():
 def _route(points):
     geo = [LatLon(lat=a, lon=b) for a, b in points]
     prov = Provenance(source="SYNTHETIC", retrieved_at="2026-11-21T00:00:00Z", status="cached")
-    return Route(route_id="r106", origin=geo[0], destination=geo[-1], geometry=geo, distance_km=1.0,
-                 duration_min=1.0, provenance=prov)
+    return Route(
+        route_id="r106",
+        origin=geo[0],
+        destination=geo[-1],
+        geometry=geo,
+        distance_km=1.0,
+        duration_min=1.0,
+        provenance=prov,
+    )
 
 
 def _world(store, n_origin=120):
     """A 3-degree north-south route: n_origin stations crowded at the origin, then one usable station
     every ~55 km (the issue's acceptance test: more than max_candidates near the origin)."""
     base = next(iter(store.stations.values()))
-    stations = [base.model_copy(update={"station_id": f"origin-{k}", "lat": 33.0 + k * 1e-5, "lon": -112.0})
-                for k in range(n_origin)]
-    stations += [base.model_copy(update={"station_id": f"later-{k}", "lat": 33.5 + k * 0.5, "lon": -112.0})
-                 for k in range(6)]
+    stations = [
+        base.model_copy(update={"station_id": f"origin-{k}", "lat": 33.0 + k * 1e-5, "lon": -112.0})
+        for k in range(n_origin)
+    ]
+    stations += [
+        base.model_copy(update={"station_id": f"later-{k}", "lat": 33.5 + k * 0.5, "lon": -112.0}) for k in range(6)
+    ]
     return DataStore(stations, list(store.vehicles.values()), [], dict(store.places), store.routes_dir)
 
 
@@ -97,8 +117,10 @@ def test_later_route_stations_survive_a_dense_origin(store, method):
 def test_both_methods_agree_on_the_distributed_cut(store):
     world = _world(store)
     route = _route([(33.0, -112.0), (34.5, -112.0), (36.0, -112.0)])
-    dump = [[c.model_dump(mode="json") for c in CorridorRetriever(world, 8.0, 400.0, 60, method=m).candidates(
-        route, None)] for m in ("indexed", "brute_force")]
+    dump = [
+        [c.model_dump(mode="json") for c in CorridorRetriever(world, 8.0, 400.0, 60, method=m).candidates(route, None)]
+        for m in ("indexed", "brute_force")
+    ]
     assert dump[0] == dump[1]
 
 
@@ -107,3 +129,92 @@ def test_polyline_km_is_the_last_along_route_km(store):
     world = _world(store)
     cands = CorridorRetriever(world, 8.0, 400.0, 10_000).candidates(route, None)
     assert max(c.along_route_km for c in cands) <= polyline_km([(p.lat, p.lon) for p in route.geometry]) + 1e-9
+
+
+# --------------------------------------------------------------------------- only usable stations compete (#133 review)
+
+SPARK = "fixture-spark-lr-2025"  # CCS1 only, no adapters
+UNUSABLE = {
+    "wrong connector": {"ports": [ChargingPort(connector=Connector.NACS, level=ChargerLevel.DC_FAST, power_kw=350.0)]},
+    "restricted": {"access": "restricted"},
+    "unavailable": {"status": StationStatus.TEMPORARILY_UNAVAILABLE},
+}
+
+
+def test_an_unusable_entry_never_displaces_a_usable_one():
+    # Hriday's boundary: 60 bins, each with a 350 kW and a 50 kW entry; only the 50 kW ones are usable
+    along = [float(k * 10 + j) for k in range(60) for j in (0, 1)]
+    power = [350.0, 50.0] * 60
+    usable = [False, True] * 60
+    keep = select_distributed(along, 60, 600.0, bin_km=10.0, power_kw=power, usable=usable)
+    assert keep == [k * 2 + 1 for k in range(60)]  # every usable entry, no unusable one
+
+
+def test_usable_entries_that_fit_are_all_kept_and_the_rest_fill_in_route_order():
+    along = [0.0] * 70 + [200.0, 300.0]
+    usable = [i % 10 == 0 for i in range(70)] + [True, True]  # 7 usable at the origin + 2 later
+    keep = select_distributed(along, 60, 300.0, usable=usable)
+    assert len(keep) == 60 and {i for i in range(72) if usable[i]} <= set(keep)
+    assert [i for i in keep if not usable[i]] == [i for i in range(72) if not usable[i]][:51]
+
+
+def test_the_old_prefix_is_kept_when_it_already_holds_every_usable_entry():
+    along = [float(k) for k in range(100)]
+    usable = [k < 30 for k in range(100)]
+    assert select_distributed(along, 60, 100.0, usable=usable) == list(range(60))
+
+
+def _bins_world(store, bad):
+    """40 bins of 25 km on a 1,000 km north-south route; each bin holds a 350 kW station the
+    Spark cannot use (`bad`) just before a 50 kW CCS1 station it can use."""
+    base = next(iter(store.stations.values())).model_copy(
+        update={
+            "ports": [ChargingPort(connector=Connector.CCS1, level=ChargerLevel.DC_FAST, power_kw=50.0)],
+            "status": StationStatus.AVAILABLE,
+            "access": "public",
+        }
+    )
+    stations = []
+    for k in range(40):
+        lat = 30.0 + k * 0.2248  # ~25 km per bin
+        fast_ccs1 = base.model_copy(
+            update={"ports": [ChargingPort(connector=Connector.CCS1, level=ChargerLevel.DC_FAST, power_kw=350.0)]}
+        )
+        stations.append(fast_ccs1.model_copy(update={"station_id": f"bad-{k}", "lat": lat, "lon": -100.0, **bad}))
+        stations.append(base.model_copy(update={"station_id": f"good-{k}", "lat": lat + 0.001, "lon": -100.0}))
+    world = DataStore(stations, list(store.vehicles.values()), [], dict(store.places), store.routes_dir)
+    route = _route([(30.0, -100.0), (34.5, -100.0), (39.0, -100.0)])
+    return world, route
+
+
+@pytest.mark.parametrize("kind", sorted(UNUSABLE))
+@pytest.mark.parametrize("method", ["indexed", "brute_force"])
+def test_a_faster_unusable_station_never_pushes_out_a_slower_usable_one(store, kind, method):
+    world, route = _bins_world(store, UNUSABLE[kind])
+    hard = DefaultHardConstraintFilter()
+    spark = world.vehicle(SPARK)
+
+    def usable(station, request):
+        return hard.station_rejection(station, request, spark) is None
+
+    req = TripRequest(request_id="r", raw_text="t", vehicle_id=SPARK)
+    # a 20-slot cap over 40 bins: one slot per bin can't hold both stations of a bin
+    ids = {
+        c.station.station_id
+        for c in CorridorRetriever(world, 8.0, 400.0, 20, method=method, usable=usable).candidates(route, req)
+    }
+    assert len(ids) == 20 and all(i.startswith("good-") for i in ids)
+    # without the usable check, the 350 kW unusable stations would take the slots (the bug)
+    blind = {
+        c.station.station_id for c in CorridorRetriever(world, 8.0, 400.0, 20, method=method).candidates(route, req)
+    }
+    assert all(i.startswith("bad-") for i in blind)
+
+
+def test_the_pipeline_passes_the_planner_station_checks_to_retrieval(pipe_a):
+    station = next(iter(pipe_a.store.stations.values()))
+    req = TripRequest(request_id="r", raw_text="t", vehicle_id=SPARK)
+    restricted = station.model_copy(update={"access": "restricted"})
+    assert pipe_a.retriever.usable is not None
+    assert pipe_a.retriever.usable(restricted, req) is False
+    assert pipe_a.retriever.usable(station, TripRequest(request_id="r", raw_text="t")) is True  # no vehicle
