@@ -3,6 +3,7 @@ per-station "skipped <id>: <reason>" notes stay in PlanResult.notes for the eval
 
 import re
 
+import numpy as np
 import pytest
 
 import clickless.cli as cli
@@ -10,6 +11,7 @@ from clickless.config import load_config
 from clickless.contracts import PlanResult
 from clickless.explain.templates import _skipped_summary
 from clickless.pipeline import build_pipeline
+from clickless.retrieval.embedding_matcher import EmbeddingMatcher
 
 
 def test_the_summary_counts_stations_by_reason():
@@ -32,6 +34,8 @@ def test_the_summary_counts_stations_by_reason():
 @pytest.mark.parametrize("config", ["A", "B", "C"])
 def test_the_explanation_has_one_summary_line_and_no_station_ids(store, demo_text, config):
     pipe = build_pipeline(load_config(config), store)
+    if isinstance(pipe.matcher, EmbeddingMatcher):  # B/C: no Sentence-BERT download in CI
+        pipe.matcher = EmbeddingMatcher(store, encoder=lambda texts: np.ones((len(texts), 8)))
     req = _rule_parsed_request(store, demo_text)
     result = pipe.plan_request(req, PlanResult(request_id=req.request_id, config=config, status="ok", request=req))
     skipped = [n for n in result.notes if n.startswith("skipped ")]
