@@ -41,6 +41,27 @@ def test_valid_llm_output_is_grounded_by_datastore(parser, monkeypatch):
     assert all(preference.priority == "important" for preference in result.request.amenities)
 
 
+def test_explicit_need_overrides_llm_amenity_priority_but_negation_does_not(parser, monkeypatch):
+    response = {
+        **VALID_EXTRACTION,
+        "amenities": [
+            {
+                "category": "restroom",
+                "phrase": "wheelchair accessible restroom",
+                "wheelchair_required": True,
+                "important": False,
+            }
+        ],
+    }
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: json.dumps(response))
+
+    required = parser.parse("I need a wheelchair accessible restroom", "llm-required-restroom")
+    negated = parser.parse("I don't need a wheelchair accessible restroom", "llm-optional-restroom")
+
+    assert required.request.amenities[0].priority == "important"
+    assert negated.request.amenities[0].priority == "nice_to_have"
+
+
 def test_invalid_first_response_is_repaired_once(parser, monkeypatch):
     responses = iter(["{\"unexpected\": true}", json.dumps(VALID_EXTRACTION)])
     sent_messages = []

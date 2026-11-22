@@ -28,6 +28,21 @@ def test_priority_phrase_sets_profile(parser):
     assert r.tradeoff_profile == "fastest"
 
 
+def test_required_wheelchair_restroom_is_important_but_negation_is_not(parser):
+    required = parser.parse(
+        "Flagstaff to Page in my Kia EV6, 60%, I need a wheelchair accessible restroom",
+        "required-restroom",
+    ).request
+    negated = parser.parse(
+        "Flagstaff to Page in my Kia EV6, 60%, I don't need a wheelchair accessible restroom",
+        "optional-restroom",
+    ).request
+
+    assert required.amenities[0].key == "restroom_wheelchair"
+    assert required.amenities[0].priority == "important"
+    assert negated.amenities[0].priority == "nice_to_have"
+
+
 def test_clarifier_asks_for_battery(parser):
     pr = parser.parse("Phoenix to Flagstaff in my spark", "t4")
     assert TemplateClarifier().question_for(pr).field == "start_soc_pct"

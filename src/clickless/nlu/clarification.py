@@ -27,7 +27,13 @@ _MISSING_TEMPLATES = {
         "Please answer with a number followed by % or the word percent."
     ),
 }
-_EXPLICIT_PERCENT = re.compile(r"^\s*(\d{1,3})(?:\s*%|\s+percent)?\s*$", re.IGNORECASE)
+_BARE_PERCENT = re.compile(r"^\s*(\d{1,3})\s*$")
+_EXPLICIT_PERCENT = re.compile(
+    r"^\s*(?:(?:(?:i\s+(?:have|am(?:\s+at)?))|about|around|roughly|approximately|currently|at)\s+)*"
+    r"(\d{1,3})\s*(?:%|percent)(?![a-z])"
+    r"(?:\s+(?:battery|charge|left|remaining|right\s+now))*\s*$",
+    re.IGNORECASE,
+)
 
 
 def _field_label(field: str) -> str:
@@ -91,13 +97,14 @@ def merge_answer(
         return _replace_request(parse, vehicle_id=matches[0].vehicle_id)
 
     if field == "start_soc_pct":
-        match = _EXPLICIT_PERCENT.fullmatch(answer)
-        if not match:
+        explicit_match = _EXPLICIT_PERCENT.fullmatch(answer)
+        bare_match = _BARE_PERCENT.fullmatch(answer)
+        match = explicit_match or bare_match
+        if match is None:
             return parse
         if (
             field in parse.ambiguous_fields
-            and "%" not in answer
-            and "percent" not in answer.casefold()
+            and explicit_match is None
         ):
             return parse
         battery_percentage = float(match.group(1))
