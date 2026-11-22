@@ -9,7 +9,10 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from pathlib import Path
+from typing import Any
 
 from .common.errors import NO_CACHED_ROUTE_NOTE
 from .config import load_config
@@ -20,6 +23,32 @@ from .pipeline import build_pipeline
 # the driver: the explanation already says what happened (#140), or sums them up in one
 # "Not used:" line (#139, per-station "skipped <id>: <reason>" notes).
 _DEBUG_ONLY_NOTE_PREFIXES = (NO_CACHED_ROUTE_NOTE, "skipped ")
+
+
+def _quiet_model_loading(cfg: dict[str, Any]) -> None:
+    """Keep Hugging Face startup noise off the demo screen (CLI only; tests and eval are unchanged).
+
+    Configs B/C load a pinned Sentence-BERT model, which prints a "Loading weights" progress bar
+    and, when it checks the Hub, an "unauthenticated requests" warning. Progress bars and library
+    logging below errors are turned off; when the pinned revision is already in the local Hugging
+    Face cache, the Hub is not contacted at all (HF_HUB_OFFLINE). Settings the user already
+    exported win. Must run before huggingface_hub / transformers are imported.
+    """
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+    retrieval = cfg.get("retrieval", {})
+    model, revision = retrieval.get("sbert_model"), retrieval.get("sbert_revision")
+    if model and revision and _hf_snapshot_cached(model, revision):
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+
+def _hf_snapshot_cached(model: str, revision: str) -> bool:
+    hub = (
+        os.environ.get("HF_HUB_CACHE")
+        or Path(os.environ.get("HF_HOME") or Path.home() / ".cache" / "huggingface") / "hub"
+    )
+    return (Path(hub) / f"models--{model.replace('/', '--')}" / "snapshots" / revision).is_dir()
 
 
 def _display_result(
@@ -73,7 +102,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     arguments = argument_parser.parse_args(argv)
 
-    pipeline = build_pipeline(load_config(arguments.config))
+    config = load_config(arguments.config)
+    if argv is None:  # launched from the command line, not called from tests or other code
+        _quiet_model_loading(config)
+    pipeline = build_pipeline(config)
     result = pipeline.run(arguments.text)
 
     # A Config C request can require more than one answer. Display each
