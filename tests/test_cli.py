@@ -284,3 +284,42 @@ def test_eof_during_approval_exits_cleanly(
 
     assert cli.main(["plan", "Phoenix to Flagstaff"]) == 0
     assert pipeline.approved_option_index is None
+
+
+# --------------------------------------------------------------------------- demo startup noise
+
+
+_HF_VARS = ("HF_HUB_DISABLE_PROGRESS_BARS", "HF_HUB_VERBOSITY", "TRANSFORMERS_VERBOSITY", "HF_HUB_OFFLINE")
+_SBERT = {"retrieval": {"sbert_model": "org/model", "sbert_revision": "abc123"}}
+
+
+def _clear_hf_env(monkeypatch, tmp_path):
+    for name in (*_HF_VARS, "TRANSFORMERS_OFFLINE", "HF_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+
+
+def test_quiet_model_loading_goes_offline_only_when_the_pinned_model_is_cached(monkeypatch, tmp_path):
+    _clear_hf_env(monkeypatch, tmp_path)
+    cli._quiet_model_loading(_SBERT)
+    assert cli.os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] == "1"
+    assert cli.os.environ["HF_HUB_VERBOSITY"] == cli.os.environ["TRANSFORMERS_VERBOSITY"] == "error"
+    assert "HF_HUB_OFFLINE" not in cli.os.environ  # not cached: the Hub may still be needed
+
+    (tmp_path / "models--org--model" / "snapshots" / "abc123").mkdir(parents=True)
+    cli._quiet_model_loading(_SBERT)
+    assert cli.os.environ["HF_HUB_OFFLINE"] == "1"
+
+
+def test_quiet_model_loading_keeps_settings_the_user_exported(monkeypatch, tmp_path):
+    _clear_hf_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("TRANSFORMERS_VERBOSITY", "info")
+    cli._quiet_model_loading(_SBERT)
+    assert cli.os.environ["TRANSFORMERS_VERBOSITY"] == "info"
+
+
+def test_calling_main_from_code_leaves_the_environment_alone(monkeypatch, tmp_path):
+    _clear_hf_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(cli, "build_pipeline", lambda _cfg: FakePipeline(FakeResult("ok", "done")))
+    assert cli.main(["plan", "--no-input", "Phoenix to Flagstaff"]) == 0
+    assert not any(name in cli.os.environ for name in _HF_VARS)
