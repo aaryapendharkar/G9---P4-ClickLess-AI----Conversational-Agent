@@ -11,8 +11,9 @@ from __future__ import annotations
 import argparse
 import sys
 
+from .common.errors import NO_CACHED_ROUTE_NOTE
 from .config import load_config
-from .contracts import NO_CACHED_ROUTE_NOTE, PlanResult
+from .contracts import PlanResult
 from .pipeline import build_pipeline
 
 # Notes kept in PlanResult (and --json / saved eval results) for debugging, but not printed for

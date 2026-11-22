@@ -6,7 +6,8 @@ its linked datastore records. The template does not recompute planning decisions
 
 from __future__ import annotations
 
-from ..contracts import NO_CACHED_ROUTE_NOTE, Claim, PlanResult
+from ..common.errors import NO_CACHED_ROUTE_NOTE
+from ..contracts import Claim, PlanResult
 from ..data import DataStore
 from ..data.provenance import status_label
 from .tradeoff_presenter import render_alternative, render_cost_breakdown

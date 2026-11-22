@@ -18,7 +18,6 @@ from .data import (
     Vehicle,
 )
 from .plan import (
-    NO_CACHED_ROUTE_NOTE,
     Alternative,
     ChargingStop,
     Itinerary,
@@ -43,7 +42,7 @@ from .route import LatLon, Route
 CONTRACTS_VERSION = "0.5.0"
 
 __all__ = [
-    "CONTRACTS_VERSION", "NO_CACHED_ROUTE_NOTE", "SAFETY_CRITICAL_FIELDS",
+    "CONTRACTS_VERSION", "SAFETY_CRITICAL_FIELDS",
     "Alternative", "Amenity", "AmenityCategory", "AmenityPreference", "Candidate", "ChargerLevel",
     "ChargingPort", "ChargingStop", "Claim", "ClarificationQuestion", "Connector", "DataStatus",
     "Evidence", "Itinerary", "LatLon", "Leg", "NearbyAmenity", "ParseResult", "Place", "PlanCost",

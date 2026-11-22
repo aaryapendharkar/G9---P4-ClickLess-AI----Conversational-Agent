@@ -20,8 +20,8 @@ from typing import Any, Protocol
 
 import requests
 
+from ..common.errors import NO_CACHED_ROUTE_NOTE
 from ..contracts import (
-    NO_CACHED_ROUTE_NOTE,
     Candidate,
     DataStatus,
     LatLon,

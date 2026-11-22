@@ -5,8 +5,9 @@ and for the eval report's RouteNotCached grouping."""
 import pytest
 
 import clickless.cli as cli
+from clickless.common.errors import NO_CACHED_ROUTE_NOTE
 from clickless.config import load_config
-from clickless.contracts import NO_CACHED_ROUTE_NOTE, PlanResult, TripRequest
+from clickless.contracts import PlanResult, TripRequest
 from clickless.pipeline import build_pipeline
 
 FRIENDLY = "I don't have route data for Flagstaff -> Phoenix yet, so I can't plan this trip offline."

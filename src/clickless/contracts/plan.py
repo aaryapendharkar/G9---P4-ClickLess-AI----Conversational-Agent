@@ -116,10 +116,6 @@ class Relaxation(BaseModel):
 
 ResultStatus = Literal["ok", "needs_clarification", "rejected_incomplete", "infeasible", "error"]
 
-# Note prefix for an `error` result whose route is not in the offline route cache (#140). The note
-# keeps the cache path for debugging and the eval report; the driver gets a friendly message instead.
-NO_CACHED_ROUTE_NOTE = "no cached route"
-
 
 class PlanResult(BaseModel):
     request_id: str
