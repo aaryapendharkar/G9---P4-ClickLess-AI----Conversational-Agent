@@ -12,7 +12,7 @@ import re
 
 from ..contracts import Claim, Evidence, PlanResult
 from ..data import DataStore
-from .templates import TemplateExplainer
+from .templates import TemplateExplainer, requested_amenity_labels
 from .tradeoff_presenter import render_alternative, render_cost_breakdown
 
 _PORT_FIELD = re.compile(r"ports\[(\d+)\]\.(connector|power_kw)")
@@ -69,24 +69,29 @@ class GroundedLLMExplainer:
         return None
 
     @staticmethod
-    def _amenity_name_pairs(
+    def _amenity_claim_items(
         result: PlanResult,
-        amenity_ids: list[str],
-        amenities_by_id: dict[str, object],
-    ) -> list[tuple[str, str]]:
-        """Return only displayed amenity names backed by matching evidence values."""
-        evidence_by_subject = {
-            evidence.subject_id: evidence
-            for evidence in result.evidence
-            if evidence.field == "name"
-        }
-        pairs: list[tuple[str, str]] = []
-        for amenity_id in amenity_ids:
-            amenity = amenities_by_id.get(amenity_id)
-            evidence = evidence_by_subject.get(amenity_id)
-            if amenity is not None and amenity.name and evidence and evidence.value == amenity.name:
-                pairs.append((amenity.name, evidence.evidence_id))
-        return pairs
+        labelled: list[tuple[str, object]],
+    ) -> list[tuple[str, list[str]]]:
+        """(label, evidence ids) for each displayed amenity whose label the evidence backs.
+
+        A named amenity needs a matching `name` fact. An unnamed one is shown by category (#137), so
+        it needs a matching `category` fact, plus a `wheelchair=yes` fact when the label says
+        "accessible". Amenities without that evidence are left out of the claim.
+        """
+        facts = {(e.subject_id, e.field): e for e in result.evidence}
+        items: list[tuple[str, list[str]]] = []
+        for label, amenity in labelled:
+            if amenity.name:
+                needed = [("name", amenity.name)]
+            else:
+                needed = [("category", amenity.category.value)]
+                if amenity.wheelchair == "yes":
+                    needed.append(("wheelchair", "yes"))
+            support = [facts.get((amenity.amenity_id, field)) for field, _ in needed]
+            if all(f is not None and f.value == value for f, (_, value) in zip(support, needed, strict=True)):
+                items.append((label, [f.evidence_id for f in support]))
+        return items
 
     def _claims_for_success(self, result: PlanResult) -> list[Claim]:
         if not result.alternatives or result.request is None:
@@ -113,13 +118,15 @@ class GroundedLLMExplainer:
             )
             claims.append(Claim(text=claim_text, supported_by=support_ids))
 
-            amenities_by_id = {amenity.amenity_id: amenity for amenity in self.store.amenities}
-            amenity_pairs = self._amenity_name_pairs(result, stop.amenity_ids, amenities_by_id)
-            if amenity_pairs:
+            labelled = requested_amenity_labels(
+                stop.amenity_ids, self.template_explainer.amenities_by_id, result.request
+            )
+            amenity_items = self._amenity_claim_items(result, labelled)
+            if amenity_items:
                 claims.append(
                     Claim(
-                        text="Nearby (requested): " + ", ".join(name for name, _ in amenity_pairs) + ".",
-                        supported_by=[evidence_id for _, evidence_id in amenity_pairs],
+                        text="Nearby (requested): " + ", ".join(label for label, _ in amenity_items) + ".",
+                        supported_by=[evidence_id for _, ids in amenity_items for evidence_id in ids],
                     )
                 )
 

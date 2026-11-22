@@ -108,7 +108,7 @@ python -m clickless plan --config C "Phoenix to Flagstaff in my IONIQ 5"
 python -m clickless plan --config C "Flagstaff to Page in my Kia EV6, 60% battery, arrive with at least 20%, I need a wheelchair accessible restroom at the stop"
 ```
 - **Follow-up:** press Enter at `Approve handoff?`.
-- **What it should show:** the recommended stop has a wheelchair-accessible restroom, listed under `Nearby (requested):`, by name or as "wheelchair-accessible restroom" if it has no name. The "Why this ranks first" line counts it under "requested amenities". Arrival in Page with at least 20%.
+- **What it should show:** the recommended stop has a wheelchair-accessible restroom, listed under `Nearby (requested):`, by name or as "an accessible restroom" if it has no name (#137). The "Why this ranks first" line counts it under "requested amenities". Arrival in Page with at least 20%.
 - **Route cache:** `flagstaff__page.json`.
 - **Before the fixes (Nov 21 dry run):** the recommended stop had no accessible restroom ("requested amenities 0"), and only the second option had one. Don't demo this scenario until #136 and #137 are merged and the dry run shows the restroom on the first stop.
 
