@@ -1,6 +1,7 @@
 # ADR 0016: Visible LLM fallback metadata
 
-- Status: proposed
+- Status: accepted (2 approvals: Hriday 2026-11-21, Ian 2026-11-22)
+- Date: accepted 2026-11-22, PR #131
 - Owner: Deepti (NLU); reviewers: Ian (evaluation), Hriday (pipeline/integration)
 - Issue: #113
 
