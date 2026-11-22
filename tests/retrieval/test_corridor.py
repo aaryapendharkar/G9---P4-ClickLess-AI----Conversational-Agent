@@ -7,7 +7,7 @@ import pytest
 from clickless.config import repo_path
 from clickless.contracts import AmenityCategory, AmenityPreference, LatLon, Provenance, Route
 from clickless.data import DataStore
-from clickless.retrieval.corridor import CorridorRetriever
+from clickless.retrieval.corridor import CorridorRetriever, polyline_km, select_distributed
 
 
 def _route_and_req(pipe_a, text):
@@ -181,7 +181,11 @@ def test_indexed_equals_brute_force_on_snapshot_routes(tmp_path, route_file):
     world = _snapshot_subset(tmp_path, route)
     expected = _assert_identical(world, route, max_candidates=10_000)  # every corridor station, not just 60
     assert len(expected) > 0
-    assert _dump(_pair(world)[1].candidates(route, None)) == expected[:60]  # and the production cut
+    cut = _assert_identical(world, route, max_candidates=60)  # and the production cut (#106: distributed)
+    poly = [(p.lat, p.lon) for p in route.geometry]
+    keep = select_distributed([c["along_route_km"] for c in expected], 60, polyline_km(poly),
+                              power_kw=[max((p["power_kw"] or 0.0) for p in c["station"]["ports"]) for c in expected])
+    assert cut == [expected[i] for i in keep]
 
 
 def test_route_memo_returns_fresh_candidates_and_keys_on_geometry(store):

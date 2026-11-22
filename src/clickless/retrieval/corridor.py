@@ -16,11 +16,20 @@ Two paths with identical output (issue #94):
       - The scan result depends only on the route (not on the request), so it is memoized per
         route (route_id + a hash of the full geometry, last _ROUTE_MEMO routes): relaxation re-solves
         the same route up to a dozen times. Candidates are rebuilt fresh on every call.
-      - The list is cut to max_candidates before amenity linking. Station -> amenity links (same
-        haversine expression, same amenity order) are computed once per station per snapshot,
-        from the amenity grid, and memoized.
+      - The list is cut to max_candidates (select_distributed, below) before amenity linking.
+        Station -> amenity links (same haversine expression, same amenity order) are computed once
+        per station per snapshot, from the amenity grid, and memoized.
   * method="brute_force": the original reference implementation, every station against every
     segment and every amenity. Kept for the equivalence tests (tests/retrieval/test_corridor.py).
+
+The cut to max_candidates (#106): taking the first max_candidates by along_route_km let a dense
+origin (494 stations within 1 km of downtown Los Angeles) use the whole budget, so a long route
+reached the planner with no station past the first kilometre. select_distributed keeps the cap but
+spreads it along the route: the route is split into equal-width distance bins (about bin_km each)
+and the budget is shared round-robin across the bins that hold corridor stations, each bin giving
+its fastest stations first. When the plain along-route prefix already reaches every
+non-empty bin it is returned unchanged, so short routes and sparse corridors keep their old
+candidates. Both methods apply the same selection to the same sorted list.
 
 TODO(Manas): a BallTree / R-tree could replace the grids; the equivalence tests stay the contract.
 """
@@ -41,6 +50,7 @@ _STATION_CELL_DEG = 0.1  # station grid and per-route segment grid share this ce
 _AMENITY_CELL_DEG = 0.05
 _EPS_KM = 1e-6  # floating-point slack: pads are a hair wider than the exact bound
 _ROUTE_MEMO = 8  # routes whose scan result is kept (relaxation reuses the same route)
+DEFAULT_BIN_KM = 25.0  # distance-bin width of the capped selection (#106)
 
 Cell = tuple[int, int]
 
@@ -67,6 +77,57 @@ def _segment_pads(a: tuple[float, float], b: tuple[float, float], buffer_km: flo
     return lat_pad, lon_pad
 
 
+def polyline_km(poly: Sequence[tuple[float, float]]) -> float:
+    """Length of the route geometry, summed segment by segment as along_route_km is."""
+    return sum(haversine_km(*poly[i], *poly[i + 1]) for i in range(len(poly) - 1))
+
+
+def max_power_kw(station) -> float:
+    """A station's fastest port (unknown power counts as 0); the within-bin order of select_distributed."""
+    return max((p.power_kw or 0.0 for p in station.ports), default=0.0)
+
+
+def select_distributed(along_km: Sequence[float], max_candidates: int, route_km: float,
+                       bin_km: float = DEFAULT_BIN_KM, power_kw: Sequence[float] | None = None) -> list[int]:
+    """Indices into an along_route_km-sorted list to keep under the cap, ascending (#106).
+
+    The route is split into n = clamp(ceil(route_km / bin_km), 1, max_candidates) bins of equal
+    width. If the first max_candidates entries already include one from every non-empty bin, that
+    prefix is kept (the pre-#106 behaviour). Otherwise the budget is filled round-robin across the
+    non-empty bins, so every stretch of the route that has stations keeps some. Within a bin,
+    stations go fastest port first (power_kw, descending), then by position: a dense city bin is
+    mostly Level 2 posts, and nearest-first would spend its share on them and drop the DC fast
+    chargers a plan actually stops at. The order uses only station data, never the request; the
+    hard-constraint filter still runs on whatever is kept. Deterministic: ties fall back to the
+    list order.
+    """
+    n = len(along_km)
+    if n <= max_candidates:
+        return list(range(n))
+    if max_candidates <= 0:
+        return []
+    n_bins = max(1, min(max_candidates, math.ceil(route_km / bin_km))) if route_km > 0 else 1
+    width = route_km / n_bins if route_km > 0 else 1.0
+    bins: list[list[int]] = [[] for _ in range(n_bins)]
+    for i, along in enumerate(along_km):
+        bins[min(n_bins - 1, max(0, int(along / width)))].append(i)
+    filled = [b for b in bins if b]
+    if all(b[0] < max_candidates for b in filled):  # the prefix already spans the route
+        return list(range(max_candidates))
+    if power_kw is not None:
+        filled = [sorted(b, key=lambda i: (-power_kw[i], i)) for b in filled]
+    keep: list[int] = []
+    depth = 0
+    while len(keep) < max_candidates:
+        for b in filled:
+            if depth < len(b):
+                keep.append(b[depth])
+                if len(keep) == max_candidates:
+                    break
+        depth += 1
+    return sorted(keep)
+
+
 class CorridorRetriever:
     def __init__(
         self,
@@ -75,6 +136,7 @@ class CorridorRetriever:
         amenity_radius_m: float,
         max_candidates: int,
         method: str = "indexed",
+        bin_km: float = DEFAULT_BIN_KM,
     ):
         if method not in METHODS:
             raise ValueError(f"method must be one of {METHODS}, got {method!r}")
@@ -82,6 +144,7 @@ class CorridorRetriever:
         self.buffer_km = buffer_km
         self.amenity_radius_m = amenity_radius_m
         self.max_candidates = max_candidates
+        self.bin_km = bin_km
         self.method = method
         self._station_grid: dict[Cell, list[int]] | None = None  # built lazily, rebuilt if the store changes
         self._stations: list = []
@@ -112,7 +175,9 @@ class CorridorRetriever:
                 Candidate(station=st, route_index=seg, along_route_km=along, offroute_km=off_km, amenities=nearby)
             )
         out.sort(key=lambda c: c.along_route_km)
-        return out[: self.max_candidates]
+        keep = select_distributed([c.along_route_km for c in out], self.max_candidates, polyline_km(poly),
+                                  self.bin_km, [max_power_kw(c.station) for c in out])
+        return [out[i] for i in keep]
 
     # ------------------------------------------------------------------ indexed implementation
     def _build_station_grid(self) -> dict[Cell, list[int]]:
@@ -158,8 +223,10 @@ class CorridorRetriever:
             while len(self._route_scans) > _ROUTE_MEMO:
                 del self._route_scans[next(iter(self._route_scans))]
 
+        keep = select_distributed([f[0] for f in found], self.max_candidates, polyline_km(poly), self.bin_km,
+                                  [max_power_kw(self._stations[f[1]]) for f in found])
         out = []
-        for along, si, seg, off_km in found[: self.max_candidates]:
+        for along, si, seg, off_km in (found[i] for i in keep):
             st = self._stations[si]
             nearby = [
                 NearbyAmenity(amenity=self.store.amenities[ai], distance_m=d) for ai, d in self._links_for(st)
