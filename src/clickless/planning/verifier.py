@@ -14,7 +14,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..common.geo import haversine_km
 from ..contracts import (
+    AmenityCategory,
     Itinerary,
     Route,
     Station,
@@ -54,9 +56,11 @@ class CompleteItineraryVerifier:
         store: DataStore,
         energy_config: dict[str, Any],
         route_measurer: ItineraryRouteMeasurer | None = None,
+        amenity_radius_m: float = 400.0,
     ) -> None:
         self.store = store
         self.energy_config = energy_config
+        self.amenity_radius_m = amenity_radius_m
         # Configuration A keeps the existing deterministic estimator. Runtime
         # OSRM configurations can inject a cache-backed strategy without
         # changing verifier logic or trusting values produced by the planner.
@@ -113,6 +117,12 @@ class CompleteItineraryVerifier:
                         stop_index=stop_index,
                     )
                 )
+
+        self._check_required_accessibility(
+            request,
+            resolved_stations,
+            violations,
+        )
 
         # Phase 3: independently rebuild the route measurements. Measurements
         # require coordinates for every charging station.
@@ -323,6 +333,64 @@ class CompleteItineraryVerifier:
         # Reaching this point means every leg and stop was inspected. The report
         # succeeds only when no phase above recorded a violation.
         return VerificationReport(ok=not violations, violations=violations)
+
+    def _check_required_accessibility(
+        self,
+        request: TripRequest,
+        resolved_stations: list[Station | None],
+        violations: list[Violation],
+    ) -> None:
+        """Require an authoritative accessible restroom for an explicit need.
+
+        This check deliberately does not trust planner-provided amenity IDs or
+        satisfaction scores. It searches datastore amenities around each known
+        charging station and accepts only an explicit ``wheelchair=yes`` tag.
+        """
+
+        requires_accessible_restroom = any(
+            preference.category == AmenityCategory.RESTROOM
+            and preference.wheelchair_required
+            and preference.priority == "important"
+            for preference in request.amenities
+        )
+
+        if not requires_accessible_restroom:
+            return
+
+        for station in resolved_stations:
+            if station is None:
+                continue
+
+            for amenity in self.store.amenities:
+                distance_m = (
+                    haversine_km(
+                        station.lat,
+                        station.lon,
+                        amenity.lat,
+                        amenity.lon,
+                    )
+                    * 1000
+                )
+
+                if (
+                    amenity.category == AmenityCategory.RESTROOM
+                    and amenity.wheelchair == "yes"
+                    and distance_m <= self.amenity_radius_m
+                ):
+                    return
+
+        violations.append(
+            Violation(
+                # The shared violation contract already uses ``access`` for
+                # access-related feasibility failures. Keep that stable and
+                # distinguish wheelchair access in the human-readable detail.
+                code="access",
+                detail=(
+                    "no charging stop has a wheelchair-accessible restroom "
+                    f"within {self.amenity_radius_m:g} m"
+                ),
+            )
+        )
 
     def _check_route_claims(
         self,
