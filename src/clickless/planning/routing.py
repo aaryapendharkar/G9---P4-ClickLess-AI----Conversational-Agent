@@ -21,6 +21,7 @@ from typing import Any, Protocol
 import requests
 
 from ..contracts import (
+    NO_CACHED_ROUTE_NOTE,
     Candidate,
     DataStatus,
     LatLon,
@@ -108,7 +109,7 @@ class CachedRouter:
             / f"{_slug(origin.text)}__{_slug(destination.text)}.json"
         )
         if not path.exists():
-            raise RouteNotCached(f"no cached route at {path}")
+            raise RouteNotCached(f"{NO_CACHED_ROUTE_NOTE} at {path}")
         payload = json.loads(path.read_text())
         payload.pop("_meta", None)
         return Route.model_validate(payload)
