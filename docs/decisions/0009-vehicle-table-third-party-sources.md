@@ -87,15 +87,29 @@ adapters 12 manufacturer / 2 third-party (1 vehicle has none); efficiency 15 Fue
 - Tesla CCS1 adapter compatibility is cited to Tesla's product page, which blocked automated
   access on 2026-11-02; verify by hand before the snapshot freeze.
 
-## Pre-freeze data follow-ups (keep until verified)
-1. Tesla CCS1 adapter compatibility (`tesla-model-3-*`, `tesla-model-y-*`): open Tesla's product
-   page by hand and confirm the 2024 Model 3/Y are listed; record the result here.
-2. F-150 Lightning ER max DC: replace the 2025 spec-sheet source with a 2024 one if Ford
-   publishes it, or keep this caveat.
+## Pre-freeze data follow-ups (checked 2026-11-23, Aarya, #36)
+1. **Tesla CCS1 adapter compatibility (`tesla-model-3-*`, `tesla-model-y-*`): verified, kept.**
+   Tesla's product page (shop.tesla.com/product/ccs-combo-1-adapter) sells the CCS Combo 1 Adapter
+   for Model 3/Y, offers a "Model 3/Y Retrofit with Adapter" for older cars that need extra
+   hardware, and excludes only Cybertruck. The page could still not be fetched automatically; its
+   text was read from the search index. Coverage reports agree that newer Model 3/Y are compatible
+   without a retrofit (Green Car Reports, InsideEVs), and the table's cars are 2024 models. No
+   table change: `adapters = CCS1` stays, at DC fast only (planning/filters.py).
+2. **F-150 Lightning ER max DC: kept at 150 kW, caveat stays.** Ford's own 2024 material uses
+   150 kW DC fast-charging figures: the 2024 F-150 Lightning technical specifications ("10
+   minutes, 150kW DC Fast Charge") and Ford's charging FAQ for the 2024 Extended Range
+   (15-80 % in about 38 minutes). No standalone 2024 Ford spec sheet states a peak value, so the
+   cited source remains the 2025 sheet (same 131 kWh pack). InsideEVs reports Ford quoting
+   155 kW for the Extended Range battery; 150 kW is Ford's published charging figure and the
+   more conservative of the two, so it stays. Changing it would only shorten F-150 charge-time
+   estimates by about 3 %.
 3. LEAF: excluded from charging-time accuracy claims (above); evaluation reports should say so.
    Ian's evaluation keeps LEAF items (currently aarya-011, aarya-027, and deepti-010 once PR #40
    merges) in feasibility metrics and excludes them from charge-time accuracy and charge-time
    sensitivity results.
+
+With 1 and 2 checked, nothing in this ADR blocks the snapshot freeze (#36). `vehicles.csv` is
+unchanged, so `vehicles.json` in `snapshot-v1-draft` stays valid.
 
 ## Consequences
 - The final report states: *"Efficiency comes from EPA ratings; usable capacity, peak DC power
