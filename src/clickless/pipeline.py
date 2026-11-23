@@ -21,6 +21,7 @@ from .contracts import (
     ParseResult,
     PlanResult,
     Route,
+    Station,
     TripRequest,
     Vehicle,
 )
@@ -176,7 +177,13 @@ class Pipeline:
         )
         r = cfg["retrieval"]
         self.retriever = CorridorRetriever(
-            store, r["corridor_buffer_km"], r["amenity_radius_m"], r["max_candidates"]
+            store,
+            r["corridor_buffer_km"],
+            r["amenity_radius_m"],
+            r["max_candidates"],
+            usable=self._station_usable,
+            per_bin=r.get("max_usable_per_stretch"),
+            required_extra_per_bin=r.get("max_required_extra_per_stretch"),
         )
         self.enricher = (
             KGEnricher(store, cfg.get("kg", {}))
@@ -208,6 +215,7 @@ class Pipeline:
                 self.router,
                 cfg["energy"],
             ),
+            amenity_radius_m=r["amenity_radius_m"],
         )
         self.relaxer = MinCostRelaxer(cfg["relaxation"])
         t = cfg["tradeoffs"]
@@ -226,6 +234,15 @@ class Pipeline:
         self.gate = ApprovalGate()
         self._routes: dict[str, Route] = {}
         self._pending: dict[str, _PendingClarification] = {}
+
+    def _station_usable(self, station: Station, request: TripRequest) -> bool:
+        """Station-level hard constraints for retrieval's capped selection (#106): only stations
+        this request's vehicle can stop at compete for the candidate slots. Same checks as the
+        filter's, so a station counted usable here can still only be rejected for its detour."""
+        if not request.vehicle_id or request.vehicle_id not in self.store.vehicles:
+            return True  # no vehicle to check against: every station competes, as before
+        vehicle = self.store.vehicle(request.vehicle_id)
+        return self.filter.station_rejection(station, request, vehicle) is None
 
     # ------------------------------------------------------------------ plan
     def run(self, text: str, request_id: str | None = None) -> PlanResult:

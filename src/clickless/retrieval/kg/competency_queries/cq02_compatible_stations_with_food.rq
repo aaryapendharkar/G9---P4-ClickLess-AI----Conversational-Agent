@@ -2,16 +2,22 @@
 #      and a food amenity within 400 m?
 # Author: Aarya (learning swap). Assumes cc:near edges are only built for amenities <= 400 m
 # (retrieval.yaml amenity_radius_m) and the proposed term cc:amenityCategory (see
-# docs/COMPETENCY_QUESTIONS.md, "Ontology terms needed").
+# docs/COMPETENCY_QUESTIONS.md, "Ontology terms needed"). A documented adapter counts at DC fast
+# ports only, as in CQ1 and planning/filters.py::compatible_ports (#157).
 PREFIX cc: <https://example.org/clickless#>
 
 SELECT DISTINCT ?station ?amenity ?connector
 WHERE {
   VALUES ?vehicle { cc:vehicle_REPLACE_ME }
-  ?vehicle  cc:supports|cc:supportsViaAdapter ?connector .
   ?station  cc:hasPort      ?port .
   ?port     cc:hasConnector ?connector .
+  {
+    ?vehicle cc:supports ?connector .
+  } UNION {
+    ?vehicle cc:supportsViaAdapter ?connector .  # adapters at DC fast ports only, as in CQ1
+    ?port    cc:chargerLevel "dc_fast" .
+  }
   ?station  cc:near         ?amenity .
   ?amenity  cc:amenityCategory "food" .
 }
-ORDER BY ?station ?amenity
+ORDER BY ?station ?amenity ?connector

@@ -5,7 +5,7 @@
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 
-# Minimal domain ontology v0.2 (proposal §III-C). Owner: Manas.
+# Minimal domain ontology v0.3 (proposal §III-C). Owner: Manas.
 # v0.2 (ADR 0015): the terms retrieval/kg/build.py writes and retrieval/kg/enrich.py reads, incl.
 # the four terms CQ2-CQ6 proposed in docs/COMPETENCY_QUESTIONS.md.
 # TODO(Manas): replace example.org namespace; align Claim/Source with PROV-O; add competency
@@ -57,6 +57,12 @@ cc:portIndex     a owl:DatatypeProperty ; rdfs:domain cc:ChargingPort ; rdfs:ran
 cc:chargerLevel  a owl:DatatypeProperty ; rdfs:domain cc:ChargingPort ; rdfs:range xsd:string .
 cc:amenityCategory a owl:DatatypeProperty ; rdfs:domain cc:Amenity ; rdfs:range xsd:string .
 cc:openingHours  a owl:DatatypeProperty ; rdfs:domain cc:Amenity ; rdfs:range xsd:string .
+
+# v0.3 (#157, CQ9) -------------------------------------------------------------------------
+# An explanation and its claims, written by build.add_explanation(graph, result). Claim text is
+# rdfs:label; cc:supportedBy (above) links a claim to the cc:Source of each KG fact it cites.
+cc:Explanation   a owl:Class .
+cc:hasClaim      a owl:ObjectProperty ; rdfs:domain cc:Explanation ; rdfs:range cc:Claim .
 
 cc:CCS1    a cc:Connector .
 cc:NACS    a cc:Connector .

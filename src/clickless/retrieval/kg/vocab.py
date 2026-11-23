@@ -18,11 +18,13 @@ def _t(name: str) -> URIRef:
 # classes
 Station, ChargingPort, Network, Connector = _t("Station"), _t("ChargingPort"), _t("Network"), _t("Connector")
 Vehicle, Amenity, Source, Proximity = _t("Vehicle"), _t("Amenity"), _t("Source"), _t("Proximity")
+Claim, Explanation = _t("Claim"), _t("Explanation")
 
 # object properties
 hasPort, hasConnector, operatedBy = _t("hasPort"), _t("hasConnector"), _t("operatedBy")
 supports, supportsViaAdapter, near = _t("supports"), _t("supportsViaAdapter"), _t("near")
 fromStation, toAmenity, hasProvenance = _t("fromStation"), _t("toAmenity"), _t("hasProvenance")
+hasClaim, supportedBy = _t("hasClaim"), _t("supportedBy")
 
 # datatype properties
 identifier, access, status = _t("identifier"), _t("access"), _t("status")

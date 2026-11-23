@@ -1,14 +1,23 @@
 # CQ1: Which stations have a port this vehicle can use (natively or with a documented adapter),
 #      and at what power?
-# Example query written by Manas; CQ2-CQ6 are Aarya's learning swap (see docs/TEAM_PLAN.md).
+# Query by Manas; expected answers and the adapter-level rule by Aarya (#157). Same rule as
+# planning/filters.py::compatible_ports: a native connector at any level, a documented adapter at
+# DC fast ports only (an AC adapter is never inferred, ADR 0009). A port with unknown power is
+# listed with an empty ?power (ADR 0010) and sorts last. DISTINCT: a connector that is both native
+# and adapted matches a port twice.
 PREFIX cc: <https://example.org/clickless#>
 
-SELECT ?station ?connector ?power
+SELECT DISTINCT ?station ?port ?connector ?power
 WHERE {
-  ?vehicle  cc:supports     ?connector .
-  ?station  cc:hasPort      ?port .
-  ?port     cc:hasConnector ?connector .
-  OPTIONAL { ?port cc:powerKw ?power }
   VALUES ?vehicle { cc:vehicle_REPLACE_ME }
+  ?station cc:hasPort      ?port .
+  ?port    cc:hasConnector ?connector .
+  {
+    ?vehicle cc:supports ?connector .
+  } UNION {
+    ?vehicle cc:supportsViaAdapter ?connector .
+    ?port    cc:chargerLevel "dc_fast" .
+  }
+  OPTIONAL { ?port cc:powerKw ?power }
 }
-ORDER BY DESC(?power)
+ORDER BY DESC(?power) ?station ?port

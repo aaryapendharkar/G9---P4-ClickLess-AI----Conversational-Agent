@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..contracts import (
+    AmenityCategory,
     Candidate,
     ChargingStop,
     Itinerary,
@@ -66,6 +67,25 @@ def satisfied_preferences(
     return match_score_by_preference, sorted(matched_amenity_ids)
 
 
+def required_accessibility_preference_keys(
+    request: TripRequest,
+) -> set[str]:
+    """Return accessibility preferences that every valid itinerary must satisfy.
+
+    Explicit need language is represented by ``priority="important"``.
+    Softer accessibility requests remain ranked preferences and therefore do
+    not appear in this required set.
+    """
+
+    return {
+        preference.key
+        for preference in request.amenities
+        if preference.category == AmenityCategory.RESTROOM
+        and preference.wheelchair_required
+        and preference.priority == "important"
+    }
+
+
 def simulate_itinerary(
     request: TripRequest,
     vehicle: Vehicle,
@@ -112,6 +132,10 @@ def simulate_itinerary(
     current_soc_pct = request.start_soc_pct
     legs: list[Leg] = []
     charging_stops: list[ChargingStop] = []
+
+    # A required amenity may be satisfied at any charging stop. Accumulate
+    # matches across the full trip before deciding whether the itinerary is valid.
+    satisfied_preference_keys_across_trip: set[str] = set()
 
     for leg_index in range(len(route_points) - 1):
         start_point = route_points[leg_index]
@@ -166,10 +190,9 @@ def simulate_itinerary(
             for preference_key, match_score in satisfied_preferences_by_key.items()
             if match_score > 0
         }
+        satisfied_preference_keys_across_trip.update(satisfied_preference_keys)
 
-        next_leg_distance_km = route_measurement.legs[
-            leg_index + 1
-        ].distance_km
+        next_leg_distance_km = route_measurement.legs[leg_index + 1].distance_km
         next_arrival_target_soc_pct = (
             minimum_arrival_soc_pct
             if leg_index + 2 == len(route_points) - 1
@@ -229,6 +252,14 @@ def simulate_itinerary(
             )
         )
         current_soc_pct = departure_soc_pct
+
+    required_accessibility_keys = required_accessibility_preference_keys(request)
+
+    # Energy-feasible is not enough when the driver explicitly requires an
+    # accessible restroom. Reject this proposed sequence unless one of its
+    # charging stops satisfied every required accessibility preference.
+    if not required_accessibility_keys.issubset(satisfied_preference_keys_across_trip):
+        return None
 
     stop_identifier = "+".join(stop.station_id for stop in charging_stops) or "direct"
     return Itinerary(
