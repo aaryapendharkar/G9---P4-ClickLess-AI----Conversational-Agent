@@ -1,7 +1,8 @@
-# ADR 0018: Route-distributed candidates, at most 2 usable per stretch (+ required amenities)
+# ADR 0018: Route-distributed candidates, at most 2 usable per stretch (+ required accessibility)
 
 - Status: accepted (2 approvals: Hriday 2026-11-22, Aarya 2026-11-23, on PR #133). Decision 4 (required-amenity
-  retention) was added on 2026-11-23 at Hriday's request (#136); his re-review on PR #133 is required before merge.
+  retention) was added on 2026-11-23 at Hriday's request (#136), narrowed to ADR 0003's rule in his review,
+  and needs Hriday's and Aarya's approval on the new head before merge.
 - Date: 2026-11-21
 - Owner: Ian (evaluation)
 - Approvers: Hriday (planning, integration), Aarya (data, evaluation); two approvals needed (`docs/TEAM_PLAN.md`)
@@ -58,15 +59,18 @@ nearest-first can let an unusable station take a usable one's slot.
 3. **Cap of 60 kept.** If the bounded usable set still exceeds 60, it is shared round-robin across
    the stretches, fastest first. Stations the car can't use fill any free slots in route order;
    the hard-constraint filter removes them before planning, as before.
-4. **Required amenities are retained** (`max_required_extra_per_stretch: 2`, #136). Ranking by power
-   can drop the only station with something the driver needs: in demo scenario 4, the one charger
-   with a `wheelchair=yes` restroom (Flagstaff Chevrolet) lost its slot to faster chargers. After
-   steps 1–3, a usable station is added back when an amenity within `amenity_radius_m` satisfies a
-   preference the request marks `important`: same category, and `wheelchair=yes` when
-   `wheelchair_required` (the planner's rule, ADR 0003). At most 2 are added per stretch, closest
-   to the route first, on top of the cap of 60. `nice_to_have` and `other` preferences are never
-   retained (an `other` match is the matcher's decision, made after retrieval). A request without
-   a required preference skips this step, so its candidates are exactly those of steps 1–3.
+4. **Required accessibility amenities are retained** (`max_required_extra_per_stretch: 2`, #136).
+   Ranking by power can drop the only station with something the driver requires: in demo
+   scenario 4, the one charger with a `wheelchair=yes` restroom (Flagstaff Chevrolet) lost its slot
+   to faster chargers. Retrieval mirrors ADR 0003's hard rule and nothing broader. A preference is
+   required only when it is **both** `important` **and** `wheelchair_required`. After steps 1–3, a
+   usable station is added back when an amenity within `amenity_radius_m` has the same category and
+   is explicitly tagged `wheelchair=yes` (unknown and limited never count). At most 2 are added per
+   stretch, closest to the route first, on top of the cap of 60. Every other preference, including
+   other `important` ones and `nice_to_have` + wheelchair, stays a ranked preference and never
+   changes the candidates; `other` is never retained (an `other` match is the matcher's decision,
+   made after retrieval). A request without a required preference skips this step, so its
+   candidates are exactly those of steps 1–3.
 
 k = 2 is chosen because:
 - it has the best net plan time of all the variants;
@@ -83,12 +87,15 @@ Same 41 dev items + 2 demo trips, same method (Config A on gold requests, snapsh
 |---|---|---|---|---|
 | main (first 60 along the route) | 36/43 | 7 | 0 | 0.07 / 0.30 / 2.5 |
 | k = 2 per stretch (decisions 1–3) | 43/43 | 0 | 0 | 0.09 / 0.80 / 5.4 |
-| **k = 2 + required-amenity retention (1–4)** | **43/43** | **0** | **0** | **0.09 / 2.58 / 5.5** |
+| **k = 2 + required-accessibility retention (1–4)** | **43/43** | **0** | **0** | **0.10 / 1.02 / 6.8** |
 
-Decision 4 changes the candidates of exactly the 8 requests with an `important` amenity (1–16 extra
-stations each). The other 35 have identical candidates. Recommended plans: 3 unchanged, 2 faster
-(aarya-026 and deepti-027, −7.5 min), deepti-024 −0.2 min, and 2 that now stop for the required
-restroom (deepti-005 +2.0 min, deepti-010 +6.6 min).
+Decision 4 changes the candidates of exactly the 4 requests with an `important` + `wheelchair_required`
+restroom (aarya-026, deepti-010, deepti-022, deepti-027; 1–2 extra stations each). The other 39 have
+identical candidates. Recommended plans: deepti-022 unchanged, aarya-026 and deepti-027 7.5 min
+faster, and deepti-010 now stops at a station with the accessible restroom (+6.6 min). The max is
+aarya-017 in both bounded rows; its candidates are identical in both, so 5.4 vs 6.8 s is run-to-run
+timing noise. (A first version that retained every `important` amenity changed 8 requests and was
+narrowed in review to match ADR 0003.)
 
 ## Consequences
 - **Results:** the cut changes candidate sets on 38 of 43 items and the recommended plan on 25:
@@ -112,8 +119,10 @@ restroom (deepti-005 +2.0 min, deepti-010 +6.6 min).
   - `tests/integration/test_long_route_candidates.py`: deepti-014/015 and LA → SF plan and verify
     on the snapshot;
   - the snapshot indexed/brute-force equivalence tests are unchanged;
-  - required-amenity retention: unit tests on both methods (kept beyond the k = 2 picks, bounded,
-    closest first, `wheelchair=yes` only; unchanged candidates without an important amenity), and
-    `tests/integration/test_required_amenity_candidates.py` (scenario 4 keeps Flagstaff Chevrolet).
-- **Planning time:** retention adds at most 2 stations per stretch for requests with a required
-  amenity; the dev p90 rises from 0.8 to 2.6 s, max 5.5 s.
+  - required-accessibility retention, on both retrieval methods: important + wheelchair is retained
+    beyond the k = 2 picks (bounded, closest first, `wheelchair=yes` only); important without
+    wheelchair, `nice_to_have` + wheelchair and no amenities leave the candidates unchanged; indexed
+    and brute force agree; `tests/integration/test_required_amenity_candidates.py`: scenario 4 keeps
+    Flagstaff Chevrolet on the snapshot.
+- **Planning time:** retention adds at most 2 stations per stretch, only for requests with a required
+  accessibility amenity; on dev, p90 0.8 → 1.0 s.

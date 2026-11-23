@@ -273,27 +273,32 @@ def test_required_extras_at_most_per_bin_per_stretch_closest_to_the_route_first(
     assert select_required_extras(along, off, [0, 1], 50.0, required, 0, usable=usable) == []
 
 
-def test_only_important_preferences_except_other_are_required():
+def test_only_important_wheelchair_preferences_are_required():
+    """ADR 0003: only important + wheelchair_required is a hard requirement; everything else stays soft."""
     req = TripRequest(
         request_id="r",
         raw_text="t",
         amenities=[
             AmenityPreference(category=AmenityCategory.RESTROOM, wheelchair_required=True, priority="important"),
-            AmenityPreference(category=AmenityCategory.COFFEE),  # nice_to_have
-            AmenityPreference(category=AmenityCategory.OTHER, phrase="sushi", priority="important"),
+            AmenityPreference(category=AmenityCategory.RESTROOM, priority="important"),  # no wheelchair
+            AmenityPreference(category=AmenityCategory.FOOD, priority="important"),
+            AmenityPreference(category=AmenityCategory.RESTROOM, wheelchair_required=True),  # nice_to_have
+            AmenityPreference(
+                category=AmenityCategory.OTHER, phrase="ramp", wheelchair_required=True, priority="important"
+            ),
         ],
     )
     assert required_preferences(req) == [(AmenityCategory.RESTROOM, True)]
     assert required_preferences(None) == []
 
 
-def test_a_wheelchair_requirement_needs_an_explicit_yes():
+def test_a_wheelchair_requirement_needs_an_explicit_yes_in_the_same_category():
     need = [(AmenityCategory.RESTROOM, True)]
     assert satisfies_required([_amenity("a", 0.0, wheelchair="yes")], need)
     assert not satisfies_required([_amenity("a", 0.0, wheelchair="unknown")], need)
     assert not satisfies_required([_amenity("a", 0.0, wheelchair="limited")], need)
+    assert not satisfies_required([_amenity("a", 0.0, wheelchair="no")], need)
     assert not satisfies_required([_amenity("a", 0.0, category=AmenityCategory.FOOD, wheelchair="yes")], need)
-    assert satisfies_required([_amenity("a", 0.0, wheelchair="unknown")], [(AmenityCategory.RESTROOM, False)])
 
 
 def _amenity(amenity_id, lat, lon=-100.0, category=AmenityCategory.RESTROOM, wheelchair="unknown"):
@@ -301,9 +306,9 @@ def _amenity(amenity_id, lat, lon=-100.0, category=AmenityCategory.RESTROOM, whe
     return Amenity(amenity_id=amenity_id, category=category, lat=lat, lon=lon, wheelchair=wheelchair, provenance=prov)
 
 
-def _restroom_world(store):
+def _restroom_world(store, cafe_wheelchair="unknown"):
     """Scenario 4 in miniature: one 25 km stretch with two fast CCS1 chargers and two slow ones off
-    the road. Only the slow dealer has a wheelchair=yes restroom; the slow cafe's is untagged."""
+    the road. The slow dealer has a wheelchair=yes restroom; the slow cafe's is `cafe_wheelchair`."""
     base = next(iter(store.stations.values())).model_copy(
         update={"status": StationStatus.AVAILABLE, "access": "public"}
     )
@@ -320,7 +325,7 @@ def _restroom_world(store):
     ]
     amenities = [
         _amenity("osm:dealer-restroom", 30.0501, -100.02, wheelchair="yes"),
-        _amenity("osm:cafe-restroom", 30.0601, -100.01, wheelchair="unknown"),
+        _amenity("osm:cafe-restroom", 30.0601, -100.01, wheelchair=cafe_wheelchair),
     ]
     world = DataStore(stations, list(store.vehicles.values()), amenities, dict(store.places), store.routes_dir)
     return world, _route([(30.0, -100.0), (30.2, -100.0)])  # ~22 km: one stretch
@@ -331,60 +336,66 @@ def _restroom_request(priority, wheelchair=True):
     return TripRequest(request_id="r", raw_text="t", vehicle_id=SPARK, amenities=[pref])
 
 
-def _ids(world, route, req, method, extra):
+def _dump(world, route, req, method, extra):
     retriever = CorridorRetriever(world, 8.0, 400.0, 60, method=method, per_bin=2, required_extra_per_bin=extra)
-    return [c.station.station_id for c in retriever.candidates(route, req)]
+    return [c.model_dump(mode="json") for c in retriever.candidates(route, req)]
+
+
+def _ids(world, route, req, method, extra):
+    return [c["station"]["station_id"] for c in _dump(world, route, req, method, extra)]
 
 
 @pytest.mark.parametrize("method", ["indexed", "brute_force"])
-def test_a_station_with_a_required_accessible_restroom_is_kept_beyond_the_per_stretch_picks(store, method):
+def test_important_wheelchair_restroom_is_retained_beyond_the_per_stretch_picks(store, method):
     world, route = _restroom_world(store)
-    assert _ids(world, route, _restroom_request("important"), method, None) == ["fast-350", "fast-150"]  # the bug
-    assert _ids(world, route, _restroom_request("important"), method, 2) == ["fast-350", "fast-150", "dealer-50"]
-    # a required restroom without the wheelchair condition: both slow stations qualify and fit under 2
-    assert _ids(world, route, _restroom_request("important", wheelchair=False), method, 2) == [
-        "fast-350",
-        "fast-150",
-        "dealer-50",
-        "cafe-50",
-    ]
-    # bounded: with 1 extra per stretch, the one closer to the route wins
-    assert _ids(world, route, _restroom_request("important", wheelchair=False), method, 1) == [
-        "fast-350",
-        "fast-150",
-        "cafe-50",
-    ]
+    req = _restroom_request("important")
+    assert _ids(world, route, req, method, None) == ["fast-350", "fast-150"]  # the bug: cut by power
+    # only the dealer qualifies: the cafe's restroom is not tagged wheelchair=yes
+    assert _ids(world, route, req, method, 2) == ["fast-350", "fast-150", "dealer-50"]
 
 
 @pytest.mark.parametrize("method", ["indexed", "brute_force"])
-def test_requests_without_an_important_amenity_get_exactly_the_same_candidates(store, method):
-    world, route = _restroom_world(store)
-    for req in (
-        _restroom_request("nice_to_have"),
-        TripRequest(request_id="r", raw_text="t", vehicle_id=SPARK),
-        None,
-    ):
-        retrievers = [
-            CorridorRetriever(world, 8.0, 400.0, 60, method=method, per_bin=2, required_extra_per_bin=extra)
-            for extra in (None, 2)
-        ]
-        before, after = ([c.model_dump(mode="json") for c in r.candidates(route, req)] for r in retrievers)
-        assert before == after
+def test_retention_is_bounded_per_stretch_closest_to_the_route_first(store, method):
+    world, route = _restroom_world(store, cafe_wheelchair="yes")  # both slow stations qualify
+    req = _restroom_request("important")
+    assert _ids(world, route, req, method, 2) == ["fast-350", "fast-150", "dealer-50", "cafe-50"]
+    assert _ids(world, route, req, method, 1) == ["fast-350", "fast-150", "cafe-50"]  # cafe is closer
 
 
-def test_both_methods_agree_on_the_required_extras(store):
-    world, route = _restroom_world(store)
+@pytest.mark.parametrize("method", ["indexed", "brute_force"])
+def test_important_without_wheelchair_leaves_candidates_unchanged(store, method):
+    world, route = _restroom_world(store, cafe_wheelchair="yes")
     req = _restroom_request("important", wheelchair=False)
-    dump = [
-        [
-            c.model_dump(mode="json")
-            for c in CorridorRetriever(world, 8.0, 400.0, 60, method=m, per_bin=2, required_extra_per_bin=2).candidates(
-                route, req
-            )
-        ]
-        for m in ("indexed", "brute_force")
-    ]
-    assert dump[0] == dump[1]
+    assert _dump(world, route, req, method, 2) == _dump(world, route, req, method, None)
+    food = TripRequest(
+        request_id="r",
+        raw_text="t",
+        vehicle_id=SPARK,
+        amenities=[AmenityPreference(category=AmenityCategory.FOOD, priority="important")],
+    )
+    assert _dump(world, route, food, method, 2) == _dump(world, route, food, method, None)
+
+
+@pytest.mark.parametrize("method", ["indexed", "brute_force"])
+def test_nice_to_have_wheelchair_leaves_candidates_unchanged(store, method):
+    world, route = _restroom_world(store, cafe_wheelchair="yes")
+    req = _restroom_request("nice_to_have")
+    assert _dump(world, route, req, method, 2) == _dump(world, route, req, method, None)
+
+
+@pytest.mark.parametrize("method", ["indexed", "brute_force"])
+def test_requests_without_amenities_get_exactly_the_same_candidates(store, method):
+    world, route = _restroom_world(store, cafe_wheelchair="yes")
+    for req in (TripRequest(request_id="r", raw_text="t", vehicle_id=SPARK), None):
+        assert _dump(world, route, req, method, 2) == _dump(world, route, req, method, None)
+
+
+@pytest.mark.parametrize("cafe_wheelchair", ["unknown", "yes"])
+@pytest.mark.parametrize("extra", [1, 2])
+def test_both_methods_agree_on_the_required_extras(store, cafe_wheelchair, extra):
+    world, route = _restroom_world(store, cafe_wheelchair=cafe_wheelchair)
+    req = _restroom_request("important")
+    assert _dump(world, route, req, "indexed", extra) == _dump(world, route, req, "brute_force", extra)
 
 
 def test_production_config_retains_up_to_two_required_stations_per_stretch(pipe_a):

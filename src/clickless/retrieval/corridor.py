@@ -41,13 +41,15 @@ keeps every dev item and demo trip feasible with max 6.2 s and better plans than
 cut. None (the retriever's default) means no bound.
 
 required_extra_per_bin (config `max_required_extra_per_stretch`, #133 / #136) keeps stations the
-power-ordered cap would drop but the driver needs. A preference is required when the request marks
-it `important` (with `wheelchair_required`, only a `wheelchair=yes` amenity satisfies it, the planner's
-rule; ADR 0003). After the selection above, a usable station with such an amenity within the amenity
-radius is added back, at most required_extra_per_bin per stretch, closest to the route first. These
-extras sit on top of max_candidates. A request without a required preference skips this step, so
-its candidates are exactly the ones above. `other` preferences are not retained: whether an `other`
-amenity satisfies the phrase is the matcher's decision, made after retrieval.
+power-ordered cap would drop but the driver requires. Retrieval mirrors ADR 0003's hard rule only: a
+preference is required when it is BOTH `important` and `wheelchair_required`, and only an amenity of
+the same category explicitly tagged `wheelchair=yes` satisfies it (unknown and limited never do).
+Every other preference, including other `important` ones, stays a ranked preference and never
+changes the candidates. After the selection above, a usable station with such an amenity within the
+amenity radius is added back, at most required_extra_per_bin per stretch, closest to the route
+first. These extras sit on top of max_candidates. A request without a required preference skips
+this step, so its candidates are exactly the ones above. `other` preferences are not retained:
+whether an `other` amenity satisfies the phrase is the matcher's decision, made after retrieval.
 
 TODO(Manas): a BallTree / R-tree could replace the grids; the equivalence tests stay the contract.
 """
@@ -183,13 +185,15 @@ RequiredPreference = tuple[AmenityCategory, bool]  # (category, wheelchair_requi
 
 
 def required_preferences(request: TripRequest | None) -> list[RequiredPreference]:
-    """The request's amenities that retrieval must not drop: `important` ones, except `other`."""
+    """The request's hard amenity requirements (ADR 0003): `important` AND `wheelchair_required`.
+    Other preferences, including other `important` ones, stay soft and are not retained. `other`
+    is excluded because only the matcher can decide whether an `other` amenity satisfies it."""
     if request is None:
         return []
     return [
         (p.category, p.wheelchair_required)
         for p in request.amenities
-        if p.priority == "important" and p.category != AmenityCategory.OTHER
+        if p.priority == "important" and p.wheelchair_required and p.category != AmenityCategory.OTHER
     ]
 
 
