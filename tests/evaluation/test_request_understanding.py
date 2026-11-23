@@ -11,6 +11,8 @@ from evaluation.metrics.request_understanding import (
     clarification_prf,
     extraction_prf,
     field_counts,
+    invented_constraint_rate,
+    invented_constraints,
     item_exact_match,
     missing_field_match,
     parse_place,
@@ -269,3 +271,64 @@ def test_lowercase_state_code_uses_gold_hint():
     assert field_counts("origin", "Bend, OR", "bend wa", level="city") == (0, 1, 1)
     # gold without a state gives no hint
     assert field_counts("origin", "Phoenix", "phoenix az") == (0, 1, 1)
+
+
+# --------------------------------------------------------------------------- invented constraints (#145)
+
+
+def test_invented_constraints_lists_hard_constraints_the_gold_does_not_have():
+    gold = {"origin": "Ely", "destination": "Tonopah", "start_soc_pct": 10, "arrival_soc_pct_min": 60,
+            "min_power_kw": 350}
+    it = item(0, gold)
+    # "only 350 kW chargers" parsed with an extra CCS1 requirement: the #145 case
+    res = result(0, start_soc_pct=10, arrival_soc_pct_min=60, min_power_kw=350, connectors_override=["CCS1"])
+    assert invented_constraints(it, res) == {"connectors_override": ["CCS1"]}
+    # a wrong value for a constraint the gold has is a field error, not an invention
+    assert invented_constraints(it, result(0, arrival_soc_pct_min=50, min_power_kw=150)) == {}
+    # every hard-constraint field counts; soft fields (amenities, profile) and start SoC do not
+    loose = result(1, start_soc_pct=80, arrival_soc_pct_min=20, max_detour_min=10, min_power_kw=50,
+                   connectors_override=["NACS", "CCS1"], tradeoff_profile="fastest",
+                   amenities=[AmenityPreference(category="food", phrase="lunch")])
+    assert invented_constraints(item(1, {"origin": "Tempe"}), loose) == {
+        "connectors_override": ["CCS1", "NACS"],
+        "min_power_kw": 50.0,
+        "max_detour_min": 10.0,
+        "arrival_soc_pct_min": 20.0,
+    }
+    # an empty connector list is "absent", like everywhere else in the RQ1 metrics
+    assert invented_constraints(item(2, {}), result(2, connectors_override=[])) == {}
+    # no parsed request: nothing to judge
+    assert invented_constraints(item(3, {}), PlanResult(request_id="t-3", config="A", status="error")) is None
+
+
+def test_invented_constraint_rate_is_over_parsed_requests_and_lists_the_items():
+    items = [item(i, {"min_power_kw": 350} if i == 0 else {}) for i in range(4)]
+    results = [
+        result(0, min_power_kw=350, connectors_override=["CCS1"]),  # invented connector
+        result(1, max_detour_min=15),  # invented detour bound
+        result(2, status="needs_clarification"),  # nothing invented (asking is fine)
+        PlanResult(request_id="t-3", config="A", status="error"),  # no parsed request: not counted
+    ]
+    m = invented_constraint_rate(items, results)
+    assert m["invented_constraint_rate"] == pytest.approx(2 / 3)
+    assert (m["n_parsed"], m["n_invented"]) == (3, 2)
+    assert m["items"] == [
+        {"id": "t-0", "fields": {"connectors_override": ["CCS1"]}},
+        {"id": "t-1", "fields": {"max_detour_min": 15.0}},
+    ]
+    ci = understanding_cis(items, results, n=200)["invented_constraint_rate"]
+    assert ci[0] <= 2 / 3 <= ci[1]
+
+
+def test_invented_constraints_are_separate_from_silent_assumptions():
+    # a complete request (no clarification needed) with an invented connector: invisible to the
+    # silent-assumption rate, which only looks at incomplete items
+    items = [item(0, {"start_soc_pct": 35}, clar=False)]
+    results = [result(0, start_soc_pct=35, connectors_override=["CCS1"])]
+    assert math.isnan(silent_assumption_rate(items, results)["silent_assumption_rate"])
+    assert invented_constraint_rate(items, results)["invented_constraint_rate"] == 1.0
+
+
+def test_invented_constraint_rate_is_nan_without_parsed_requests():
+    m = invented_constraint_rate([item(0, {})], [PlanResult(request_id="t-0", config="A", status="error")])
+    assert math.isnan(m["invented_constraint_rate"]) and m["n_parsed"] == 0 and m["items"] == []

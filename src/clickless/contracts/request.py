@@ -71,7 +71,8 @@ class ParseResult(BaseModel):
     request: TripRequest
     missing_fields: list[str] = Field(default_factory=list)
     ambiguous_fields: dict[str, list[str]] = Field(default_factory=dict)  # field -> candidates
-    parser: str  # "rules" | "spacy" | "llm"
+    parser: str  # "rules" | "rules_fallback" | "spacy" | "llm"
+    fallback_reason: str | None = None  # populated when an LLM parse falls back to rules
 
     @property
     def needs_input(self) -> bool:

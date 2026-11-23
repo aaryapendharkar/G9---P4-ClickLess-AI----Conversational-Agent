@@ -22,3 +22,10 @@ def test_negated_priority_is_not_detected():
     assert detect_profile(text) == "balanced"
     assert detect_priority_keys(text) == set()
     assert detect_weight_overrides(text) == {}
+
+
+def test_required_amenities_are_important_but_negated_needs_are_not():
+    assert detect_priority_keys("I need a wheelchair accessible restroom") == {"restroom"}
+    assert detect_priority_keys("I must have a restroom") == {"restroom"}
+    assert detect_priority_keys("I don't need a wheelchair accessible restroom") == set()
+    assert detect_priority_keys("I don't need a restroom, but I must have lunch") == {"food"}

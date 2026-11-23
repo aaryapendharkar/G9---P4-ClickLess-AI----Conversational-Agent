@@ -15,6 +15,9 @@ import re
 from pathlib import Path
 from typing import Any
 
+import requests
+from pydantic import ValidationError
+
 from ..config import repo_path
 from ..contracts import AmenityCategory, AmenityPreference, Connector, ParseResult, TripRequest
 from .priority_phrases import detect_priority_keys, detect_profile, detect_weight_overrides
@@ -45,6 +48,12 @@ _CONNECTOR_ALIASES = {
     "chademo": Connector.CHADEMO,
     "j1772": Connector.J1772,
 }
+_CONNECTOR_MENTIONS = (
+    (Connector.CCS1, re.compile(r"\b(?:ccs(?:\s*1)?|ccs\s+combo\s*1|combo\s*1|j1772\s+combo)\b", re.I)),
+    (Connector.NACS, re.compile(r"\b(?:nacs|tesla\s+(?:plug|connector))\b", re.I)),
+    (Connector.CHADEMO, re.compile(r"\bchademo\b", re.I)),
+    (Connector.J1772, re.compile(r"\bj1772\b(?!\s+combo)", re.I)),
+)
 
 _EXTRACTION_SCHEMA = {
     "type": "object",
@@ -65,13 +74,15 @@ _EXTRACTION_SCHEMA = {
 
 def _json_object(raw_response: str) -> dict[str, Any]:
     """Accept JSON-only output plus a fenced JSON response, rejecting other text."""
+    if not isinstance(raw_response, str):
+        raise ExtractionValidationError("LLM response must be a string")
     cleaned_response = raw_response.strip()
     fenced_match = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", cleaned_response, re.DOTALL | re.IGNORECASE)
     if fenced_match:
         cleaned_response = fenced_match.group(1)
     parsed_response = json.loads(cleaned_response)
     if not isinstance(parsed_response, dict):
-        raise ValueError("LLM response must be a JSON object")
+        raise ExtractionValidationError("LLM response must be a JSON object")
     return parsed_response
 
 
@@ -81,51 +92,70 @@ def _normalize_connector(value: str) -> Connector:
     try:
         return _CONNECTOR_ALIASES[normalized_value]
     except KeyError as error:
-        raise ValueError(f"unsupported connector: {value}") from error
+        raise ExtractionValidationError(f"unsupported connector: {value}") from error
+
+
+def _explicitly_mentioned_connectors(text: str) -> set[Connector]:
+    """Return connectors named by the driver, never inferred from vehicle or power."""
+    return {connector for connector, pattern in _CONNECTOR_MENTIONS if pattern.search(text)}
 
 
 def _validate_extraction(extracted: dict[str, Any]) -> None:
     """Reject malformed model output before it can enter the shared request contract."""
     unknown_fields = set(extracted) - _ALLOWED_FIELDS
     if unknown_fields:
-        raise ValueError(f"unsupported extraction fields: {sorted(unknown_fields)}")
+        raise ExtractionValidationError(f"unsupported extraction fields: {sorted(unknown_fields)}")
 
     for field_name, (minimum, maximum) in _NUMERIC_RANGES.items():
         value = extracted.get(field_name)
         if value is None:
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-            raise ValueError(f"{field_name} must be a finite number or null")
+            raise ExtractionValidationError(f"{field_name} must be a finite number or null")
         if not minimum <= value <= maximum:
-            raise ValueError(f"{field_name} is outside its allowed range")
+            raise ExtractionValidationError(f"{field_name} is outside its allowed range")
 
     for field_name in ("origin", "destination", "vehicle"):
         value = extracted.get(field_name)
         if value is not None and not isinstance(value, str):
-            raise ValueError(f"{field_name} must be a string or null")
+            raise ExtractionValidationError(f"{field_name} must be a string or null")
 
     connectors = extracted.get("connectors", [])
     if not isinstance(connectors, list) or any(not isinstance(value, str) for value in connectors):
-        raise ValueError("connectors must be a list of strings")
+        raise ExtractionValidationError("connectors must be a list of strings")
     for connector in connectors:
         _normalize_connector(connector)
 
     amenities = extracted.get("amenities", [])
     if not isinstance(amenities, list):
-        raise ValueError("amenities must be a list")
+        raise ExtractionValidationError("amenities must be a list")
     valid_categories = {category.value for category in AmenityCategory}
     for amenity in amenities:
         if not isinstance(amenity, dict) or set(amenity) - _ALLOWED_AMENITY_FIELDS:
-            raise ValueError("amenity has an unsupported shape")
+            raise ExtractionValidationError("amenity has an unsupported shape")
         category_value = amenity.get("category", "other")
         if not isinstance(category_value, str) or category_value.lower() not in valid_categories:
-            raise ValueError(f"unsupported amenity category: {category_value}")
+            raise ExtractionValidationError(f"unsupported amenity category: {category_value}")
         phrase = amenity.get("phrase", category_value)
         if not isinstance(phrase, str):
-            raise ValueError("amenity phrase must be a string")
+            raise ExtractionValidationError("amenity phrase must be a string")
         for boolean_field in ("wheelchair_required", "important"):
             if boolean_field in amenity and not isinstance(amenity[boolean_field], bool):
-                raise ValueError(f"amenity {boolean_field} must be boolean")
+                raise ExtractionValidationError(f"amenity {boolean_field} must be boolean")
+
+
+MAX_FALLBACK_REASON_LENGTH = 500
+
+
+def _bounded_reason(reason: str) -> str:
+    """Keep diagnostics useful without storing unbounded provider messages in results."""
+    if len(reason) <= MAX_FALLBACK_REASON_LENGTH:
+        return reason
+    return reason[: MAX_FALLBACK_REASON_LENGTH - 3] + "..."
+
+
+class ExtractionValidationError(ValueError):
+    """Model output failed the extraction schema or field validation."""
 
 
 class LLMParser:
@@ -178,16 +208,26 @@ class LLMParser:
         except OSError:
             _LOG.warning("Could not write LLM extraction log", exc_info=True)
 
-    def _fallback(self, text: str, request_id: str) -> ParseResult:
-        """Keep the app usable offline without inventing any safety-critical values."""
+    def _fallback(self, text: str, request_id: str, reason: str) -> ParseResult:
+        """Keep the app usable offline while making the fallback visible to evaluation and UI."""
         deterministic_result = RulesParser(self.store).parse(text, request_id)
-        return deterministic_result.model_copy(update={"parser": self.name})
+        return deterministic_result.model_copy(
+            update={"parser": "rules_fallback", "fallback_reason": _bounded_reason(reason)}
+        )
 
     def _ground(self, extracted: dict[str, Any], text: str, request_id: str) -> ParseResult:
         _validate_extraction(extracted)
         origin_text = extracted.get("origin")
         destination_text = extracted.get("destination")
         vehicle_text = extracted.get("vehicle")
+        explicitly_mentioned_connectors = _explicitly_mentioned_connectors(text)
+        connector_overrides = list(
+            dict.fromkeys(
+                normalized
+                for value in extracted.get("connectors", [])
+                if (normalized := _normalize_connector(value)) in explicitly_mentioned_connectors
+            )
+        )
         request = TripRequest(
             request_id=request_id,
             raw_text=text,
@@ -201,7 +241,7 @@ class LLMParser:
             arrival_soc_pct_min=extracted.get("arrival_soc_pct_min"),
             max_detour_min=extracted.get("max_detour_min"),
             min_power_kw=extracted.get("min_power_kw"),
-            connectors_override=[_normalize_connector(value) for value in extracted.get("connectors", [])] or None,
+            connectors_override=connector_overrides or None,
             tradeoff_profile=detect_profile(text),
             weight_overrides=detect_weight_overrides(text),
         )
@@ -239,18 +279,24 @@ class LLMParser:
     def parse(self, text: str, request_id: str) -> ParseResult:
         raw_response = ""
         validation_error: str | None = None
+        fallback_reason = "invalid_output: no response"
         for attempt_number in range(2):
             try:
                 raw_response = self._call(text, validation_error)
                 self._log_raw(request_id, raw_response)
-                extracted = _json_object(raw_response)
-                return self._ground(extracted, text, request_id)
-            except (json.JSONDecodeError, TypeError, ValueError, KeyError) as error:
-                validation_error = str(error)
-                _LOG.warning("LLM extraction attempt %d failed validation: %s", attempt_number + 1, error)
-            except Exception as error:  # network/config failures become a safe incomplete request
+            except (requests.RequestException, RuntimeError) as error:
+                fallback_reason = f"unavailable: {type(error).__name__}: {error}"
                 _LOG.warning("LLM extraction unavailable: %s", error)
                 break
+
+            try:
+                extracted = _json_object(raw_response)
+                return self._ground(extracted, text, request_id)
+            except (json.JSONDecodeError, ExtractionValidationError, ValidationError) as error:
+                fallback_reason = f"invalid_output: attempt {attempt_number + 1}: {error}"
+                validation_error = str(error)
+                _LOG.warning("LLM extraction attempt %d failed validation: %s", attempt_number + 1, error)
+
         if raw_response:
             self._log_raw(request_id, raw_response)
-        return self._fallback(text, request_id)
+        return self._fallback(text, request_id, fallback_reason)

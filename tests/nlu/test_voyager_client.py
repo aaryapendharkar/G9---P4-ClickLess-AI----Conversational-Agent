@@ -4,11 +4,16 @@ from clickless.nlu import voyager_client
 
 
 class FakeResponse:
+    def __init__(self, payload=None):
+        self.payload = (
+            {"choices": [{"message": {"content": "{}"}}]} if payload is None else payload
+        )
+
     def raise_for_status(self):
         return None
 
     def json(self):
-        return {"choices": [{"message": {"content": "{}"}}]}
+        return self.payload
 
 
 def test_local_endpoint_allows_empty_api_key(monkeypatch):
@@ -94,3 +99,12 @@ def test_missing_base_url_fails_before_request(monkeypatch):
 
     with pytest.raises(RuntimeError, match="MISSING_BASE"):
         voyager_client.chat([], "model", base_url_env="MISSING_BASE")
+
+
+@pytest.mark.parametrize("payload", [{}, {"choices": []}, {"choices": [{}]}, {"choices": [{"message": {}}]}])
+def test_malformed_completion_shape_is_reported_as_endpoint_failure(monkeypatch, payload):
+    monkeypatch.setenv("LOCAL_BASE", "http://localhost:11434/v1")
+    monkeypatch.setattr(voyager_client.requests, "post", lambda *args, **kwargs: FakeResponse(payload))
+
+    with pytest.raises(RuntimeError, match="invalid chat completion shape"):
+        voyager_client.chat([], "qwen3:8b", base_url_env="LOCAL_BASE")

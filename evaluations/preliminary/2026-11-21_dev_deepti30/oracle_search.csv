@@ -1,0 +1,4 @@
+config,n_items_searched,n_incomplete,incomplete_reasons,pareto_time_budget_s,items_incomplete
+A,12,2,max_labels: 2,600.0,deepti-010 deepti-024
+B,17,2,max_labels: 2,600.0,deepti-010 deepti-024
+C,17,2,max_labels: 2,600.0,deepti-010 deepti-024

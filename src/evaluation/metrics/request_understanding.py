@@ -8,6 +8,13 @@
     "Proceeded" is any status other than needs_clarification / rejected_incomplete, so a
     planning error (e.g. route not cached) after an unasked-for assumption still counts.
   * priority-phrase accuracy: predicted tradeoff_profile vs gold (TA-feedback category)
+  * invented-constraint rate (#145): share of items with a parsed request that carries a hard
+    constraint the gold request does not have (HARD_CONSTRAINT_FIELDS: connector override,
+    minimum power, maximum detour, minimum arrival SoC). Separate from silent assumptions, which
+    only look at incomplete items: an invented constraint can sit on a complete request (e.g.
+    "only 350 kW chargers" parsed with connectors_override ["CCS1"]) and narrow the plan with no
+    question asked. A wrong value for a constraint the gold does have is a field error, not an
+    invention. Amenities are soft preferences (ranking), so they are not counted here.
 
 Per-field counting (gold = item.gold_request, prediction = result.request):
   * gold and prediction equal                  -> TP
@@ -71,6 +78,14 @@ SCORED_FIELDS: tuple[str, ...] = (
     "connectors_override",
     "amenities",
     "tradeoff_profile",
+)
+# Request fields the planner enforces as hard constraints (filter + verifier). start_soc_pct is a
+# fact about the car, not a constraint; amenities are ranked, not enforced.
+HARD_CONSTRAINT_FIELDS: tuple[str, ...] = (
+    "connectors_override",
+    "min_power_kw",
+    "max_detour_min",
+    "arrival_soc_pct_min",
 )
 _SET_VALUED = ("amenities",)  # set-based P/R (element counts); everything else is one value
 _ASKED = ("needs_clarification", "rejected_incomplete")  # clarify (C) or reject (A/B)
@@ -366,6 +381,41 @@ def silent_assumption_rate(items, results) -> dict[str, float]:
     return {"silent_assumption_rate": sum(flags) / len(flags), "n_incomplete": len(flags)}
 
 
+# --------------------------------------------------------------------------- invented constraints (#145)
+
+
+def invented_constraints(item, result) -> dict[str, Any] | None:
+    """Hard constraints in the parsed request that the gold request does not have: field -> parsed
+    value (normalized; connectors as a sorted list). {} when none; None when there is no parsed
+    request (nothing to judge)."""
+    pred = getattr(result, "request", None)
+    if pred is None:
+        return None
+    out: dict[str, Any] = {}
+    for name in HARD_CONSTRAINT_FIELDS:
+        if normalize_field(name, item.gold_request.get(name)) is None:
+            value = normalize_field(name, _get(pred, name))
+            if value is not None:
+                out[name] = sorted(value) if isinstance(value, frozenset) else value
+    return out
+
+
+def invented_constraint_rate(items, results) -> dict[str, Any]:
+    """Share of items with a parsed request that carry at least one invented hard constraint.
+
+    Returns the rate, n_parsed (the denominator), n_invented, and per-item details
+    [{"id", "fields": {field: parsed value}}] in item order.
+    """
+    flags = [(i.id, inv) for i, r in _check_pairs(items, results) if (inv := invented_constraints(i, r)) is not None]
+    details = [{"id": item_id, "fields": inv} for item_id, inv in flags if inv]
+    return {
+        "invented_constraint_rate": len(details) / len(flags) if flags else float("nan"),
+        "n_parsed": len(flags),
+        "n_invented": len(details),
+        "items": details,
+    }
+
+
 # --------------------------------------------------------------------------- bootstrap CIs
 
 
@@ -374,7 +424,7 @@ def understanding_cis(items, results, n: int = 10_000, seed: int = 573) -> dict[
 
     Keys: micro_f1, exact_match, "<field>.f1" (city-level places, primary), micro_f1_strict,
     exact_match_strict, "{origin,destination}.f1_strict", "city_level.{origin,destination,places}.f1",
-    clarification_f1, silent_assumption_rate.
+    clarification_f1, silent_assumption_rate, invented_constraint_rate.
     Each value is [lo, hi]. Every statistic uses the same seed, so the resampled item sets are
     identical across statistics.
     """
@@ -387,6 +437,7 @@ def understanding_cis(items, results, n: int = 10_000, seed: int = 573) -> dict[
             "exact_strict": _all_match(strict),
             "clar": (i.clarification_required, asked(r)),
             "silent": _silent(i, r),
+            "invented": None if (inv := invented_constraints(i, r)) is None else bool(inv),
         }
         for i, r in pairs
     ]
@@ -404,6 +455,10 @@ def understanding_cis(items, results, n: int = 10_000, seed: int = 573) -> dict[
         v = [x["silent"] for x in s if x["silent"] is not None]
         return sum(v) / len(v) if v else math.nan
 
+    def invented(s: list[dict]) -> float:
+        v = [x["invented"] for x in s if x["invented"] is not None]
+        return sum(v) / len(v) if v else math.nan
+
     stats: dict[str, Callable[[list[dict]], float]] = {
         "micro_f1": f1_of(SCORED_FIELDS),
         "exact_match": lambda s: sum(x["exact"] for x in s) / len(s),
@@ -416,5 +471,6 @@ def understanding_cis(items, results, n: int = 10_000, seed: int = 573) -> dict[
         "city_level.places.f1": f1_of(PLACE_FIELDS, "city"),
         "clarification_f1": clar_f1,
         "silent_assumption_rate": silent,
+        "invented_constraint_rate": invented,
     }
     return {k: list(bootstrap_ci(recs, n=n, seed=seed, statistic=fn)) for k, fn in stats.items()}

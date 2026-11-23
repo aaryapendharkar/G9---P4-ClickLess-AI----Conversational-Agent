@@ -260,7 +260,7 @@ def test_paired_a_vs_c_is_in_the_report(run_dir):
     """A vs C (full system against the baseline) is reported, with the same tests as the other pairs."""
     runs, _ = load_runs(run_dir)
     expected = paired(runs["A"], runs["C"])
-    assert [r["pair"] for r in expected] == ["A vs C"] * 5
+    assert [r["pair"] for r in expected] == ["A vs C"] * 6
     build_report(run_dir, n_boot=100)
     written = [r for r in read_csv(run_dir / "paired.csv") if r["pair"] == "A vs C"]
     assert [(r["outcome"], r["test"], r["n"]) for r in written] == [
@@ -329,7 +329,7 @@ def test_c_nokg_ablation_gets_its_own_column_and_pair(run_dir):
     assert {r["config"] for r in read_csv(run_dir / "headline.csv")} == {"A", "B", "C", "C-noKG"}
     assert "| C-noKG | 6 |" in text
     pairs = read_csv(run_dir / "paired.csv")
-    assert [r["pair"] for r in pairs[::5]] == ["A vs B", "A vs C", "B vs C", "C vs C-noKG"]
+    assert [r["pair"] for r in pairs[::6]] == ["A vs B", "A vs C", "B vs C", "C vs C-noKG"]
     em = next(r for r in pairs if r["pair"] == "C vs C-noKG" and r["outcome"] == "exact_match")
     assert (em["b"], em["c"]) == ("0", "0")  # same rows on both sides
 
@@ -371,8 +371,8 @@ def test_build_report_writes_every_section_and_csv(run_dir):
     assert "0.900 [0.800, 0.970]" in c_line and "0.050 [CI n/a]" in c_line and "0.950 [CI n/a]" in c_line
 
     pairs = read_csv(run_dir / "paired.csv")
-    assert [r["pair"] for r in pairs[::5]] == ["A vs B", "A vs C", "B vs C"]  # in PAIRS order
-    assert len(pairs) == 3 * 5  # 3 McNemar + 2 Wilcoxon outcomes per pair
+    assert [r["pair"] for r in pairs[::6]] == ["A vs B", "A vs C", "B vs C"]  # in PAIRS order
+    assert len(pairs) == 3 * 6  # 4 McNemar + 2 Wilcoxon outcomes per pair
 
     br = read_csv(run_dir / "breakdown.csv")
     a_author = {r["group"]: r for r in br if r["config"] == "A" and r["dimension"] == "author"}
@@ -406,7 +406,7 @@ def test_missing_config_shows_failed_and_skips_its_pair(tmp_path, run_dir):
     assert "A vs C: n/a (C missing)" in text
     assert "B vs C: n/a (C missing)" in text
     c_line = next(line for line in text.splitlines() if line.startswith("| C |"))
-    assert c_line.count("n/a") == 12  # every headline metric
+    assert c_line.count("n/a") == 13  # every headline metric
     assert {r["pair"] for r in read_csv(run_dir / "paired.csv")} == {"A vs B"}
 
 
@@ -751,3 +751,40 @@ def test_some_items_errored_are_listed_and_the_rest_is_scored(tmp_path):
     assert "- A: 1 of 6 items: ValueError x1 (first: i4: ValueError:" in top
     a_line = next(line for line in text.splitlines() if line.startswith("| A |"))
     assert a_line.startswith("| A | 6 |") and "0.167" in a_line  # error rate 1/6; the other 5 are scored
+
+
+# --------------------------------------------------------------------------- invented constraints (#145)
+
+
+def test_invented_constraints_in_headline_csv_report_and_paired_tests(run_dir):
+    # B invents a CCS1 requirement on i1 and a 15-minute detour bound on i4 (gold has neither)
+    path = run_dir / "B_items.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for r in data["rows"]:
+        if r["id"] == "i1":
+            r["result"]["request"]["connectors_override"] = ["CCS1"]
+        if r["id"] == "i4":
+            r["result"]["request"]["max_detour_min"] = 15
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    runs, _ = load_runs(run_dir)
+    assert headline(runs["B"], n_boot=200)["invented_constraint_rate"][0] == pytest.approx(2 / 6)
+    assert headline(runs["A"], n_boot=200)["invented_constraint_rate"][0] == 0.0  # over A's 5 parsed requests
+
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+    assert "Invented-constraint rate" in text and "## Invented constraints" in text
+    assert "| B | i1 | connectors_override | connectors_override=['CCS1'] |" in text
+    assert [(r["config"], r["item_id"], r["fields"]) for r in read_csv(run_dir / "invented_constraints.csv")] == [
+        ("B", "i1", "connectors_override"),
+        ("B", "i4", "max_detour_min"),
+    ]
+    head = {r["config"]: r for r in read_csv(run_dir / "headline.csv")}
+    assert float(head["B"]["invented_constraint_rate"]) == pytest.approx(2 / 6)
+
+    # paired McNemar: A has no parsed request on i5, so that item is left out of this outcome only
+    rows = {(r["pair"], r["outcome"]): r for r in read_csv(run_dir / "paired.csv")}
+    ab = rows[("A vs B", "no_invented_constraint")]
+    assert (ab["n"], ab["b"], ab["c"]) == ("5", "2", "0")  # A right / B wrong on i1 and i4
+    assert rows[("A vs B", "exact_match")]["n"] == "6"  # the other outcomes keep every common item
+    br = [r for r in read_csv(run_dir / "breakdown.csv") if r["config"] == "B" and r["dimension"] == "author"]
+    assert {r["group"]: float(r["invented_constraint_rate"]) for r in br} == {"aarya": 0.5, "ian": 0.5, "manas": 0.0}
