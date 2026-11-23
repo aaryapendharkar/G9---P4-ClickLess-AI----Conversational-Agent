@@ -106,7 +106,9 @@ def test_geocoder_asks_for_five_hits_and_keeps_the_town(tmp_path, monkeypatch):
     out = geocode.geocode_places(["Elko, NV"], cache_dir=str(tmp_path))
     assert seen[0]["limit"] == 5
     assert (out["Elko, NV"]["lat"], out["Elko, NV"]["addresstype"]) == (40.8324, "town")
-    assert [p.name for p in tmp_path.glob("*.json")] == [f"elko_nv.{geocode.CACHE_VERSION}.json"]
+    cache_file = f"{geocode._cache_key('Elko, NV')}.{geocode.CACHE_VERSION}.json"
+    assert [p.name for p in tmp_path.glob("*.json")] == [cache_file]
+    assert geocode._cache_key("Downtown, Denver, CO") != geocode._cache_key("Downtown Denver, CO")
 
 
 # ------------------------------------------------------------------ repairing a snapshot

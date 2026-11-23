@@ -106,12 +106,66 @@ def test_geocoder_uses_the_district_when_it_is_in_the_top_5(tmp_path, monkeypatc
     assert "fallback" not in out["Downtown Denver, CO"]
 
 
-def test_geocoder_falls_back_to_the_city_centre_and_says_so(tmp_path, monkeypatch):
-    asked = _fake_requests(monkeypatch, {"Downtown Denver, CO": [HOTEL], "Denver, CO": [CITY]})
+# Shapes taken from real Nominatim answers (smoke run on #154).
+WESTIN = _hit("The Westin Denver Downtown, 1672, Lawrence Street, Denver", "tourism", "39.7488", "-104.9957")
+LODO = _hit("Lower Downtown, Denver, Colorado, 80202, United States", "neighbourhood", "39.7509", "-104.9997", 24)
+AQUARIUM = _hit("Downtown Aquarium, 700, Water Street, Denver", "tourism", "39.7518", "-105.0139")
+DENVER = _hit("Denver, Colorado, United States", "city", "39.7392", "-104.9849", 12)  # city-county: rank 12
+SCOTTSDALE_APTS = _hit("The Glen at Old Town Apartments, 4343, Scottsdale", "residential", "33.4995", "-111.9117", 24)
+SCOTTSDALE = _hit("Scottsdale, Maricopa County, Arizona, United States", "city", "33.5967", "-111.8910", 16)
+DOUBLETREE = _hit("DoubleTree Suites by Hilton Hotel Detroit Downtown", "tourism", "42.3292", "-83.0527")
+DETROIT = _hit("Detroit, Wayne County, Michigan, United States", "city", "42.3315", "-83.0466", 16)
+
+
+def test_a_city_county_is_a_city_not_an_area():
+    """Denver and San Francisco are `city` at place_rank 12; #120 must not reject them."""
+    assert not geocode.is_area_result(DENVER)
+    assert geocode.pick_result("Denver, CO", [DENVER]) is DENVER
+    assert geocode.is_area_result(_hit("Philadelphia County, Pennsylvania", "county", rank=12))
+
+
+def test_a_live_hit_named_downtown_is_not_the_district():
+    assert not geocode.is_district_result("Downtown Denver, CO", AQUARIUM)
+    assert geocode.is_district_result("Downtown Denver, CO", LODO)
+
+
+def test_district_found_with_the_comma_query(tmp_path, monkeypatch):
+    asked = _fake_requests(monkeypatch, {"Downtown Denver, CO": [WESTIN, HOTEL],
+                                         "Downtown, Denver, CO": [AQUARIUM, LODO]})
+    out = geocode.geocode_places(["Downtown Denver, CO"], cache_dir=str(tmp_path))["Downtown Denver, CO"]
+    assert asked == ["Downtown Denver, CO", "Downtown, Denver, CO"]
+    assert (out["lat"], out["addresstype"]) == (39.7509, "neighbourhood")
+    assert out["fallback"] == "district 'Lower Downtown' found as 'Downtown, Denver, CO'"
+
+
+def test_city_centre_used_when_it_is_near_the_name_matches(tmp_path, monkeypatch):
+    asked = _fake_requests(monkeypatch, {"Downtown Detroit, MI": [DOUBLETREE], "Downtown, Detroit, MI": [DOUBLETREE],
+                                         "Detroit, MI": [DETROIT]})
+    out = geocode.geocode_places(["Downtown Detroit, MI"], cache_dir=str(tmp_path))["Downtown Detroit, MI"]
+    assert asked == ["Downtown Detroit, MI", "Downtown, Detroit, MI", "Detroit, MI"]
+    assert out["lat"] == 42.3315 and out["fallback"].startswith("city centre of 'Detroit, MI', 0.6 km from")
+
+
+def test_a_far_city_centre_is_not_used(tmp_path, monkeypatch):
+    """Scottsdale's centre point is 11 km north of Old Town: keep the best name match, and say so."""
+    _fake_requests(monkeypatch, {"Old Town Scottsdale, AZ": [SCOTTSDALE_APTS],
+                                 "Old Town, Scottsdale, AZ": [SCOTTSDALE_APTS], "Scottsdale, AZ": [SCOTTSDALE]})
+    out = geocode.geocode_places(["Old Town Scottsdale, AZ"], cache_dir=str(tmp_path))["Old Town Scottsdale, AZ"]
+    assert out["lat"] == 33.4995
+    assert out["fallback"] == "best name match: no district found, and 'Scottsdale, AZ''s centre is 11 km away"
+    assert not geocode.looks_like_district_mismatch("Old Town Scottsdale, AZ", out)  # not flagged again
+
+
+def test_city_centre_when_nothing_matches_the_name(tmp_path, monkeypatch):
+    _fake_requests(monkeypatch, {"Downtown Denver, CO": [], "Downtown, Denver, CO": [], "Denver, CO": [DENVER]})
     out = geocode.geocode_places(["Downtown Denver, CO"], cache_dir=str(tmp_path))
-    assert asked == ["Downtown Denver, CO", "Denver, CO"]
-    assert out["Downtown Denver, CO"]["lat"] == 39.7392
-    assert out["Downtown Denver, CO"]["fallback"].startswith("city centre of 'Denver, CO'")
+    assert out["Downtown Denver, CO"] == {"error": "no Nominatim result"}  # an empty first search stays unresolved
+
+    dallas = _hit("Dallas, Texas", "city", "32.78", "-96.8")
+    _fake_requests(monkeypatch, {"Uptown Dallas, TX": [_hit("Texas, United States", "state", rank=8)],
+                                 "Uptown, Dallas, TX": [], "Dallas, TX": [dallas]})
+    out = geocode.geocode_places(["Uptown Dallas, TX"], cache_dir=str(tmp_path / "2"))["Uptown Dallas, TX"]
+    assert out["lat"] == 32.78 and out["fallback"].startswith("city centre of 'Dallas, TX': nothing matched")
 
 
 # ------------------------------------------------------------------ repairing a snapshot

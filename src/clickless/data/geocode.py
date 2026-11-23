@@ -22,7 +22,9 @@ name starting with the district word) is used; if none is in the top 5, the city
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import re
 import time
 from datetime import datetime, timezone
@@ -52,7 +54,7 @@ STATE_NAMES = frozenset(
      "Rhode Island", "South Carolina", "South Dakota", "West Virginia", "District of Columbia", "Puerto Rico"}
 DISTRICT_TYPES = frozenset({"suburb", "neighbourhood", "quarter", "city_district", "borough", "district"})
 _DISTRICT_PREFIX = re.compile(r"^(downtown|old town|uptown|midtown)\b\s*", re.I)
-CACHE_VERSION = "v2"  # v1 files kept only the first result (limit=1), which may be a county
+CACHE_VERSION = "v3"  # v1 kept only the first hit (limit=1); v2 keys could collide (see _cache_key)
 
 
 def is_geocodable(place: str) -> bool:
@@ -70,11 +72,16 @@ def _asks_for_an_area(place: str) -> bool:
 
 
 def is_area_result(result: dict[str, Any]) -> bool:
-    """True for a Nominatim hit that is a county, state or country rather than a town or landmark."""
-    if (result.get("addresstype") or "").lower() in AREA_TYPES:
-        return True
+    """True for a Nominatim hit that is a county, state or country rather than a town or landmark.
+
+    The hit's addresstype decides when it has one: consolidated city-counties such as Denver and
+    San Francisco are `city` at place_rank 12, the county rank. place_rank is only the fallback for
+    an entry without addresstype (country 4, state 8, county 12, city 16)."""
+    addresstype = (result.get("addresstype") or "").lower()
+    if addresstype:
+        return addresstype in AREA_TYPES
     rank = result.get("place_rank")
-    return rank is not None and int(rank) <= 12  # Nominatim: country 4, state 8, county 12, city 16
+    return rank is not None and int(rank) <= 12
 
 
 def district_word(place: str) -> str | None:
@@ -94,13 +101,31 @@ def district_city(place: str) -> str | None:
     return f"{city},{rest}" if city else None
 
 
+def district_comma_query(place: str) -> str | None:
+    """"Downtown Denver, CO" -> "Downtown, Denver, CO": Nominatim finds the neighbourhood this way."""
+    city = district_city(place)
+    word = _DISTRICT_PREFIX.match(place.split(",")[0].strip())
+    return f"{word.group(1)}, {city.strip()}" if city and word else None
+
+
+def _km(a: dict[str, Any], b: dict[str, Any]) -> float:
+    la1, lo1, la2, lo2 = (math.radians(float(x)) for x in (a["lat"], a["lon"], b["lat"], b["lon"]))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return 2 * 6371.0 * math.asin(math.sqrt(h))
+
+
+CITY_CENTRE_MAX_KM = 3.0  # use a city's centre for a district only if the name matches are around it
+
+
 def is_district_result(place: str, result: dict[str, Any]) -> bool:
-    """Is this hit the district `place` names: a suburb/neighbourhood/quarter-type area, or a name that
-    starts with the district word ("Downtown", "Uptown PID", "Downtown San José")? A hotel or road
-    that only contains the word ("SpringHill Suites by Marriott Denver Downtown") is not."""
-    if (result.get("addresstype") or "").lower() in DISTRICT_TYPES:
-        return True
-    word = district_word(place)
+    """Is this hit the district `place` names? A live Nominatim hit must be a suburb/neighbourhood/
+    quarter-type area. A stored entry without addresstype counts if its name starts with the district
+    word ("Downtown", "Uptown PID", "Downtown San José"); a hotel or road that only contains the word
+    ("SpringHill Suites by Marriott Denver Downtown") does not."""
+    addresstype = (result.get("addresstype") or "").lower()
+    if addresstype:  # a live hit: only an area type counts ("Downtown Aquarium" is not the district)
+        return addresstype in DISTRICT_TYPES
+    word = district_word(place)  # a stored entry from before addresstype was kept
     first = (result.get("display_name") or "").split(",")[0].strip().lower()
     return word is not None and first.startswith(word)
 
@@ -182,11 +207,8 @@ def geocode_places(
             continue
         r = pick_result(place, saved["results"])
         fallback = None
-        if r is None and (city := district_city(place)) is not None:
-            city_saved = _search(city, cache, endpoint, pause_s, requests)
-            r = pick_result(city, city_saved["results"])
-            if r is not None:
-                saved, fallback = city_saved, f"city centre of {city!r}: no district match in the top 5"
+        if r is None and district_word(place) is not None:
+            r, saved, fallback = _district_fallback(place, saved, cache, endpoint, pause_s, requests)
         if r is None:
             reason = "no district match" if district_word(place) else "only a county or state matched"
             results[place] = {"error": f"{reason}; name the town or landmark more precisely"}
@@ -205,10 +227,46 @@ def geocode_places(
     return results
 
 
+def _district_fallback(place: str, saved: dict[str, Any], cache, endpoint: str, pause_s: float, requests):
+    """When "Downtown X, ST" itself returns only hotels, roads and the like (#122):
+    1. the district from "Downtown, X, ST" (a neighbourhood/suburb/quarter hit), else
+    2. X's city centre, if it is within CITY_CENTRE_MAX_KM of the best name match, else
+    3. the best name match (often a hotel *in* the district), else the city centre.
+    Returns (hit, the search it came from, a note saying which); the note is stored as `fallback`."""
+    comma = district_comma_query(place)
+    if comma:
+        comma_saved = _search(comma, cache, endpoint, pause_s, requests)
+        hit = next((h for h in comma_saved["results"] if is_district_result(place, h)), None)
+        if hit is not None:
+            return hit, comma_saved, f"district {hit['display_name'].split(',')[0]!r} found as {comma!r}"
+    best_name = next((h for h in saved["results"] if not is_area_result(h)), None)
+    city = district_city(place)
+    centre, city_saved = None, None
+    if city:
+        city_saved = _search(city, cache, endpoint, pause_s, requests)
+        centre = pick_result(city, city_saved["results"])
+    if centre is not None and best_name is not None:
+        km = _km(centre, best_name)
+        if km <= CITY_CENTRE_MAX_KM:
+            return centre, city_saved, f"city centre of {city!r}, {km:.1f} km from the best name match"
+        return best_name, saved, f"best name match: no district found, and {city!r}'s centre is {km:.0f} km away"
+    if best_name is not None:
+        return best_name, saved, "best name match: no district found"
+    if centre is not None:
+        return centre, city_saved, f"city centre of {city!r}: nothing matched the district name"
+    return None, saved, None
+
+
+def _cache_key(query: str) -> str:
+    """Readable and unique per exact query: "Downtown, Denver, CO" and "Downtown Denver, CO" are
+    different searches (the comma one finds the neighbourhood), so a slug alone is not enough."""
+    slug = re.sub(r"[^a-z0-9]+", "_", query.lower()).strip("_")
+    return f"{slug}.{hashlib.sha1(query.encode('utf-8')).hexdigest()[:8]}"
+
+
 def _search(query: str, cache, endpoint: str, pause_s: float, requests) -> dict[str, Any]:
     """Nominatim's top 5 for `query`, from the disk cache or one polite request (1/s, 3 tries)."""
-    key = re.sub(r"[^a-z0-9]+", "_", query.lower()).strip("_")
-    path = cache / f"{key}.{CACHE_VERSION}.json"
+    path = cache / f"{_cache_key(query)}.{CACHE_VERSION}.json"
     if not path.exists():
         params = {"q": query, "format": "jsonv2", "limit": 5, "countrycodes": "us"}
         for attempt in range(1, 4):

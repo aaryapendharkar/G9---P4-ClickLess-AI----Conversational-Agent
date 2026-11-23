@@ -81,32 +81,13 @@ jobs:
           print(f"CachedRouter: {o.text} -> {d.text}: {route.distance_km:.0f} km, {route.duration_min:.0f} min, "
                 f"{len(route.geometry)} points, source {route.provenance.source}")
           PY
-      - name: "TEMP (#122): Nominatim top 5 for district and city queries"
-        run: |
-          python - <<'PY' | tee -a smoke.log
-          import json, time, requests
-          from clickless.data.geocode import NOMINATIM_URL, USER_AGENT
-          qs = ["Downtown Denver, CO", "Downtown, Denver, CO", "Denver, CO",
-                "Old Town Scottsdale, AZ", "Old Town, Scottsdale, AZ", "Scottsdale, AZ",
-                "Downtown Detroit, MI", "Downtown, Detroit, MI", "Downtown Minneapolis, MN", "Downtown, Minneapolis, MN",
-                "Downtown Seattle, WA", "Downtown, Seattle, WA",
-                "San Francisco, CA", "Nashville, TN", "Indianapolis, IN", "Philadelphia, PA"]
-          for q in qs:
-              r = requests.get(NOMINATIM_URL, params={"q": q, "format": "jsonv2", "limit": 5, "countrycodes": "us"},
-                               headers={"User-Agent": USER_AGENT}, timeout=60).json()
-              print(f"## {q}")
-              for h in r:
-                  print(f"   {h.get('addresstype')!s:14} rank={h.get('place_rank')!s:3} {h.get('category')}/{h.get('type')}  "
-                        f"{float(h['lat']):.4f},{float(h['lon']):.4f}  {h['display_name'][:70]}")
-              time.sleep(1.2)
-          PY
       - name: Comment the result on the PR
         if: always()
         run: |
           {
             echo "**snapshot routes smoke test** (run ${{ github.run_id }}, ${{ job.status }}): 3 real benchmark items via OSRM, then 2 new places via Nominatim + OSRM, from a GitHub runner"
             echo '```'
-            tail -n 140 smoke.log 2>/dev/null || echo "no log"
+            tail -n 60 smoke.log 2>/dev/null || echo "no log"
             echo '```'
           } > comment.md
           gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
