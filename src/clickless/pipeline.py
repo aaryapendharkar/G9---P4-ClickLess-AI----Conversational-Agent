@@ -215,6 +215,7 @@ class Pipeline:
                 self.router,
                 cfg["energy"],
             ),
+            amenity_radius_m=r["amenity_radius_m"],
         )
         self.relaxer = MinCostRelaxer(cfg["relaxation"])
         t = cfg["tradeoffs"]
