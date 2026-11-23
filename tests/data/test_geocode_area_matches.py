@@ -106,7 +106,9 @@ def test_geocoder_asks_for_five_hits_and_keeps_the_town(tmp_path, monkeypatch):
     out = geocode.geocode_places(["Elko, NV"], cache_dir=str(tmp_path))
     assert seen[0]["limit"] == 5
     assert (out["Elko, NV"]["lat"], out["Elko, NV"]["addresstype"]) == (40.8324, "town")
-    assert [p.name for p in tmp_path.glob("*.json")] == [f"elko_nv.{geocode.CACHE_VERSION}.json"]
+    cache_file = f"{geocode._cache_key('Elko, NV')}.{geocode.CACHE_VERSION}.json"
+    assert [p.name for p in tmp_path.glob("*.json")] == [cache_file]
+    assert geocode._cache_key("Downtown, Denver, CO") != geocode._cache_key("Downtown Denver, CO")
 
 
 # ------------------------------------------------------------------ repairing a snapshot
@@ -209,7 +211,8 @@ def test_county_match_is_regeocoded_and_its_routes_removed(snapshot, benchmark, 
     assert "added" not in src  # nothing new was added
     assert verify_manifest(str(snapshot)) == []
     out = capsys.readouterr().out
-    assert "Elko, NV (was: Elko County, Nevada, United States)" in out and "moved 54 km" in out
+    assert "Elko, NV: a county or state instead of the town (was: Elko County, Nevada, United States)" in out
+    assert "moved 54.5 km" in out
 
     # a second run finds nothing left to fix
     assert add_places(str(snapshot), str(benchmark), fix_area_matches=True) == 0

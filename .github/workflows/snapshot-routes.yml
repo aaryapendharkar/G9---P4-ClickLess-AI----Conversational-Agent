@@ -21,6 +21,10 @@ on:
         description: "Re-geocode places stored as a county/state instead of the town, and rebuild their routes"
         type: boolean
         default: true
+      fix_district_matches:
+        description: "Re-geocode district names (Downtown X) stored as a hotel/apartments/road, and rebuild their routes"
+        type: boolean
+        default: true
 
 permissions:
   contents: write  # update the release
@@ -47,7 +51,7 @@ jobs:
           mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
           python -m clickless.data.snapshot_report --verify-only
       - name: Geocode new benchmark places (Nominatim)
-        run: python -m clickless.data.add_places --dir data/snapshot ${{ inputs.fix_area_matches && '--fix-area-matches' || '' }}
+        run: python -m clickless.data.add_places --dir data/snapshot ${{ inputs.fix_area_matches && '--fix-area-matches' || '' }} ${{ inputs.fix_district_matches && '--fix-district-matches' || '' }}
       - name: Build the route cache (OSRM)
         run: python scripts/build_route_cache.py --snapshot-dir data/snapshot --osrm-url "${{ inputs.osrm_url }}"
       - name: Check the routes and update the manifest
@@ -62,7 +66,8 @@ jobs:
           print(f"- Places: {p['resolved']} geocoded ({len(p.get('added', []))} added on {p.get('added_at', '-')}); "
                 f"unresolved: {', '.join(p['unresolved']) or 'none'}")
           for f in p.get("refreshed", []):
-              print(f"  - re-geocoded {f['place']}: was {f['was']} {f['was_at']}, now {f['now']} {f['now_at']}")
+              print(f"  - re-geocoded {f['place']} ({f.get('reason', 'county match')}): was {f['was']} {f['was_at']}, "
+                    f"now {f['now']} {f['now_at']}" + (f" [{f['fallback']}]" if f.get("fallback") else ""))
           if p.get("routes_removed"):
               print(f"  - {len(p['routes_removed'])} route files that used the old points were removed and rebuilt")
           print(f"- Routes: {r['files']} files ({r['distinct_routes']} distinct routes), OSRM {r['osrm_server']}, "

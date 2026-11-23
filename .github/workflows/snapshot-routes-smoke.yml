@@ -61,7 +61,7 @@ jobs:
         run: |
           mkdir -p smoke-places
           echo '{"id": "smoke-001", "author": "manas", "category": "rural", "route_type": "rural", "text": "smoke", "gold_request": {"origin": "Bangor, ME", "destination": "Bar Harbor, ME", "vehicle_id": "tesla-model-3-rwd-2024", "start_soc_pct": 50}, "clarification_required": false}' > smoke-places/manas.jsonl
-          python -m clickless.data.add_places --dir data/snapshot --benchmark-dir smoke-places --fix-area-matches 2>&1 | tee -a smoke.log
+          python -m clickless.data.add_places --dir data/snapshot --benchmark-dir smoke-places --fix-area-matches --fix-district-matches 2>&1 | tee -a smoke.log
           python scripts/build_route_cache.py --snapshot-dir data/snapshot --raw-dir smoke-places 2>&1 | tail -n 6 | tee -a smoke.log
           python -m clickless.data.add_routes --dir data/snapshot 2>&1 | tee -a smoke.log
           python -m clickless.data.snapshot_report --verify-only 2>&1 | tee -a smoke.log
@@ -73,7 +73,7 @@ jobs:
           print("sources.places:", {k: v for k, v in json.load(open("data/snapshot/MANIFEST.json"))["sources"]["places"].items()
                                     if k in ("requested", "resolved", "added")})
           for f in json.load(open("data/snapshot/MANIFEST.json"))["sources"]["places"].get("refreshed", []):
-              print(f"re-geocoded {f['place']}: {f['was_at']} -> {f['now_at']} ({f['now']})")
+              print(f"re-geocoded {f['place']}: {f['was_at']} -> {f['now_at']} ({f['now']}) {f.get('fallback', '')}")
           store = DataStore.from_dir("data/snapshot")
           o, d = store.geocode("Bangor, ME"), store.geocode("Bar Harbor, ME")
           print(f"geocode: {o.text} -> ({o.lat}, {o.lon}); {d.text} -> ({d.lat}, {d.lon})")

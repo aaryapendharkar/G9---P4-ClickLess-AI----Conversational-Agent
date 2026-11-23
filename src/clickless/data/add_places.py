@@ -14,6 +14,8 @@ re-download stations and amenities. This step instead:
 - with --fix-area-matches, also re-geocodes stored places that resolved to a county or state
   instead of the town (e.g. "Elko, NV" -> Elko County, 54 km off; see geocode.py) and removes the
   route files that start or end at their old points, listing each in `sources.places.routes_removed`;
+  with --fix-district-matches, the same for district names stored as a hotel, apartments or a road
+  instead of the district (#122);
 - rewrites places.json through geocode.write_places, so the lookup keys follow the usual rules
   (a bare city name is kept only while exactly one place has it), updates `sources.places` and
   re-hashes the snapshot. Nothing new to geocode: nothing changes.
@@ -53,6 +55,7 @@ def add_places(
     endpoint: str = geocode.NOMINATIM_URL,
     pause_s: float = 1.1,
     fix_area_matches: bool = False,
+    fix_district_matches: bool = False,
 ) -> int:
     from evaluation.schema import load_items
 
@@ -75,15 +78,21 @@ def add_places(
     known = known_places(payload)
     wanted = geocode.benchmark_places(load_items(repo_path(benchmark_dir)))
     new = [p for p in wanted if p not in known]
-    refresh = sorted(p for p, r in known.items() if fix_area_matches and geocode.looks_like_area_match(p, r))
+    reasons = {}
+    for p, r in known.items():
+        if fix_area_matches and geocode.looks_like_area_match(p, r):
+            reasons[p] = "a county or state instead of the town"
+        elif fix_district_matches and geocode.looks_like_district_mismatch(p, r):
+            reasons[p] = "not the district it names"
+    refresh = sorted(reasons)
     if not new and not refresh:
         print(f"Places: all {len(wanted)} benchmark places are already in places.json; nothing to add")
         return 0
 
     if refresh:
-        print(f"Re-geocoding {len(refresh)} place(s) stored as a county or state instead of the town:", flush=True)
+        print(f"Re-geocoding {len(refresh)} place(s) stored as the wrong kind of match:", flush=True)
         for place in refresh:
-            print(f"  {place} (was: {known[place].get('display_name')})", flush=True)
+            print(f"  {place}: {reasons[place]} (was: {known[place].get('display_name')})", flush=True)
     if new:
         print(f"Geocoding {len(new)} new place(s):", flush=True)
         for place in new:
@@ -119,9 +128,11 @@ def add_places(
         sources["places"].update(added=sorted(new), added_at=now)
     if refresh:
         sources["places"]["refreshed"] = [*previous.get("refreshed", []), *(
-            {"place": p, "was": known[p].get("display_name"), "was_at": [known[p].get("lat"), known[p].get("lon")],
+            {"place": p, "reason": reasons[p], "was": known[p].get("display_name"),
+             "was_at": [known[p].get("lat"), known[p].get("lon")],
              "now": fresh[p].get("display_name", fresh[p].get("error")),
-             "now_at": [fresh[p].get("lat"), fresh[p].get("lon")], "at": now}
+             "now_at": [fresh[p].get("lat"), fresh[p].get("lon")], "at": now,
+             **({"fallback": fresh[p]["fallback"]} if fresh[p].get("fallback") else {})}
             for p in refresh
         )]
         sources["places"]["routes_removed"] = [*previous.get("routes_removed", []), *removed]
@@ -140,7 +151,8 @@ def add_places(
             print(f"  re-geocoded {p}: now unresolved ({f['error']})")
         else:
             moved = haversine_km((known[p]["lat"], known[p]["lon"]), (f["lat"], f["lon"]))
-            print(f"  re-geocoded {p}: moved {moved:.0f} km to {f['display_name']}")
+            how = f" ({f['fallback']})" if f.get("fallback") else ""
+            print(f"  re-geocoded {p}: moved {moved:.1f} km to {f['display_name']}{how}")
     if refresh:
         print(f"Removed {len(removed)} route file(s) that used the old points; build_route_cache.py rebuilds them")
     return 0
@@ -171,11 +183,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cache-dir", default="data/cache/geocode")
     p.add_argument("--fix-area-matches", action="store_true",
                    help="re-geocode stored places that resolved to a county or state, and remove their routes")
+    p.add_argument("--fix-district-matches", action="store_true",
+                   help="re-geocode stored district names (Downtown X, Old Town X) that resolved to a hotel, "
+                        "apartments or a road instead of the district, and remove their routes (#122)")
     args = p.parse_args(argv)
     # Nominatim names can be non-Latin ("Cherokee;ᏣᎳᎩ"); a cp1252 Windows console must not crash on them
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")
-    return add_places(args.dir, args.benchmark_dir, args.cache_dir, fix_area_matches=args.fix_area_matches)
+    return add_places(args.dir, args.benchmark_dir, args.cache_dir, fix_area_matches=args.fix_area_matches,
+                      fix_district_matches=args.fix_district_matches)
 
 
 if __name__ == "__main__":
