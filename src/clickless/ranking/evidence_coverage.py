@@ -12,9 +12,7 @@ import re
 
 from ..contracts import Amenity, Candidate, ChargingStop, Evidence, Itinerary
 
-_PORT_FIELD_PATTERN = re.compile(
-    r"ports\[(?P<port_index>\d+)\]\.(?P<attribute>connector|power_kw)"
-)
+_PORT_FIELD_PATTERN = re.compile(r"ports\[(?P<port_index>\d+)\]\.(?P<attribute>connector|power_kw)")
 
 
 def itinerary_evidence_coverage(
@@ -24,8 +22,10 @@ def itinerary_evidence_coverage(
     """Return the supported share of facts displayed by an itinerary.
 
     Each charging stop can display its station name, chosen connector, chosen
-    charging power, and selected amenity names. A fact counts as supported only
-    when the candidate has KG evidence whose value matches the displayed value.
+    charging power, and selected amenities. Named amenities display their name;
+    unnamed amenities display their category and, when applicable, wheelchair
+    accessibility. A fact counts as supported only when the candidate has KG
+    evidence whose value matches the displayed value.
 
     Returning zero for missing candidates or missing evidence means Config C
     never receives credit for unsupported information.
@@ -37,9 +37,7 @@ def itinerary_evidence_coverage(
     if not itinerary.stops:
         return 1.0
 
-    candidates_by_station_id = {
-        candidate.station.station_id: candidate for candidate in candidates
-    }
+    candidates_by_station_id = {candidate.station.station_id: candidate for candidate in candidates}
 
     supported_fact_count = 0
     displayed_fact_count = 0
@@ -73,25 +71,41 @@ def itinerary_evidence_coverage(
         for amenity_id in stop.amenity_ids:
             amenity = _find_amenity(candidate, amenity_id)
 
-            # An amenity selected for display contributes one expected fact:
-            # its readable name. Missing amenity data remains unsupported.
-            displayed_fact_count += 1
-            if (
-                amenity is not None
-                and amenity.name
-                and _has_matching_evidence(
+            # Preserve the previous fail-closed behavior when an itinerary
+            # references an amenity absent from its enriched candidate.
+            if amenity is None:
+                displayed_fact_count += 1
+                continue
+
+            # Keep ranking coverage aligned with the driver-facing label. A
+            # named amenity is shown by name. An unnamed one is shown by
+            # category, with accessibility included when the label says so.
+            for field, expected_value in _displayed_amenity_facts(amenity):
+                displayed_fact_count += 1
+                if _has_matching_evidence(
                     candidate.evidence,
                     subject_id=amenity_id,
-                    field="name",
-                    expected_value=amenity.name,
-                )
-            ):
-                supported_fact_count += 1
+                    field=field,
+                    expected_value=expected_value,
+                ):
+                    supported_fact_count += 1
 
     if displayed_fact_count == 0:
         return 1.0
 
     return supported_fact_count / displayed_fact_count
+
+
+def _displayed_amenity_facts(amenity: Amenity) -> list[tuple[str, object]]:
+    """Return the evidence facts represented by an amenity's display label."""
+
+    if amenity.name:
+        return [("name", amenity.name)]
+
+    facts: list[tuple[str, object]] = [("category", amenity.category.value)]
+    if amenity.wheelchair == "yes":
+        facts.append(("wheelchair", "yes"))
+    return facts
 
 
 def _matching_port_support(
@@ -124,20 +138,13 @@ def _matching_port_support(
     for facts_for_one_port in port_facts.values():
         connector_fact = facts_for_one_port.get("connector")
 
-        if (
-            connector_fact is None
-            or connector_fact.value != stop.connector.value
-        ):
+        if connector_fact is None or connector_fact.value != stop.connector.value:
             continue
 
         connector_supported = True
         power_fact = facts_for_one_port.get("power_kw")
 
-        if (
-            power_fact is not None
-            and stop.port_power_kw is not None
-            and power_fact.value == stop.port_power_kw
-        ):
+        if power_fact is not None and stop.port_power_kw is not None and power_fact.value == stop.port_power_kw:
             return True, True
 
     return connector_supported, False
@@ -153,10 +160,7 @@ def _has_matching_evidence(
     """Return whether an evidence fact exactly supports a displayed value."""
 
     return any(
-        fact.subject_id == subject_id
-        and fact.field == field
-        and fact.value == expected_value
-        for fact in evidence
+        fact.subject_id == subject_id and fact.field == field and fact.value == expected_value for fact in evidence
     )
 
 
