@@ -1,0 +1,23 @@
+# CQ9: Which claims in explanation E are supported by which sources?
+# Author: Aarya (#157, on Manas's behalf). ADR 0015 evidence model: build.add_explanation(graph,
+# result) writes the result's claims (cc:Explanation cc:hasClaim cc:Claim, text as rdfs:label, in
+# order) and links each claim with cc:supportedBy to the cc:Source of every KG fact it cites that
+# is in result.evidence: the station or amenity record, or the DERIVED station-amenity distance.
+# A claim citing only planning numbers (verified:... ids) or an id the result does not carry has
+# no source: it is still listed, with an empty ?source, so it is visible rather than dropped.
+PREFIX cc:   <https://example.org/clickless#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?claim ?text ?source ?sourceName ?sourceRecordId ?retrievedAt
+WHERE {
+  VALUES ?explanation { cc:explanation_REPLACE_ME }
+  ?explanation cc:hasClaim ?claim .
+  ?claim rdfs:label ?text .
+  OPTIONAL {
+    ?claim  cc:supportedBy ?source .
+    ?source cc:sourceName  ?sourceName ;
+            cc:retrievedAt ?retrievedAt .
+    OPTIONAL { ?source cc:sourceRecordId ?sourceRecordId }
+  }
+}
+ORDER BY ?claim ?source

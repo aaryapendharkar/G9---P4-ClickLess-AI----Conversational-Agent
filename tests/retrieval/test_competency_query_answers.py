@@ -248,3 +248,268 @@ def test_cq6_matches_is_stale_at_the_boundary(store):
 def test_cq6_returns_nothing_without_source_update_dates(graph, store):
     retrieved = store.station("FIX-ST-001").provenance.retrieved_at
     assert run_competency_query(graph, "cq06", cutoff=stale_cutoff(retrieved)) == []
+
+
+# ================================================================== CQ1, CQ7-CQ9 (#157, on Manas's behalf)
+
+from clickless.contracts import ChargerLevel, Claim, Evidence, PlanResult  # noqa: E402
+from clickless.retrieval.kg.build import add_explanation, claim_uri, explanation_uri  # noqa: E402
+
+# ------------------------------------------------------------------ CQ1: compatible ports and power
+
+
+def _cq1(graph, vehicle):
+    rows = run_competency_query(graph, "cq01", vehicle=vehicle_uri(vehicle))
+    return [(r.station, r.port, connector_name(r.connector), _power(r)) for r in rows]
+
+
+def _p(station_id, index, connector, power):
+    return (station_uri(station_id), port_uri(station_id, index), connector, power)
+
+
+SPARK_CQ1 = [  # CCS1 native: every CCS1 port, fastest first, then station and port order
+    _p("FIX-ST-001", 0, "CCS1", 150.0),
+    _p("FIX-ST-006", 0, "CCS1", 150.0),
+    _p("FIX-ST-007", 0, "CCS1", 150.0),
+    _p("FIX-ST-008", 0, "CCS1", 150.0),
+    _p("FIX-ST-002", 0, "CCS1", 50.0),
+    _p("FIX-ST-004", 0, "CCS1", 50.0),
+]
+
+
+def test_cq1_comet_native_nacs_and_adapted_ccs1(graph):
+    assert _cq1(graph, COMET) == [
+        _p("FIX-ST-003", 0, "NACS", 250.0),
+        _p("FIX-ST-004", 1, "NACS", 250.0),
+        *SPARK_CQ1[:4],  # the CCS1 adapter, at DC fast ports
+        *SPARK_CQ1[4:],
+    ]
+
+
+def test_cq1_spark_and_leafy(graph):
+    assert _cq1(graph, SPARK) == SPARK_CQ1
+    assert _cq1(graph, LEAFY) == [_p("FIX-ST-002", 1, "CHADEMO", 50.0), _p("FIX-ST-005", 0, "J1772", 7.2)]
+
+
+def test_cq1_an_adapter_counts_at_dc_fast_ports_only(store):
+    """planning/filters.py::compatible_ports: an adapter is never inferred for an AC port (ADR 0009)."""
+    spark = store.vehicles[SPARK]
+    st5 = store.station("FIX-ST-005")
+    nacs_ac = st5.ports[0].model_copy(update={"connector": Connector.NACS, "power_kw": 11.5})
+    g = _rebuilt(
+        store,
+        vehicles={SPARK: spark.model_copy(update={"adapters": [Connector.NACS]})},
+        stations={"FIX-ST-005": st5.model_copy(update={"ports": [*st5.ports, nacs_ac]})},
+    )
+    rows = _cq1(g, SPARK)
+    assert rows[:2] == [_p("FIX-ST-003", 0, "NACS", 250.0), _p("FIX-ST-004", 1, "NACS", 250.0)]  # DC: yes
+    assert _p("FIX-ST-005", 1, "NACS", 11.5) not in rows  # AC: no
+    assert nacs_ac.level == ChargerLevel.L2
+
+
+def test_cq1_lists_a_port_once_when_its_connector_is_native_and_adapted(store):
+    spark = store.vehicles[SPARK]
+    g = _rebuilt(store, vehicles={SPARK: spark.model_copy(update={"adapters": [Connector.CCS1]})})
+    assert _cq1(g, SPARK) == SPARK_CQ1
+
+
+def test_cq1_unknown_power_port_is_listed_last_with_no_power(store):
+    st = store.station("FIX-ST-004")
+    unknown = st.ports[0].model_copy(update={"power_kw": None})
+    g = _rebuilt(store, stations={"FIX-ST-004": st.model_copy(update={"ports": [*st.ports, unknown]})})
+    assert _cq1(g, SPARK) == [*SPARK_CQ1, _p("FIX-ST-004", 2, "CCS1", None)]
+
+
+@pytest.mark.parametrize("level, expected", [(ChargerLevel.DC_FAST, True), (ChargerLevel.L2, False)])
+def test_cq2_an_adapter_counts_at_dc_fast_ports_only(store, level, expected):
+    """FIX-ST-003 is near food (fix:a03); with only a NACS port at `level`, Spark's NACS adapter
+    reaches it at DC fast and not at L2 (same rule as CQ1)."""
+    spark = store.vehicles[SPARK]
+    st3 = store.station("FIX-ST-003")
+    port = st3.ports[0].model_copy(update={"level": level, "power_kw": 250.0 if expected else 11.5})
+    g = _rebuilt(
+        store,
+        vehicles={SPARK: spark.model_copy(update={"adapters": [Connector.NACS]})},
+        stations={"FIX-ST-003": st3.model_copy(update={"ports": [port]})},
+    )
+    stations = {r[0] for r in _cq2(g, SPARK)}
+    assert (station_uri("FIX-ST-003") in stations) is expected
+
+
+# ------------------------------------------------------------------ CQ7: network of a station
+
+
+def _cq7(graph, station_id):
+    return [(str(r.network).rsplit("#", 1)[-1], str(r.networkName))
+            for r in run_competency_query(graph, "cq07", station=station_uri(station_id))]
+
+
+@pytest.mark.parametrize(
+    "station_id, network",
+    [("FIX-ST-001", "FixtureNet"), ("FIX-ST-003", "FixtureFast"), ("FIX-ST-005", "FixtureLocal"),
+     ("FIX-ST-008", "FixtureFleet")],
+)
+def test_cq7_network_of_a_station(graph, station_id, network):
+    assert _cq7(graph, station_id) == [(f"network_{network}", network)]
+
+
+def test_cq7_stations_of_one_network_share_its_node(graph):
+    assert _cq7(graph, "FIX-ST-001") == _cq7(graph, "FIX-ST-002") == _cq7(graph, "FIX-ST-006")
+
+
+def test_cq7_unknown_network_gives_no_row(store):
+    st = store.station("FIX-ST-001")
+    g = _rebuilt(store, stations={"FIX-ST-001": st.model_copy(update={"network": None})})
+    assert _cq7(g, "FIX-ST-001") == []
+    assert _cq7(g, "FIX-ST-002") == [("network_FixtureNet", "FixtureNet")]
+
+
+# ------------------------------------------------------------------ CQ8: at least P kW for connector C
+
+
+def _cq8(graph, connector, min_kw):
+    from clickless.retrieval.kg import vocab
+
+    rows = run_competency_query(graph, "cq08", connector=vocab.connector(connector), minKw=min_kw)
+    return [(r.station, r.port, _power(r)) for r in rows]
+
+
+CCS1_150 = [(station_uri(s), port_uri(s, 0), 150.0) for s in ("FIX-ST-001", "FIX-ST-006", "FIX-ST-007", "FIX-ST-008")]
+
+
+def test_cq8_threshold_is_inclusive(graph):
+    assert _cq8(graph, "CCS1", 150) == CCS1_150
+    assert _cq8(graph, "CCS1", 100) == CCS1_150
+    assert _cq8(graph, "CCS1", 151) == []
+
+
+def test_cq8_lower_threshold_adds_slower_ports_in_power_order(graph):
+    assert _cq8(graph, "CCS1", 50) == [
+        *CCS1_150,
+        (station_uri("FIX-ST-002"), port_uri("FIX-ST-002", 0), 50.0),
+        (station_uri("FIX-ST-004"), port_uri("FIX-ST-004", 0), 50.0),
+    ]
+
+
+def test_cq8_only_the_bound_connector(graph):
+    """FIX-ST-002 has CCS1 50 kW and CHAdeMO 50 kW: only the CHAdeMO port answers for CHADEMO."""
+    assert _cq8(graph, "CHADEMO", 50) == [(station_uri("FIX-ST-002"), port_uri("FIX-ST-002", 1), 50.0)]
+    assert _cq8(graph, "NACS", 250) == [
+        (station_uri("FIX-ST-003"), port_uri("FIX-ST-003", 0), 250.0),
+        (station_uri("FIX-ST-004"), port_uri("FIX-ST-004", 1), 250.0),
+    ]
+
+
+def test_cq8_decimal_threshold_meets_an_equal_port(graph):
+    """7.2 kW meets "at least 7.2": the loader binds floats as exact decimals, as the graph stores them."""
+    assert _cq8(graph, "J1772", 7.2) == [(station_uri("FIX-ST-005"), port_uri("FIX-ST-005", 0), 7.2)]
+    assert _cq8(graph, "J1772", 7.21) == []
+
+
+def test_cq8_unknown_power_never_meets_a_threshold(store):
+    st = store.station("FIX-ST-002")
+    unknown = st.ports[0].model_copy(update={"power_kw": None})
+    g = _rebuilt(store, stations={"FIX-ST-002": st.model_copy(update={"ports": [unknown, st.ports[1]]})})
+    assert station_uri("FIX-ST-002") not in {row[0] for row in _cq8(g, "CCS1", 0)}
+
+
+# ------------------------------------------------------------------ CQ9: claims and their sources
+
+
+def _evidence(store, subject_id, field, value):
+    record = store.station(subject_id) if subject_id.startswith("FIX-ST") else next(
+        a for a in store.amenities if a.amenity_id == subject_id)
+    return Evidence(evidence_id=f"kg:{subject_id}:{field}", subject_id=subject_id, field=field, value=value,
+                    provenance=record.provenance)
+
+
+def _cq9(graph, request_id):
+    rows = run_competency_query(graph, "cq09", explanation=explanation_uri(request_id))
+    return [(r.claim, str(r.text), None if r.source is None else str(r.source).rsplit("#", 1)[-1],
+             None if r.sourceName is None else str(r.sourceName)) for r in rows]
+
+
+def test_cq9_claims_with_their_sources(store):
+    st = store.station("FIX-ST-004")
+    distance = Evidence(evidence_id="kg:FIX-ST-004:near[fix:a06].distance_m", subject_id="FIX-ST-004",
+                        field="near[fix:a06].distance_m", value=120.0,
+                        provenance=st.provenance.model_copy(update={"source": "DERIVED"}))
+    result = PlanResult(
+        request_id="cq9", config="C", status="ok",
+        evidence=[
+            _evidence(store, "FIX-ST-004", "name", st.name),
+            _evidence(store, "FIX-ST-004", "ports[0].power_kw", 50.0),
+            _evidence(store, "fix:a06", "wheelchair", "yes"),
+            distance,
+        ],
+        claims=[
+            Claim(text="Stop at the hub (CCS1, 50 kW).",
+                  supported_by=["verified:cq9:stop:0", "kg:FIX-ST-004:name", "kg:FIX-ST-004:ports[0].power_kw"]),
+            Claim(text="Accessible restroom 120 m away.",
+                  supported_by=["kg:fix:a06:wheelchair", "kg:FIX-ST-004:near[fix:a06].distance_m"]),
+            Claim(text="Arrive with 22%.", supported_by=["verified:cq9:arrival"]),
+            Claim(text="Cites a fact this result does not carry.", supported_by=["kg:FIX-ST-001:name"]),
+        ],
+    )
+    g = build_graph(store)
+    add_explanation(g, result)
+
+    assert _cq9(g, "cq9") == [
+        (claim_uri("cq9", 0), "Stop at the hub (CCS1, 50 kW).", "source_station_FIX-ST-004", "SYNTHETIC"),
+        (claim_uri("cq9", 1), "Accessible restroom 120 m away.", "source_amenity_fix%3Aa06", "SYNTHETIC"),
+        (claim_uri("cq9", 1), "Accessible restroom 120 m away.", "source_near_FIX-ST-004%7Cfix%3Aa06", "DERIVED"),
+        (claim_uri("cq9", 2), "Arrive with 22%.", None, None),  # planning numbers: no KG source
+        (claim_uri("cq9", 3), "Cites a fact this result does not carry.", None, None),  # ADR 0015: unsupported
+    ]
+    # two facts from one record give one source; the other explanation in the graph is not mixed in
+    add_explanation(g, result.model_copy(update={"request_id": "other"}))
+    assert len(_cq9(g, "cq9")) == 5
+
+
+def test_cq9_on_a_real_config_c_result(store, demo_text):
+    from clickless.config import load_config
+    from clickless.pipeline import build_pipeline
+    from clickless.retrieval.tfidf_matcher import TfidfMatcher
+
+    pipe = build_pipeline(load_config("C"), store)
+    pipe.matcher = TfidfMatcher(store)  # Sentence-BERT needs the nlp extra, which CI does not install
+    result = pipe.run(demo_text, request_id="kg-c9")
+    assert result.status == "ok" and result.claims
+    g = build_graph(store)
+    add_explanation(g, result)
+
+    rows = _cq9(g, "kg-c9")
+    assert [r[1] for r in rows if r[0] == claim_uri("kg-c9", 0)][0] == result.claims[0].text
+
+    def expected_source(e):  # independent of build._evidence_source
+        from urllib.parse import quote
+
+        if e.field.startswith("near["):
+            return "source_near_" + quote(f"{e.subject_id}|{e.field[5:e.field.index(']')]}", safe="")
+        kind = "station" if e.subject_id in store.stations else "amenity"
+        return f"source_{kind}_" + quote(e.subject_id, safe="")
+
+    by_id = {e.evidence_id: e for e in result.evidence}
+    for i, claim in enumerate(result.claims):
+        got = sorted(r[2] for r in rows if r[0] == claim_uri("kg-c9", i) and r[2])
+        want = sorted({expected_source(by_id[x]) for x in claim.supported_by if x in by_id})
+        assert got == want, claim.text
+    assert {r[0] for r in rows} == {claim_uri("kg-c9", i) for i in range(len(result.claims))}
+    stop = result.alternatives[0].itinerary.stops[0]
+    assert any(r[2] == f"source_station_{stop.station_id}" for r in rows)
+
+
+@pytest.mark.parametrize("name, binding", [
+    ("cq01", {"vehicle": vehicle_uri(SPARK)}),
+    ("cq02", {"vehicle": vehicle_uri(COMET)}),
+    ("cq04", {"station": station_uri("FIX-ST-004")}),
+])
+def test_row_order_comes_from_order_by_not_from_how_the_graph_was_loaded(graph, name, binding):
+    """Ties (e.g. four 150 kW CCS1 ports) must be ordered by the query: the same triples loaded in
+    reverse give the same rows."""
+    from rdflib import Graph
+
+    reversed_graph = Graph()
+    for triple in reversed(list(graph)):
+        reversed_graph.add(triple)
+    assert run_competency_query(reversed_graph, name, **binding) == run_competency_query(graph, name, **binding)

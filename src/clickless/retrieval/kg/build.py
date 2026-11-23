@@ -36,7 +36,7 @@ from urllib.parse import quote
 
 from ...common.geo import EARTH_RADIUS_KM, haversine_km
 from ...config import repo_path
-from ...contracts import Amenity, DataStatus, Provenance, Station
+from ...contracts import Amenity, DataStatus, Evidence, PlanResult, Provenance, Station
 
 if TYPE_CHECKING:  # rdflib is an optional extra
     from rdflib import Graph, URIRef
@@ -78,6 +78,15 @@ def port_uri(station_id: str, index: int) -> URIRef:
 
 def proximity_uri(station_id: str, amenity_id: str) -> URIRef:
     return _uri(f"near_{_local(station_id)}_{_local(amenity_id)}")
+
+
+def explanation_uri(request_id: str) -> URIRef:
+    return _uri(f"explanation_{_local(request_id)}")
+
+
+def claim_uri(request_id: str, index: int) -> URIRef:
+    """Zero-padded, so ORDER BY ?claim is the claims' order in the explanation."""
+    return _uri(f"explanation_{_local(request_id)}_claim_{index:04d}")
 
 
 def _source_uri(kind: str, identifier: str) -> URIRef:
@@ -238,6 +247,58 @@ def _add_vehicles(g: Graph, vehicles) -> None:
             g.add((node, cc.supports, cc.connector(c.value)))
         for c in v.adapters:
             g.add((node, cc.supportsViaAdapter, cc.connector(c.value)))
+
+
+_NEAR_FIELD = "near["
+
+
+def _evidence_source(g: Graph, evidence: Evidence) -> URIRef | None:
+    """The cc:Source node of the record an Evidence fact comes from (ADR 0015 §2, §4), or None if
+    the graph has no such source. A station-amenity distance comes from the DERIVED proximity
+    source; every other fact from its subject's station or amenity record."""
+    from rdflib import RDF
+
+    from . import vocab as cc
+
+    if evidence.field.startswith(_NEAR_FIELD) and "]." in evidence.field:
+        amenity_id = evidence.field[len(_NEAR_FIELD) : evidence.field.index("].")]
+        source = _source_uri("near", f"{evidence.subject_id}|{amenity_id}")
+    elif (station_uri(evidence.subject_id), RDF.type, cc.Station) in g:
+        source = _source_uri("station", evidence.subject_id)
+    elif (amenity_uri(evidence.subject_id), RDF.type, cc.Amenity) in g:
+        source = _source_uri("amenity", evidence.subject_id)
+    else:
+        return None
+    return source if (source, RDF.type, cc.Source) in g else None
+
+
+def add_explanation(g: Graph, result: PlanResult) -> URIRef:
+    """Write `result`'s explanation into `g` for CQ9 and return its node.
+
+    cc:Explanation cc:hasClaim each cc:Claim (text as rdfs:label, URIs in claim order). A claim is
+    cc:supportedBy the source of each id in `Claim.supported_by` that resolves in
+    `result.evidence` (ADR 0015: a kg: id supports a claim only if that result carries it). Ids that
+    don't resolve, and `verified:` ids for numbers planning computed, add no source link.
+    """
+    from rdflib import RDF, RDFS, Literal
+
+    from . import vocab as cc
+
+    node = explanation_uri(result.request_id)
+    g.add((node, RDF.type, cc.Explanation))
+    g.add((node, cc.identifier, Literal(result.request_id)))
+    by_id = {e.evidence_id: e for e in result.evidence}
+    for i, claim in enumerate(result.claims):
+        c = claim_uri(result.request_id, i)
+        g.add((node, cc.hasClaim, c))
+        g.add((c, RDF.type, cc.Claim))
+        g.add((c, RDFS.label, Literal(claim.text)))
+        for evidence_id in claim.supported_by:
+            evidence = by_id.get(evidence_id)
+            source = None if evidence is None else _evidence_source(g, evidence)
+            if source is not None:
+                g.add((c, cc.supportedBy, source))
+    return node
 
 
 def build_graph(
