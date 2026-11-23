@@ -12,7 +12,6 @@ profiles:
     charge_min_weight: 1.0
     detour_extra_weight: 0.5
     stop_overhead_min: 5
-    evidence_credit_min: 0
     amenity_value_min:
       food: 15
       coffee: 8
@@ -26,7 +25,6 @@ profiles:
     charge_min_weight: 1.0
     detour_extra_weight: 1.0
     stop_overhead_min: 8
-    evidence_credit_min: 0
     amenity_value_min:
       food: 3
       coffee: 2
@@ -40,7 +38,6 @@ profiles:
     charge_min_weight: 0.6        # waiting while eating hurts less
     detour_extra_weight: 0.3
     stop_overhead_min: 3
-    evidence_credit_min: 0
     amenity_value_min:
       food: 30
       coffee: 15
@@ -52,7 +49,7 @@ profiles:
 
 # Config C ("weighted+evidence") adds this on top of the active profile.
 evidence:
-  evidence_credit_min: 5          # worth 5 min to pick a stop whose facts are fully sourced & fresh
+  evidence_credit_min: 5          # worth 5 min when displayed facts match the request's KG evidence
 
 presentation:
   max_alternatives: 3             # Recommended + up to 2 Pareto-optimal alternatives

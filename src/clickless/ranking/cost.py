@@ -45,7 +45,7 @@ def plan_cost(
     request: TripRequest,
     tradeoffs_cfg: dict[str, Any],
     evidence_coverage: float = 0.0,
-    evidence_credit_min: float | None = None,
+    evidence_credit_min: float = 0.0,
 ) -> PlanCost:
     prof = resolve_profile(tradeoffs_cfg, request)
     best = best_match_per_preference(itinerary, request)
@@ -55,8 +55,7 @@ def plan_cost(
     detour = prof["detour_extra_weight"] * itinerary.total_detour_min
     stops = prof["stop_overhead_min"] * len(itinerary.stops)
     amenity = sum(values.get(k, values.get(k.split("_")[0], 0.0)) * s for k, s in best.items())
-    ev_w = prof["evidence_credit_min"] if evidence_credit_min is None else evidence_credit_min
-    evidence = ev_w * evidence_coverage
+    evidence = evidence_credit_min * evidence_coverage
     satisfaction = sum(best.values()) / len(best) if best else 1.0
     return PlanCost(
         profile=request.tradeoff_profile, drive_min=drive, charge_min=charge, detour_penalty_min=detour,
