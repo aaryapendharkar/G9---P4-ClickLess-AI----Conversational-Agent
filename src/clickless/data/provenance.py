@@ -9,7 +9,7 @@ snapshot gives the same labels in every evaluation run.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..contracts import DataStatus, Provenance
 
@@ -21,6 +21,15 @@ def is_stale(prov: Provenance, stale_after_days: int = STALE_AFTER_DAYS) -> bool
     if prov.status == DataStatus.STATIC or prov.source_updated_at is None:
         return None
     return (prov.retrieved_at - prov.source_updated_at).days > stale_after_days
+
+
+def stale_cutoff(retrieved_at: datetime, stale_after_days: int = STALE_AFTER_DAYS) -> datetime:
+    """Latest source update time that `is_stale` calls stale for data retrieved at `retrieved_at`.
+
+    `is_stale` counts whole days, so `(retrieved - updated).days > N` holds exactly when
+    `updated <= retrieved - (N + 1) days`. CQ6 binds this as `?cutoff` (docs/COMPETENCY_QUESTIONS.md).
+    """
+    return retrieved_at - timedelta(days=stale_after_days + 1)
 
 
 def status_label(prov: Provenance, now: datetime | None = None) -> str:

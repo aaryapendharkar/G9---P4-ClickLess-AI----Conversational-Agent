@@ -4,9 +4,8 @@ import re
 
 import pytest
 
-from clickless.config import repo_path
+from clickless.retrieval.kg.competency import CQ_DIR
 
-CQ_DIR = repo_path("src/clickless/retrieval/kg/competency_queries")
 FILES = sorted(CQ_DIR.glob("cq*.rq"))
 
 

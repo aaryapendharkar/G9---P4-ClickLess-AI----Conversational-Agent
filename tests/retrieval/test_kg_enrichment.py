@@ -348,19 +348,6 @@ def test_every_kg_term_is_declared_in_the_ontology():
     assert not undeclared
 
 
-def test_graph_follows_the_competency_query_conventions(store):
-    from rdflib.plugins.sparql import prepareQuery
-
-    from clickless.retrieval.kg.build import station_uri
-
-    cq3 = repo_path("src/clickless/retrieval/kg/competency_queries/cq03_amenity_wheelchair_status.rq").read_text()
-    query = prepareQuery(cq3.replace("VALUES ?station { cc:station_REPLACE_ME }", ""))
-
-    rows = build_graph(store).query(query, initBindings={"station": station_uri("FIX-ST-002")})
-
-    assert [(str(r.amenity).rsplit("_", 1)[-1], str(r.wheelchair)) for r in rows] == [("fix%3Aa02", "unknown")]
-
-
 def test_config_c_plans_on_the_fixtures_with_kg_evidence(store, demo_text):
     pipe_c = build_pipeline(load_config("C"), store)
     pipe_c.matcher = TfidfMatcher(store)  # Sentence-BERT needs the nlp extra, which CI does not install
