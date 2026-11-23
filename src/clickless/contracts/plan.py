@@ -126,6 +126,8 @@ class PlanResult(BaseModel):
     relaxation: Relaxation | None = None
     clarification: ClarificationQuestion | None = None
     verification: VerificationReport | None = None
+    parser: str | None = None
+    fallback_reason: str | None = None
 
     # Config C stores only KG facts associated with plans shown to the driver.
     # Configs A/B and the C-without-KG ablation leave this list empty.

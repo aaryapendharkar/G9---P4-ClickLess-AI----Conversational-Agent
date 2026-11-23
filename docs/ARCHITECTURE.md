@@ -41,7 +41,7 @@ Orchestration: `src/clickless/pipeline.py`. Configs choose implementations:
 | retriever | corridor | corridor | corridor+kg |
 | ranker | logreg | weighted | weighted+evidence |
 | incomplete_request | reject | reject | clarify |
-| explainer | template | template | grounded_llm |
+| explainer | template | template | grounded_llm (template + KG evidence) |
 | selector (trade-offs) | tradeoff | tradeoff | tradeoff |
 
 Planner, filters, verifier and the approval gate are identical in all configs (proposal Table II).
@@ -79,14 +79,14 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; generated boundary tests cover tolerances and charge limits |
 | weighted cost, trade-off selector | v0 implemented |
 | logreg ranker | standardized training, validation, save/load, probability ranking, and missing-model fallback implemented; final model awaits labeled DEV plans |
-| template explainer, trade-off presenter | template explanation v0; natural, contract-grounded alternative comparisons implemented |
+| template explainer, trade-off presenter | template explanation v0; natural, contract-grounded comparisons and KG-backed claims implemented |
 | Maps URL + approval gate | segmentation done (3 waypoints per URL, ADR 0010) |
 | harness | runs; most metrics stubbed |
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
 | AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
-| KG build + enrichment (C) | v0.2: rdflib graph fills `Candidate.evidence`; the pipeline copies only facts for displayed normal or relaxed alternatives into `PlanResult.evidence` (ADR 0015) |
-| LLM parser, grounded explainer, oracle, splits, statistics | stubs (`NotImplementedError`) |
+| KG build + enrichment (C) | v0.3: runtime rdflib graphs contain only the current route's corridor candidates and amenities; full graphs remain available for offline competency queries. The pipeline copies facts for displayed normal or relaxed alternatives into `PlanResult.evidence` (ADR 0015, issue #115) |
+| LLM parser, grounded explainer, evaluation splits/reporting | implemented; oracle and remaining statistics are still in progress |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification
