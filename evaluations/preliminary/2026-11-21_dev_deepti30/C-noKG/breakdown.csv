@@ -1,0 +1,13 @@
+config,dimension,group,n_items,n_with_result,error_rate,field_f1,exact_match,clarification_f1,silent_assumption_rate
+C,author,deepti,30,30,0.0,0.6084142394822006,0.03333333333333333,0.6153846153846154,0.0
+C,category,accessibility,3,3,0.0,0.5,0.0,,
+C,category,conflicting_prefs,3,3,0.0,0.5641025641025641,0.0,,
+C,category,incomplete,4,4,0.0,0.5714285714285714,0.0,1.0,0.0
+C,category,multi_stop,4,4,0.0,0.6521739130434783,0.0,0.0,
+C,category,priority_tradeoff,2,2,0.0,0.6363636363636364,0.0,,
+C,category,rural,5,5,0.0,0.6153846153846154,0.0,0.0,
+C,category,sparse_charging,4,4,0.0,0.75,0.25,0.0,
+C,category,urban,5,5,0.0,0.56,0.0,0.0,
+C,route_type,mixed,12,12,0.0,0.6016260162601627,0.0,0.8888888888888888,0.0
+C,route_type,rural,12,12,0.0,0.6507936507936508,0.08333333333333333,0.0,
+C,route_type,urban,6,6,0.0,0.5333333333333333,0.0,0.0,
