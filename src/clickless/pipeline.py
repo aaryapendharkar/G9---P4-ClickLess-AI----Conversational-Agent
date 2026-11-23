@@ -249,8 +249,13 @@ class Pipeline:
             config=self.name,
             status="ok",
             request=req,
+            parser=parse.parser,
+            fallback_reason=parse.fallback_reason,
             timings_ms=timings,
         )
+        # PlanResult validation stores a copy of the dict, so the later laps must write into the
+        # result's own dict; otherwise only "parse" reaches the saved result (#125).
+        timings = result.timings_ms
 
         if parse.needs_input:
             if self.clarifier:
@@ -283,6 +288,8 @@ class Pipeline:
                     config=self.name,
                     status="rejected_incomplete",
                     request=merged.request,
+                    parser=pending.parse.parser,
+                    fallback_reason=pending.parse.fallback_reason,
                     notes=merged.missing_fields + [
                         f"ambiguous {field}" for field in merged.ambiguous_fields
                     ],
@@ -304,6 +311,8 @@ class Pipeline:
                 status="needs_clarification",
                 request=merged.request,
                 clarification=next_question,
+                parser=pending.parse.parser,
+                fallback_reason=pending.parse.fallback_reason,
                 notes=[
                     f"clarified {pending.question.field} from answer: {answer!r}"
                 ] if answer_accepted else [],
@@ -316,6 +325,8 @@ class Pipeline:
             config=self.name,
             status="ok",
             request=merged.request,
+            parser=pending.parse.parser,
+            fallback_reason=pending.parse.fallback_reason,
             notes=[f"clarified {pending.question.field} from answer: {answer!r}"],
         )
         return self.plan_request(merged.request, result)

@@ -19,6 +19,10 @@ Category = Literal[
 ]
 
 
+class FixtureItemsRefused(ValueError):
+    """Fixture-world benchmark items (e.g. dev/fixture_smoke.jsonl) were requested on snapshot data."""
+
+
 class BenchmarkItem(BaseModel):
     id: str
     author: Author
@@ -36,10 +40,16 @@ class BenchmarkItem(BaseModel):
 
 
 def load_items(path: str | Path) -> list[BenchmarkItem]:
+    """Items from one JSONL file, or every *.jsonl in a directory except fixture_*.jsonl.
+
+    Fixture files (e.g. requests/dev/fixture_smoke.jsonl, synthetic-world smoke items) are not
+    benchmark items, so a split directory loads only its frozen items; pass a fixture file's
+    path explicitly to load it.
+    """
     path = Path(path)
     if not path.exists():
         return []  # e.g. the test split before the freeze
-    files = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
+    files = sorted(p for p in path.glob("*.jsonl") if not p.name.startswith("fixture_")) if path.is_dir() else [path]
     items = []
     for f in files:
         for line_no, line in enumerate(f.read_text().splitlines(), 1):

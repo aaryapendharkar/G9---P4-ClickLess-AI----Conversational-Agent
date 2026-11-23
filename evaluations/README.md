@@ -1,0 +1,90 @@
+# evaluations/
+
+This folder holds the project's **evaluation methodology and results**. The evaluation *code* lives in
+[`src/evaluation/`](../src/evaluation) and the benchmark items in [`benchmark/`](../benchmark); this folder explains how
+they fit together and keeps the reports we cite.
+
+| Path | What |
+|---|---|
+| `README.md` | methodology and how to reproduce (this file) |
+| [`preliminary/`](preliminary) | **preliminary** dev-set results and figures. Not final numbers; see that folder's README |
+
+Final results (the held-out test split) will go in `final/` after the final run.
+
+## What is compared
+
+All configurations share the same deterministic planner and verifier. They differ in how the request is understood,
+which evidence is retrieved and how the answer is explained (`configs/config_*.yaml`).
+
+| Config | Parser | Matching | Retrieval | Incomplete request | Explanation |
+|---|---|---|---|---|---|
+| **A**, classical baseline | rules | TF-IDF | corridor | rejected | template |
+| **B**, modern language stack | LLM (Qwen3 8B, local) | Sentence-BERT | corridor | rejected | template |
+| **C**, hybrid | LLM | Sentence-BERT | corridor + KG | clarification question | evidence-grounded, with source labels |
+| **C-noKG**, ablation | as C | as C | corridor only | as C | as C |
+
+The LLM runs locally through Ollama at a pinned model digest (`docs/VOYAGER_LOCAL.md`). Every run records the git
+commit, model digest, Ollama version, prompt version and snapshot id (`metadata.csv`).
+
+## Benchmark
+
+- **150 requests**, 30 per team member, with a fixed mix per author: urban, rural, sparse charging, multi-stop,
+  incomplete, conflicting preferences, accessibility, priority trade-off. Each item has a gold structured request
+  (`docs/ANNOTATION_GUIDE.md`, schema in `src/evaluation/schema.py`).
+- **Frozen split: 50 dev / 100 test.** Seed 573; the split was frozen on 2026-11-21 (`benchmark/FROZEN.json` stores
+  the SHA-256 of each split file). Rules (`src/evaluation/splits.py`):
+  - The parser owner's items go to dev only.
+  - Items with the same origin–destination pair never straddle the split.
+  - The test set keeps the overall category and route-type mix.
+- **The test split is held out.** `evaluation.report` refuses it without `--final`, and all tuning uses dev.
+- **40 items are double-annotated blind** to measure inter-annotator agreement (Cohen's kappa, field agreement;
+  `src/evaluation/agreement.py`).
+
+## Independent oracle
+
+`src/evaluation/oracle/` is written without importing the planner's code. It reads the same inputs as the planner (snapshot,
+cached routes) and its own implementation of the documented energy model.
+- **Label-setting search:** labels are (route position, elapsed time, SoC, path), and dominated labels are pruned.
+  The search decides whether *any* itinerary satisfies all hard constraints, and returns the Pareto set over
+  (time, detour, charge, amenities).
+- **`is_valid(itinerary)`:** checks every itinerary the system returns.
+- **Disagreements** between planner and oracle are reported as findings (`findings.csv`). Items where the search
+  stops early are excluded from the oracle-based metrics and listed in `oracle_search.csv`.
+
+> Status: the full oracle and the planning metrics are in PR #74 (`ian/oracle`). On `main` they are still stubs, so
+> feasibility and hard-violation columns show `n/a` until #74 is merged.
+
+## Metrics
+
+| Area | Metrics | Code |
+|---|---|---|
+| Request understanding | field-level P/R/F1 (micro and per field), exact match, clarification F1, silent-assumption rate, invented-constraint rate | `metrics/request_understanding.py` |
+| Planning | plan feasibility (oracle-feasible items that get an oracle-valid plan), hard-violation rate, infeasible-request handling, robustness under +15% consumption, nDCG@3 | `metrics/planning.py` |
+| Trade-offs | Pareto validity of the shown alternatives, faithfulness of trade-off numbers, sensitivity to weights | `metrics/tradeoffs.py` |
+| Grounding | claim-support rate (every cited evidence id must support the claim), KG-evidence coverage, freshness-label errors | `metrics/grounding.py` |
+| Handoff | the approved Google Maps URL contains each approved stop exactly once | `metrics/handoff.py` |
+
+**Statistics** (`metrics/stats.py`):
+- 95% percentile-bootstrap CIs (10,000 resamples, seed 573).
+- Paired tests between configs on the items both ran: McNemar for per-item success, Wilcoxon signed-rank for
+  per-item scores. Pairs: A vs B, A vs C, B vs C, and C vs C-noKG for the KG ablation.
+
+## How to reproduce
+
+Setup (repo root): `pip install -e ".[dev,nlp,kg]"`, the shared snapshot unzipped into `data/snapshot/` and verified, and
+Ollama running `qwen3:8b`. See the root `README.md`.
+
+```powershell
+$env:CLICKLESS_DATA_SOURCE = "snapshot"
+$env:VOYAGER_BASE_URL = "http://localhost:11434/v1"
+$env:VOYAGER_API_KEY = ""
+python -m evaluation.report --configs A B C C-noKG --split dev                 # -> results/<timestamp>/
+python -m evaluation.report --configs A B C --items benchmark/requests/raw/deepti.jsonl   # a subset, e.g. one author
+python -m evaluation.report --from results/<timestamp>                         # rebuild report.md + CSVs from saved runs
+python -m evaluation.report --configs A B C C-noKG --split test --final        # final run only, after all tuning
+```
+Bash: `export CLICKLESS_DATA_SOURCE=snapshot`, then `make eval-dev` (all of A, B, C) or `make eval-dev CONFIGS="A B"`.
+
+Each run writes `report.md`, `headline.csv`, `paired.csv`, `breakdown.csv` (by author, category, route type),
+`errors.csv`, `findings.csv` and `metadata.csv` under `results/<timestamp>/`. `results/` is git-ignored; copy a
+report here when it is cited.

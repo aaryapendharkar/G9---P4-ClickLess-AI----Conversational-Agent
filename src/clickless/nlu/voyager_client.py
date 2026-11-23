@@ -33,11 +33,14 @@ def chat(
     headers = {"Content-Type": "application/json"}
     if key:
         headers["Authorization"] = f"Bearer {key}"
-    resp = requests.post(
-        f"{base}/chat/completions",
-        headers=headers,
-        json={"model": model, "messages": messages, "temperature": temperature, **extra},
-        timeout=timeout_s,
-    )
+    payload: dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature, **extra}
+    # Ollama's OpenAI-compatible endpoint ignores `think`, so think=False alone still lets qwen3
+    # reason (~40 s per extraction); `reasoning_effort: "none"` is what turns it off there (#114).
+    if extra.get("think") is False:
+        payload.setdefault("reasoning_effort", "none")
+    resp = requests.post(f"{base}/chat/completions", headers=headers, json=payload, timeout=timeout_s)
     resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
+    try:
+        return resp.json()["choices"][0]["message"]["content"]
+    except (IndexError, KeyError, TypeError) as error:
+        raise RuntimeError("Voyager response has an invalid chat completion shape") from error
