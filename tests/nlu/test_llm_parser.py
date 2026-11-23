@@ -30,7 +30,7 @@ def parser(store):
 def test_valid_llm_output_is_grounded_by_datastore(parser, monkeypatch):
     monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: json.dumps(VALID_EXTRACTION))
 
-    result = parser.parse("plan my Phoenix to Flagstaff trip", "llm-valid")
+    result = parser.parse("plan my Phoenix to Flagstaff trip using CCS", "llm-valid")
 
     assert not result.needs_input
     assert result.parser == "llm"
@@ -128,9 +128,32 @@ def test_connector_aliases_are_normalized(parser, monkeypatch):
     response = {**VALID_EXTRACTION, "connectors": ["J1772 Combo"]}
     monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: json.dumps(response))
 
-    result = parser.parse("plan my trip", "llm-connector-alias")
+    result = parser.parse("Use a J1772 Combo charger on my trip", "llm-connector-alias")
 
     assert result.request.connectors_override == ["CCS1"]
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "Ely to Tonopah in my Nissan Leaf, 10% battery, arrive with at least 60%, only 350 kW chargers",
+        (
+            "I'm in a hurry from Los Angeles to San Diego in my 2024 Tesla Model 3 Long Range AWD at 35%, "
+            "but I also need a sit-down meal and coffee while charging."
+        ),
+        (
+            "My 2023 Rivian R1S with the large pack is down to 9%. Houston Galleria to Hobby Airport, "
+            "and I'd like a quick bite while it charges."
+        ),
+    ],
+)
+def test_connector_is_not_inferred_without_an_explicit_plug_mention(parser, monkeypatch, request_text):
+    response = {**VALID_EXTRACTION, "connectors": ["CCS"]}
+    monkeypatch.setattr(llm_parser, "chat", lambda *args, **kwargs: json.dumps(response))
+
+    result = parser.parse(request_text, "llm-no-invented-connector")
+
+    assert result.request.connectors_override is None
 
 
 def test_invalid_connector_output_falls_back_safely(store, monkeypatch):
