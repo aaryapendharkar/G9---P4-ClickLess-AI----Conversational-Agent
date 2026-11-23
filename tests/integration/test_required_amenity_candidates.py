@@ -10,7 +10,12 @@ Needs the downloaded snapshot with its route cache; skipped otherwise (like the 
 import pytest
 
 from clickless.config import load_config, repo_path
-from clickless.contracts import AmenityCategory, AmenityPreference, TripRequest
+from clickless.contracts import (
+    AmenityCategory,
+    AmenityPreference,
+    PlanResult,
+    TripRequest,
+)
 from clickless.data import DataStore
 from clickless.pipeline import build_pipeline
 
@@ -75,6 +80,53 @@ def test_scenario_4_keeps_the_accessible_restroom_station(snapshot_pipe):
         assert _usable_with_restroom(snapshot_pipe, req, retriever.candidates(route, req)) == []  # cut (the bug)
     finally:
         retriever.required_extra_per_bin = 2
+
+
+@needs_snapshot
+def test_scenario_4_plans_with_accessibility_without_relaxing(
+    snapshot_pipe,
+    monkeypatch,
+):
+    """The retained station must produce a valid plan without dropping the requirement."""
+
+    request = _scenario_4(snapshot_pipe.store, "important")
+
+    # This integration test targets retrieval and planning, not Config C's
+    # optional Sentence-BERT dependency. A deterministic category match keeps
+    # the test runnable on the base development installation and in CI.
+    monkeypatch.setattr(
+        snapshot_pipe.matcher,
+        "score",
+        lambda preference, amenity: float(
+            preference.category == amenity.category
+        ),
+    )
+
+    result = snapshot_pipe.plan_request(
+        request,
+        PlanResult(
+            request_id=request.request_id,
+            config="C",
+            status="ok",
+            request=request,
+        ),
+    )
+
+    assert result.status == "ok"
+    assert result.relaxation is None
+    assert result.alternatives
+
+    # The accessible-restroom need is hard, so every displayed alternative
+    # must use the qualifying station retained by retrieval in the test above.
+    for alternative in result.alternatives:
+        assert any(
+            stop.station_id == "afdc:330584"
+            and stop.satisfied_preferences.get("restroom_wheelchair", 0.0) > 0
+            for stop in alternative.itinerary.stops
+        )
+
+    assert result.verification is not None
+    assert result.verification.ok
 
 
 @needs_snapshot
