@@ -1,0 +1,16 @@
+# CQ12: How many charging points of each connector and level does station S have?
+# Author: Aarya (#158). A station's ports are grouped by connector and charger level; cc:portCount
+# is the number of physical points behind one port entry (ChargingPort.count), so the answer is
+# the sum over entries with the same connector and level.
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT ?connector ?level (SUM(?count) AS ?points)
+WHERE {
+  VALUES ?station { cc:station_REPLACE_ME }
+  ?station cc:hasPort ?port .
+  ?port    cc:hasConnector ?connector ;
+           cc:chargerLevel ?level ;
+           cc:portCount    ?count .
+}
+GROUP BY ?connector ?level
+ORDER BY ?connector ?level

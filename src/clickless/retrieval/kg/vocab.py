@@ -30,7 +30,7 @@ hasClaim, supportedBy = _t("hasClaim"), _t("supportedBy")
 identifier, access, status = _t("identifier"), _t("access"), _t("status")
 portIndex, chargerLevel, powerKw, portCount = _t("portIndex"), _t("chargerLevel"), _t("powerKw"), _t("portCount")
 amenityCategory, wheelchair, openingHours = _t("amenityCategory"), _t("wheelchair"), _t("openingHours")
-distanceM = _t("distanceM")
+distanceM, maxDcKw = _t("distanceM"), _t("maxDcKw")
 sourceName, sourceRecordId, sourceUrl = _t("sourceName"), _t("sourceRecordId"), _t("sourceUrl")
 retrievedAt, sourceUpdatedAt, dataStatus = _t("retrievedAt"), _t("sourceUpdatedAt"), _t("dataStatus")
 

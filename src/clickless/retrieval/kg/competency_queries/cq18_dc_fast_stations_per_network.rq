@@ -1,0 +1,15 @@
+# CQ18: How many DC fast stations does each network operate?
+# Author: Aarya (#158). A station counts once however many DC fast ports it has. Stations whose
+# network is unknown have no cc:operatedBy and are not counted under any network.
+PREFIX cc:   <https://example.org/clickless#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?network ?networkName (COUNT(DISTINCT ?station) AS ?stations)
+WHERE {
+  ?station cc:operatedBy ?network ;
+           cc:hasPort    ?port .
+  ?port    cc:chargerLevel "dc_fast" .
+  ?network rdfs:label ?networkName .
+}
+GROUP BY ?network ?networkName
+ORDER BY DESC(?stations) ?networkName
