@@ -1,0 +1,11 @@
+pair,outcome,test,n,rate_a,rate_b,b,c,statistic,p_value,note
+A vs B,exact_match,McNemar,30,0.0,0.03333333333333333,0,1,0.0,1.0,exact binomial
+A vs B,clarification_correct,McNemar,30,0.6333333333333333,0.8333333333333334,0,6,0.0,0.03125,exact binomial
+A vs B,no_error,McNemar,30,1.0,1.0,0,0,0.0,1.0,exact binomial
+A vs B,field_f1,Wilcoxon,30,0.5793119843119843,0.6072222222222222,,,56.0,0.1980852321779929,18 non-zero differences
+A vs B,latency_ms,Wilcoxon,30,344.91953333351074,14972.65537000009,,,0.0,1.862645149230957e-09,30 non-zero differences
+B vs C,exact_match,McNemar,30,0.03333333333333333,0.03333333333333333,0,0,0.0,1.0,exact binomial
+B vs C,clarification_correct,McNemar,30,0.8333333333333334,0.8333333333333334,0,0,0.0,1.0,exact binomial
+B vs C,no_error,McNemar,30,1.0,1.0,0,0,0.0,1.0,exact binomial
+B vs C,field_f1,Wilcoxon,30,0.6072222222222222,0.6072222222222222,,,,,0 non-zero differences
+B vs C,latency_ms,Wilcoxon,30,14972.65537000009,19769.617683333734,,,30.0,3.7904828786849976e-06,30 non-zero differences

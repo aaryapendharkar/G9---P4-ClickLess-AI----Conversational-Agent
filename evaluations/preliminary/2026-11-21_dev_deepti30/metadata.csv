@@ -1,0 +1,4 @@
+config,git_commit,git_dirty,model,model_digest,digest_check,ollama_version,endpoint_host,prompt_version,snapshot_id
+A,f019c87554d688bc122f45a32a3dc651fb9d56b8,True,n/a,n/a,n/a,n/a,n/a,n/a,
+B,f019c87554d688bc122f45a32a3dc651fb9d56b8,True,qwen3:8b,500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41,match,0.40.17,127.0.0.1:11434,extract_v2,
+C,ab93502ad83bbef169e21b0140f81f4eb14fa05f,False,qwen3:8b,500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41,match,0.40.17,127.0.0.1:11434,extract_v2,
