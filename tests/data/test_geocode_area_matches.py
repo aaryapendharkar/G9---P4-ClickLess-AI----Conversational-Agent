@@ -209,7 +209,8 @@ def test_county_match_is_regeocoded_and_its_routes_removed(snapshot, benchmark, 
     assert "added" not in src  # nothing new was added
     assert verify_manifest(str(snapshot)) == []
     out = capsys.readouterr().out
-    assert "Elko, NV (was: Elko County, Nevada, United States)" in out and "moved 54 km" in out
+    assert "Elko, NV: a county or state instead of the town (was: Elko County, Nevada, United States)" in out
+    assert "moved 54.5 km" in out
 
     # a second run finds nothing left to fix
     assert add_places(str(snapshot), str(benchmark), fix_area_matches=True) == 0
