@@ -7,7 +7,10 @@ from clickless.contracts import (
     Itinerary,
     PlanCost,
 )
-from clickless.explain.tradeoff_presenter import render_alternative
+from clickless.explain.tradeoff_presenter import (
+    render_alternative,
+    render_cost_breakdown,
+)
 
 
 def _alternative(
@@ -61,6 +64,28 @@ def _alternative(
         gains=gains or [],
         losses=losses or [],
     )
+
+
+def test_cost_breakdown_displays_verified_evidence_credit() -> None:
+    """Every nonzero cost term must appear in the displayed arithmetic."""
+
+    cost = PlanCost(
+        profile="balanced",
+        drive_min=143.0,
+        charge_min=18.0,
+        detour_penalty_min=2.0,
+        stop_overhead_min=5.0,
+        amenity_credit_min=35.0,
+        evidence_credit_min=5.0,
+        total_min=128.0,
+        amenity_satisfaction=1.0,
+    )
+
+    description = render_cost_breakdown(cost)
+
+    assert "requested amenities 35" in description
+    assert "verified evidence 5" in description
+    assert description.endswith("= 128.")
 
 
 def test_faster_alternative_translates_negative_time_delta() -> None:

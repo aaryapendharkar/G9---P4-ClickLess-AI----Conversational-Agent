@@ -97,7 +97,10 @@ class PlanResult(BaseModel):
 ### 6. Not in this decision
 - Vehicle facts (connectors, max DC power, per-field provenance) as evidence: follow-up. The graph
   already holds `cc:supports` / `cc:supportsViaAdapter`.
-- `WeightedRanker.evidence_coverage` stays 0.0 (Hriday + Aarya TODO); ranking does not change.
+- Evidence-aware ranking was outside this ADR's original implementation. Follow-up issue #78
+  implements it without changing the evidence contract: Config C measures support for displayed
+  station, selected-port and amenity facts, while Configs A/B and the C-without-KG ablation keep
+  zero evidence credit.
 - Writing `data/snapshot/kg.ttl` in the offline build and hashing it into the manifest; measuring
   the in-memory build on the full snapshot (ADR 0001 fallback: keep spatial work outside the KG).
 

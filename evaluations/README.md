@@ -85,6 +85,11 @@ python -m evaluation.report --configs A B C C-noKG --split test --final        #
 ```
 Bash: `export CLICKLESS_DATA_SOURCE=snapshot`, then `make eval-dev` (all of A, B, C) or `make eval-dev CONFIGS="A B"`.
 
+The data source matters. The configs default to the synthetic fixture world, where the benchmark's real places and
+vehicles don't exist. So a `--split` run without `CLICKLESS_DATA_SOURCE=snapshot` stops before any item runs with
+"Evaluation needs the snapshot: set CLICKLESS_DATA_SOURCE=snapshot (see README)" (#119). Explicit `--items` runs are
+not checked; the fixture smoke file (`--items benchmark/requests/dev/fixture_smoke.jsonl`) is meant for the fixtures.
+
 Each run writes `report.md`, `headline.csv`, `paired.csv`, `breakdown.csv` (by author, category, route type),
 `errors.csv`, `findings.csv` and `metadata.csv` under `results/<timestamp>/`. `results/` is git-ignored; copy a
 report here when it is cited.

@@ -31,7 +31,9 @@ Fixture items (gold vehicle from the fixture world, e.g. benchmark/requests/dev/
 only make sense on fixture data. Split directories never load fixture_*.jsonl files (schema.load_items).
 With CLICKLESS_DATA_SOURCE=snapshot (or a snapshot config), explicit --items containing fixture items
 are refused (FixtureItemsRefused); a --split run drops any item whose gold vehicle exists only in the
-fixture world and lists it under "excluded_fixture_items" in the output.
+fixture world and lists it under "excluded_fixture_items" in the output. The other way round, a --split
+run on the fixture world is refused before any item runs (SnapshotRequired, #119): the splits' real
+places and vehicles exist only in the snapshot. Fixture smoke runs pass --items instead.
 """
 
 from __future__ import annotations
@@ -56,8 +58,10 @@ from clickless.config import load_config, repo_path
 from clickless.contracts import PlanResult
 from clickless.pipeline import build_pipeline
 
+from .config_names import ABLATIONS, SnapshotRequired, config_path, data_source, require_snapshot  # noqa: F401
 from .llm_residency import LLMResidency
 from .metrics.grounding import claim_support, freshness_mislabel_rate
+from .metrics.planning import planning_metrics
 from .metrics.request_understanding import (
     city_level_place_prf,
     clarification_prf,
@@ -67,6 +71,7 @@ from .metrics.request_understanding import (
     silent_assumption_rate,
     understanding_cis,
 )
+from .oracle.label_setting import LabelSettingOracle
 from .parser_trace import ParserTrace
 from .schema import BenchmarkItem, FixtureItemsRefused, load_items
 from .snapshot_id import snapshot_info
@@ -76,10 +81,14 @@ _DIGEST_COMMENT = re.compile(r"digest\s+([0-9a-f]{12,64})\b", re.IGNORECASE)
 
 
 def _safe(fn, *args) -> dict:
+    """One metric block failing must not lose the others or the results JSON: the error is recorded
+    in that block ({"error": "<Type>: <message>"}) and the run continues."""
     try:
         return fn(*args)
     except NotImplementedError as e:
         return {"not_implemented": str(e)}
+    except Exception as e:  # noqa: BLE001 - isolated per metric block on purpose
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 # --------------------------------------------------------------------------- run metadata
@@ -102,16 +111,8 @@ def _uses_llm(cfg: Mapping[str, Any]) -> bool:
     return comp.get("parser") == "llm" or comp.get("explainer") == "grounded_llm"
 
 
-# Named ablations: config name (as in results files and the report) -> config file.
-ABLATIONS = {"C-noKG": "configs/config_c_nokg.yaml"}
-
-
-def _config_path(config: str) -> Path:
-    if config.upper() in {"A", "B", "C"}:
-        return repo_path(f"configs/config_{config.lower()}.yaml")
-    if config in ABLATIONS:
-        return repo_path(ABLATIONS[config])
-    return repo_path(config)
+# Config names and named ablations live in config_names (shared with the report); kept under these names.
+_config_path = config_path
 
 
 def expected_digest(cfg: Mapping[str, Any], config_text: str = "") -> str | None:
@@ -200,11 +201,6 @@ def run_metadata(
 # --------------------------------------------------------------------------- fixture guard
 
 
-def data_source(cfg: Mapping[str, Any]) -> str:
-    """'fixtures' or 'snapshot', with the same CLICKLESS_DATA_SOURCE override as DataStore."""
-    return os.environ.get("CLICKLESS_DATA_SOURCE", "").strip().lower() or cfg["data"]["source"]
-
-
 def fixture_vehicle_ids(cfg: Mapping[str, Any]) -> set[str]:
     path = repo_path(cfg["data"]["fixtures_dir"]) / "vehicles.json"
     if not path.is_file():
@@ -228,8 +224,9 @@ def _load_with_files(path: Path) -> list[tuple[BenchmarkItem, Path]]:
 def select_items(
     cfg: Mapping[str, Any], split: str, items_paths: list[str] | None
 ) -> tuple[list[BenchmarkItem], list[str]]:
-    """(items to run, fixture item ids excluded). Raises FixtureItemsRefused for explicit
-    fixture items on snapshot data."""
+    """(items to run, fixture item ids excluded). Raises SnapshotRequired for a benchmark split on
+    the fixture world (#119) and FixtureItemsRefused for explicit fixture items on snapshot data."""
+    require_snapshot(cfg.get("name", "?"), cfg, split, items_paths)
     paths = [repo_path(p) for p in items_paths] if items_paths else [repo_path(f"benchmark/requests/{split}")]
     loaded = [pair for p in paths for pair in _load_with_files(p)]
     if data_source(cfg) != "snapshot":
@@ -275,6 +272,13 @@ def exception_stage(exc: BaseException, parser: Any) -> str:
     """'parse' if the exception was raised inside `parser` (a frame whose self is the parser), else 'planning'."""
     frames = traceback.walk_tb(exc.__traceback__)
     return "parse" if any(frame.f_locals.get("self") is parser for frame, _ in frames) else "planning"
+
+
+def build_oracle(cfg: Mapping[str, Any], pipe) -> LabelSettingOracle:
+    """Oracle on the pipeline's frozen data. In OSRM mode the pipeline's router supplies ROUTES only
+    (data access through the contracts Router protocol); detours always come from the oracle's own model."""
+    osrm = cfg.get("routing", {}).get("mode") == "osrm"
+    return LabelSettingOracle.from_config(cfg, store=pipe.store, route_source=pipe.router.route if osrm else None)
 
 
 def run(
@@ -342,15 +346,18 @@ def run(
         "bootstrap_ci95": _safe(understanding_cis, done, ordered, n_boot),
         "grounding": _safe(claim_support, ordered),  # each result's own evidence only (ADR 0015)
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
-        # TODO(Ian): planning (oracle), tradeoffs, handoff, latency p50/p95
+        "planning": _safe(planning_metrics, done, ordered, build_oracle(cfg, pipe)),
+        # TODO(Ian): tradeoffs, handoff, latency p50/p95
     }
+    # Planner/oracle disagreements are findings, reported on their own (docs/EVALUATION_ORACLE.md).
+    findings = metrics["planning"].pop("findings", []) if isinstance(metrics["planning"], dict) else []
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     label = "items" if items_paths else split
     out = repo_path(out_dir) / f"{cfg['name']}_{label}_{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"config": cfg["name"], "split": None if items_paths else split, "items": source,
                                "n": len(items), "excluded_fixture_items": excluded, "run_metadata": meta,
-                               "metrics": metrics, "rows": rows},
+                               "metrics": metrics, "findings": findings, "rows": rows},
                               indent=2, default=str))
     return out
 
@@ -365,7 +372,7 @@ def main() -> None:
     args = ap.parse_args()
     try:
         print(run(args.config, args.split, args.limit, out_dir=args.out, items_paths=args.items))
-    except FixtureItemsRefused as e:
+    except (FixtureItemsRefused, SnapshotRequired) as e:
         raise SystemExit(f"refused: {e}") from e
 
 
