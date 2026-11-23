@@ -32,8 +32,8 @@ or a feature.
 ## Decision
 An amenity can satisfy a preference only if `amenity.category == preference.category`. Every
 matcher returns 0.0 for any other amenity before it computes any similarity. Inside the category,
-the matcher's text similarity ranks amenities: Sentence-BERT cosine, and TF-IDF cosine once it is
-implemented (1.0 until then).
+the matcher's text similarity ranks amenities: Sentence-BERT cosine in Configs B/C and TF-IDF
+cosine in Config A.
 
 - **One implementation:** `retrieval/category_gate.py::passes_category_gate`. `TfidfMatcher.score`
   and `EmbeddingMatcher.score` both call it first. A future matcher must call it too.
@@ -66,8 +66,8 @@ Alternatives considered:
 - **`other` preferences are never satisfied,** because ADR 0011 stores no OTHER amenities. This was
   already true for Config A.
 - **Inside a category, any amenity with a score > 0 satisfies the preference.** For example, a
-  burger place satisfies "mexican food" and would be listed as requested (0.41 vs. 0.59 for the
-  Mexican kitchen, so ranking gives the kitchen more credit). Config A behaves the same today. A
+  burger place can satisfy "mexican food", but Config A's TF-IDF score ranks a Mexican kitchen
+  higher when its document shares the cuisine terms. A
   phrase-level rule
   (such as a matching cuisine) would need DEV data and a model-specific threshold, so it is out of
   scope.
@@ -82,6 +82,14 @@ Alternatives considered:
     category.
 - **Two approvals.** Shared pipeline behavior changes (scores for every configuration), so this ADR
   requires two approvals.
+
+## Implementation update (2026-11-22)
+
+Issue #156 replaced Config A's temporary in-category score of 1.0 with deterministic TF-IDF cosine
+similarity in `retrieval/tfidf_matcher.py`. The matcher fits one vocabulary over the selected
+datastore's amenity documents, caches sparse document and query vectors, and still applies the
+category gate before any fitting or vectorization. Hriday implemented this specific item after
+taking it over from Manas; ownership of the wider `retrieval/` module remains with Manas.
 
 ## Approvals
 Each approver records approval here (name, date, PR comment or sync) before the status changes to

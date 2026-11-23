@@ -69,7 +69,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | contracts, configs, fixtures, DataStore, geo utils | done (contracts v0.5) |
 | rules parser, template clarifier, priority phrases | placeholder (fixture phrasings) |
 | corridor retrieval | placeholder (brute force) |
-| TF-IDF matcher | placeholder (category gate only: 1.0 inside the requested category, ADR 0013) |
+| TF-IDF matcher (A) | implemented: deterministic cosine similarity over the shared amenity documents; fits the datastore vocabulary lazily once, reuses sparse document/query vectors, and returns 0 before fitting for another category (ADR 0013, issue #156) |
 | SBERT matcher (B, C) | Sentence-BERT cosine on the shared amenity documents (`retrieval/documents.py`); model pinned by commit in `configs/retrieval.yaml`, CPU, embeddings cached in `data/cache/sbert/`; other categories score 0 (category gate, ADR 0013) |
 | cached router + detour | placeholder (straight-line detour) |
 | runtime OSRM routing | strict client, local cache, waypoint routing, verifier measurement, and temporary-failure fallback with user-visible estimate warnings implemented |

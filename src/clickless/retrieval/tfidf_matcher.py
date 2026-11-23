@@ -1,5 +1,8 @@
 """Configuration A preference matcher: TF-IDF cosine similarity (proposal eq. 1).
 
+Implemented by Hriday under issue #156 after taking over this specific task;
+Manas remains the owner of the wider retrieval module.
+
 TF-IDF and Sentence-BERT read the same text from ``retrieval/documents.py`` so
 the Config A versus Config B comparison changes the matching method, not the
 input documents.
