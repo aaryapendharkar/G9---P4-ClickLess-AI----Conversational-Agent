@@ -1,6 +1,6 @@
 # ADR 0003: Energy reserve, default arrival SoC, accessibility as soft/hard
 
-- Status: proposed — decide at the Oct 24 meeting
+- Status: proposed — Option A selected, pending required approvals
 - Owner: Hriday (energy), Deepti (accessibility semantics)
 - Approvers: Ian, Aarya, Manas
 
@@ -13,5 +13,21 @@
    relaxation order currently relaxes amenities first.
 
 ## Decision
-TBD. Write the outcome here, update `configs/energy.yaml` / `configs/relaxation.yaml`, and
-mirror it in the annotation guide.
+1. Reserve `E_reserve`: TBD.
+2. Default arrival SoC: TBD.
+3. **Proposed, pending approvals — Option A (hard requirement).** When a restroom amenity has both
+   `wheelchair_required: true` and `priority: "important"`, planning must require a verified
+   `wheelchair=yes` restroom at a stop. Unknown, limited, and non-accessible tags do not satisfy
+   this requirement. If no qualifying plan exists, the system must ask the driver before relaxing
+   the requirement; it must never silently drop it. A `nice_to_have` wheelchair restroom remains
+   a soft ranked preference.
+
+   Deepti's parser maps affirmative "need", "must", or "require" language to
+   `priority: "important"` in both the Rules and LLM parsers; negated wording does not. The frozen
+   request/gold representation remains unchanged (`amenities` with
+   `wheelchair_required` and `priority`); this decision does not move amenities into
+   `hard_constraints` or alter benchmark labels.
+
+   **Implementation owners:** Deepti (parser and annotation wording); Hriday (planner enforcement,
+   verifier, and consent-based relaxation); Ian (independent oracle parity). This ADR remains
+   proposed until the required two approvals are recorded and the implementation is reviewed.
