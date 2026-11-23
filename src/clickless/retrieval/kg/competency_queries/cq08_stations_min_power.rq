@@ -1,0 +1,19 @@
+# CQ8: Which stations offer at least P kW for connector C?
+# Author: Aarya (#157, on Manas's behalf). The caller binds ?connector (e.g. cc:CCS1) and ?minKw
+# (a number). The threshold is inclusive (150 kW meets "at least 150"). A port with unknown power
+# has no cc:powerKw and never meets a threshold (ADR 0010: unknown, not 0 and not guessed). One
+# row per qualifying port, fastest first. Station status and access are not filtered here (CQ11,
+# CQ12 ask about them).
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT ?station ?port ?power
+WHERE {
+  VALUES ?connector { cc:connector_REPLACE_ME }
+  VALUES ?minKw { cc:minKw_REPLACE_ME }
+  ?station a cc:Station ;
+           cc:hasPort ?port .
+  ?port    cc:hasConnector ?connector ;
+           cc:powerKw      ?power .
+  FILTER (?power >= ?minKw)
+}
+ORDER BY DESC(?power) ?station ?port

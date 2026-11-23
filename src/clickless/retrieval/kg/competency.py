@@ -9,6 +9,7 @@ it is, the query would match `cc:x_REPLACE_ME` and quietly return no rows.
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from pathlib import Path
 
 CQ_DIR = Path(__file__).parent / "competency_queries"
@@ -42,11 +43,20 @@ def competency_query_text(name: str, *bound: str) -> str:
 def run_competency_query(graph, name: str, **bindings) -> list:
     """Rows of CQ `name` on `graph`, each keyword binding the variable of the same name.
 
-    Values that are not RDF terms (a datetime for CQ6's ?cutoff, say) are wrapped in a Literal."""
+    Values that are not RDF terms (a datetime for CQ6's ?cutoff, say) are wrapped in a Literal. A
+    float becomes an exact xsd:decimal, as the graph stores numbers (build._decimal): as xsd:double,
+    7.2 is 7.2000000000000002, and "at least 7.2 kW" would miss a 7.2 kW port."""
     from rdflib import Literal
     from rdflib.plugins.sparql import prepareQuery
     from rdflib.term import Node
 
+    def term(value):
+        if isinstance(value, Node):
+            return value
+        if isinstance(value, float):
+            return Literal(Decimal(repr(value)))
+        return Literal(value)
+
     query = prepareQuery(competency_query_text(name, *bindings))
-    terms = {var: value if isinstance(value, Node) else Literal(value) for var, value in bindings.items()}
+    terms = {var: term(value) for var, value in bindings.items()}
     return list(graph.query(query, initBindings=terms))

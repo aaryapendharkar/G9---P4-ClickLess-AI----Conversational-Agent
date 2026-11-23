@@ -1,0 +1,14 @@
+# CQ7: Which network operates station S?
+# Author: Aarya (#157, on Manas's behalf). A station whose source reports no network has no
+# cc:operatedBy triple (build.py: nothing unknown gets a triple), so it returns no row: the
+# network is unknown, never guessed. Stations of one network share its node.
+PREFIX cc:   <https://example.org/clickless#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?network ?networkName
+WHERE {
+  VALUES ?station { cc:station_REPLACE_ME }
+  ?station cc:operatedBy ?network .
+  ?network a cc:Network ;
+           rdfs:label ?networkName .
+}
