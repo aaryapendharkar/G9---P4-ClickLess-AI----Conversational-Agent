@@ -31,7 +31,9 @@ Fixture items (gold vehicle from the fixture world, e.g. benchmark/requests/dev/
 only make sense on fixture data. Split directories never load fixture_*.jsonl files (schema.load_items).
 With CLICKLESS_DATA_SOURCE=snapshot (or a snapshot config), explicit --items containing fixture items
 are refused (FixtureItemsRefused); a --split run drops any item whose gold vehicle exists only in the
-fixture world and lists it under "excluded_fixture_items" in the output.
+fixture world and lists it under "excluded_fixture_items" in the output. The other way round, a --split
+run on the fixture world is refused before any item runs (SnapshotRequired, #119): the splits' real
+places and vehicles exist only in the snapshot. Fixture smoke runs pass --items instead.
 """
 
 from __future__ import annotations
@@ -56,6 +58,7 @@ from clickless.config import load_config, repo_path
 from clickless.contracts import PlanResult
 from clickless.pipeline import build_pipeline
 
+from .config_names import ABLATIONS, SnapshotRequired, config_path, data_source, require_snapshot  # noqa: F401
 from .llm_residency import LLMResidency
 from .metrics.grounding import claim_support, freshness_mislabel_rate
 from .metrics.request_understanding import (
@@ -102,16 +105,8 @@ def _uses_llm(cfg: Mapping[str, Any]) -> bool:
     return comp.get("parser") == "llm" or comp.get("explainer") == "grounded_llm"
 
 
-# Named ablations: config name (as in results files and the report) -> config file.
-ABLATIONS = {"C-noKG": "configs/config_c_nokg.yaml"}
-
-
-def _config_path(config: str) -> Path:
-    if config.upper() in {"A", "B", "C"}:
-        return repo_path(f"configs/config_{config.lower()}.yaml")
-    if config in ABLATIONS:
-        return repo_path(ABLATIONS[config])
-    return repo_path(config)
+# Config names and named ablations live in config_names (shared with the report); kept under these names.
+_config_path = config_path
 
 
 def expected_digest(cfg: Mapping[str, Any], config_text: str = "") -> str | None:
@@ -200,11 +195,6 @@ def run_metadata(
 # --------------------------------------------------------------------------- fixture guard
 
 
-def data_source(cfg: Mapping[str, Any]) -> str:
-    """'fixtures' or 'snapshot', with the same CLICKLESS_DATA_SOURCE override as DataStore."""
-    return os.environ.get("CLICKLESS_DATA_SOURCE", "").strip().lower() or cfg["data"]["source"]
-
-
 def fixture_vehicle_ids(cfg: Mapping[str, Any]) -> set[str]:
     path = repo_path(cfg["data"]["fixtures_dir"]) / "vehicles.json"
     if not path.is_file():
@@ -228,8 +218,9 @@ def _load_with_files(path: Path) -> list[tuple[BenchmarkItem, Path]]:
 def select_items(
     cfg: Mapping[str, Any], split: str, items_paths: list[str] | None
 ) -> tuple[list[BenchmarkItem], list[str]]:
-    """(items to run, fixture item ids excluded). Raises FixtureItemsRefused for explicit
-    fixture items on snapshot data."""
+    """(items to run, fixture item ids excluded). Raises SnapshotRequired for a benchmark split on
+    the fixture world (#119) and FixtureItemsRefused for explicit fixture items on snapshot data."""
+    require_snapshot(cfg.get("name", "?"), cfg, split, items_paths)
     paths = [repo_path(p) for p in items_paths] if items_paths else [repo_path(f"benchmark/requests/{split}")]
     loaded = [pair for p in paths for pair in _load_with_files(p)]
     if data_source(cfg) != "snapshot":
@@ -365,7 +356,7 @@ def main() -> None:
     args = ap.parse_args()
     try:
         print(run(args.config, args.split, args.limit, out_dir=args.out, items_paths=args.items))
-    except FixtureItemsRefused as e:
+    except (FixtureItemsRefused, SnapshotRequired) as e:
         raise SystemExit(f"refused: {e}") from e
 
 
