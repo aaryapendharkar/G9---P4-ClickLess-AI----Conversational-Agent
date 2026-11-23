@@ -1,0 +1,16 @@
+# CQ16: Which amenities of category K are within 400 m of station S, and how far is each?
+# Author: Aarya (#158). Uses the n-ary cc:Proximity link, whose cc:distanceM is the straight-line
+# distance corridor retrieval uses (NearbyAmenity.distance_m). Nearest first.
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT ?amenity ?distanceM
+WHERE {
+  VALUES ?station { cc:station_REPLACE_ME }
+  VALUES ?category { cc:category_REPLACE_ME }
+  ?link    a cc:Proximity ;
+           cc:fromStation ?station ;
+           cc:toAmenity   ?amenity ;
+           cc:distanceM   ?distanceM .
+  ?amenity cc:amenityCategory ?category .
+}
+ORDER BY ?distanceM ?amenity

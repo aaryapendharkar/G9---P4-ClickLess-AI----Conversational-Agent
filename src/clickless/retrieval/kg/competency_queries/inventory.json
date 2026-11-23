@@ -1,0 +1,256 @@
+{
+  "_comment": "Competency-question inventory (docs/COMPETENCY_QUESTIONS.md, #158). One entry per CQ. status: 'tested' = an executable query with expected-answer tests on the fixture KG; 'unsupported' entries must give a 'reason'. 'example' holds bindings that return at least one row on the fixture KG (except where 'example_note' says what else is needed, or 'empty_on_fixtures' says why the fixtures have no row and the tests build one): 'cc:x' is a URI in the cc: namespace, {'datetime': ISO} a timestamp, numbers and other strings are literals. Read it with clickless.retrieval.kg.competency.load_inventory() / example_bindings().",
+  "version": 1,
+  "questions": [
+    {
+      "id": "CQ1",
+      "question": "Which stations have a port vehicle V can use, and at what power?",
+      "status": "tested",
+      "query": "cq01_compatible_stations.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq1_comet_native_nacs_and_adapted_ccs1",
+        "tests/retrieval/test_competency_query_answers.py::test_cq1_an_adapter_counts_at_dc_fast_ports_only"
+      ],
+      "example": {
+        "vehicle": "cc:vehicle_fixture-comet-awd-2026"
+      }
+    },
+    {
+      "id": "CQ2",
+      "question": "Which compatible stations have a food amenity within 400 m?",
+      "status": "tested",
+      "query": "cq02_compatible_stations_with_food.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq2_comet_uses_native_nacs_and_its_ccs1_adapter",
+        "tests/retrieval/test_competency_query_answers.py::test_cq2_an_adapter_counts_at_dc_fast_ports_only"
+      ],
+      "example": {
+        "vehicle": "cc:vehicle_fixture-comet-awd-2026"
+      }
+    },
+    {
+      "id": "CQ3",
+      "question": "Which amenities near station S are tagged wheelchair-accessible (and which are unknown)?",
+      "status": "tested",
+      "query": "cq03_amenity_wheelchair_status.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq3_returns_yes_and_unknown_but_not_limited_or_no"
+      ],
+      "example": {
+        "station": "cc:station_FIX-ST-004"
+      }
+    },
+    {
+      "id": "CQ4",
+      "question": "What is the source and retrieval time of the power value of station S's DC port?",
+      "status": "tested",
+      "query": "cq04_dc_power_provenance.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq4_dc_ports_with_power_and_source",
+        "tests/retrieval/test_competency_query_answers.py::test_cq4_unknown_power_port_is_returned_with_empty_power"
+      ],
+      "example": {
+        "station": "cc:station_FIX-ST-004"
+      }
+    },
+    {
+      "id": "CQ5",
+      "question": "Which connectors does vehicle V support only through an adapter?",
+      "status": "tested",
+      "query": "cq05_adapter_only_connectors.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq5_adapter_only_connectors"
+      ],
+      "example": {
+        "vehicle": "cc:vehicle_fixture-comet-awd-2026"
+      }
+    },
+    {
+      "id": "CQ6",
+      "question": "Which stations' records were updated at the source more than N days before retrieval?",
+      "status": "tested",
+      "query": "cq06_stale_station_records.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq6_matches_is_stale_at_the_boundary"
+      ],
+      "example": {
+        "cutoff": {
+          "datetime": "2027-01-01T00:00:00+00:00"
+        }
+      },
+      "empty_on_fixtures": "the fixture station records are static and undated; the test gives some a status and an age"
+    },
+    {
+      "id": "CQ7",
+      "question": "Which network operates station S?",
+      "status": "tested",
+      "query": "cq07_station_network.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq7_network_of_a_station",
+        "tests/retrieval/test_competency_query_answers.py::test_cq7_unknown_network_gives_no_row"
+      ],
+      "example": {
+        "station": "cc:station_FIX-ST-001"
+      }
+    },
+    {
+      "id": "CQ8",
+      "question": "Which stations offer at least P kW for connector C?",
+      "status": "tested",
+      "query": "cq08_stations_min_power.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq8_threshold_is_inclusive",
+        "tests/retrieval/test_competency_query_answers.py::test_cq8_unknown_power_never_meets_a_threshold"
+      ],
+      "example": {
+        "connector": "cc:CCS1",
+        "minKw": 150
+      }
+    },
+    {
+      "id": "CQ9",
+      "question": "Which claims in explanation E are supported by which sources?",
+      "status": "tested",
+      "query": "cq09_claim_sources.rq",
+      "tests": [
+        "tests/retrieval/test_competency_query_answers.py::test_cq9_claims_with_their_sources",
+        "tests/retrieval/test_competency_query_answers.py::test_cq9_on_a_real_config_c_result"
+      ],
+      "example": {
+        "explanation": "cc:explanation_example"
+      },
+      "example_note": "needs an explanation added with build.add_explanation(graph, result) first"
+    },
+    {
+      "id": "CQ10",
+      "question": "Which stations are not open to the public, and what access does the source give?",
+      "status": "tested",
+      "query": "cq10_restricted_stations.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq10_restricted_station",
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq10_several_and_none"
+      ],
+      "example": {}
+    },
+    {
+      "id": "CQ11",
+      "question": "Which stations does the source not report as available, and with which status?",
+      "status": "tested",
+      "query": "cq11_unavailable_stations.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq11_every_status_but_available_ordered_by_status"
+      ],
+      "example": {}
+    },
+    {
+      "id": "CQ12",
+      "question": "How many charging points of each connector and level does station S have?",
+      "status": "tested",
+      "query": "cq12_port_counts.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq12_points_per_connector_and_level",
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq12_sums_entries_of_one_connector_and_level_only"
+      ],
+      "example": {
+        "station": "cc:station_FIX-ST-004"
+      }
+    },
+    {
+      "id": "CQ13",
+      "question": "When are the amenities near station S open?",
+      "status": "tested",
+      "query": "cq13_amenity_opening_hours.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq13_hours_and_unknown"
+      ],
+      "example": {
+        "station": "cc:station_FIX-ST-004"
+      }
+    },
+    {
+      "id": "CQ14",
+      "question": "At what power can vehicle V charge at each DC fast port of station S it can use?",
+      "status": "tested",
+      "query": "cq14_vehicle_dc_power_at_station.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq14_lower_of_port_and_vehicle",
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq14_unknown_power_gives_unknown_effective_power"
+      ],
+      "example": {
+        "vehicle": "cc:vehicle_fixture-comet-awd-2026",
+        "station": "cc:station_FIX-ST-004"
+      }
+    },
+    {
+      "id": "CQ15",
+      "question": "Which data-freshness label does each station record get?",
+      "status": "tested",
+      "query": "cq15_station_freshness_labels.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq15_matches_provenance_labels"
+      ],
+      "example": {
+        "cutoff": {
+          "datetime": "2025-10-21T00:00:00+00:00"
+        }
+      }
+    },
+    {
+      "id": "CQ16",
+      "question": "Which amenities of category K are within 400 m of station S, and how far is each?",
+      "status": "tested",
+      "query": "cq16_amenities_by_distance.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq16_category_and_distance",
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq16_nearest_first"
+      ],
+      "example": {
+        "station": "cc:station_FIX-ST-004",
+        "category": "food"
+      }
+    },
+    {
+      "id": "CQ17",
+      "question": "Which station records lack a source record id or a source URL?",
+      "status": "tested",
+      "query": "cq17_incomplete_station_provenance.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq17_complete_records_are_not_listed"
+      ],
+      "example": {}
+    },
+    {
+      "id": "CQ18",
+      "question": "How many DC fast stations does each network operate?",
+      "status": "tested",
+      "query": "cq18_dc_fast_stations_per_network.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq18_counts",
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq18_counts_a_station_once_and_skips_unknown_networks"
+      ],
+      "example": {}
+    },
+    {
+      "id": "CQ19",
+      "question": "Which stations report no power for any of their ports?",
+      "status": "tested",
+      "query": "cq19_stations_without_known_power.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq19_only_stations_with_no_known_port_power"
+      ],
+      "example": {},
+      "empty_on_fixtures": "every fixture station reports its port power; the test removes it from one station"
+    },
+    {
+      "id": "CQ20",
+      "question": "Which stations have both a food place and a wheelchair-accessible restroom within 400 m?",
+      "status": "tested",
+      "query": "cq20_food_and_accessible_restroom.rq",
+      "tests": [
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq20_food_and_accessible_restroom",
+        "tests/retrieval/test_competency_queries_cq10_20.py::test_cq20_only_an_explicit_yes_counts"
+      ],
+      "example": {}
+    }
+  ]
+}
