@@ -32,6 +32,40 @@ def test_a_place_that_names_a_county_may_resolve_to_it():
     assert geocode.pick_result("Elko County, NV", [COUNTY, TOWN]) is COUNTY
 
 
+def _hit(name, addresstype, place_rank, lat="1"):
+    return {"lat": lat, "lon": "1", "display_name": name, "osm_type": "node", "osm_id": 1,
+            "addresstype": addresstype, "place_rank": place_rank}
+
+
+def test_a_town_beats_a_park_named_after_it():
+    """Ian's review on #120: [county, Custer State Park, town] -> the town for a bare "Town, ST"."""
+    park = _hit("Custer State Park, Custer County, South Dakota", "park", 30)
+    town = _hit("Custer, Custer County, South Dakota", "town", 16)
+    county = _hit("Custer County, South Dakota", "county", 12)
+    assert geocode.pick_result("Custer, SD", [county, park, town]) is town
+    assert geocode.pick_result("Custer, SD", [county, park]) is park  # no settlement: first non-area hit
+
+
+def test_a_landmark_takes_the_first_non_area_hit():
+    capitol = _hit("Texas State Capitol, Austin, Texas", "tourism", 30)
+    city = _hit("Austin, Travis County, Texas", "city", 16)
+    assert geocode.pick_result("Texas State Capitol, Austin, TX", [city, capitol]) is city
+    assert geocode.pick_result("Texas State Capitol, Austin, TX", [capitol, city]) is capitol
+
+
+@pytest.mark.parametrize("place", ["Arizona State University, Tempe, AZ", "State College, PA"])
+def test_the_word_state_inside_a_name_is_still_filtered(place):
+    county = _hit("Centre County, Pennsylvania", "county", 12)
+    other = _hit("State College, Centre County, Pennsylvania", "town", 16)
+    assert geocode.pick_result(place, [county, other]) is other
+
+
+@pytest.mark.parametrize("place", ["Elko County, NV", "Nome Census Area, AK", "Orleans Parish, LA"])
+def test_only_a_name_ending_in_an_area_word_skips_the_filter(place):
+    county = _hit("Some County", "county", 12)
+    assert geocode.pick_result(place, [county]) is county
+
+
 def test_place_rank_alone_marks_an_area():
     assert geocode.is_area_result({"place_rank": 12}) and not geocode.is_area_result({"place_rank": 16})
 
@@ -45,6 +79,12 @@ def test_place_rank_alone_marks_an_area():
         ("Monument Valley, AZ", "Monument Valley Navajo Tribal Park, Navajo County, Arizona", False),
         ("Uptown Dallas, TX", "Uptown PID, Dallas, Dallas County, Texas, United States", False),
         ("Elko County, NV", "Elko County, Nevada, United States", False),  # asked for the county
+        ("Nome, AK", "Nome Census Area, Alaska, United States", True),
+        ("Ely, NV", "Nevada, United States", True),  # resolved to the whole state
+        ("Downtown Austin, TX", "Texas State Capitol, 1100, Congress Avenue, Austin, Texas", False),
+        ("Arizona State University, Tempe, AZ", "Arizona State University, Tempe, Maricopa County, Arizona", False),
+        ("Washington, DC", "Washington, District of Columbia, United States", False),
+        ("Downtown Seattle, WA", "Washington, United States", True),
     ],
 )
 def test_stored_area_matches_are_recognised(place, display_name, expected):
@@ -124,6 +164,24 @@ def benchmark(tmp_path):
             "gold_request": gold, "clarification_required": False}
     (raw / "hriday.jsonl").write_text(json.dumps(item) + "\n", encoding="utf-8")
     return raw
+
+
+def test_main_survives_a_non_latin_name_on_a_cp1252_console(snapshot, benchmark, monkeypatch):
+    """Ian's review on #120: printing "Cherokee;ᏣᎳᎩ" crashed after a complete write on Windows."""
+    import io
+    import sys
+
+    def fake(places, cache_dir, *, endpoint, pause_s):
+        return {p: {"lat": 40.83, "lon": -115.76, "display_name": "Elko;ᏣᎳᎩ, Nevada", "osm": "r/2",
+                    "addresstype": "town", "place_rank": 16, "retrieved_at": "2026-11-23T00:00:00+00:00"}
+                for p in places}
+
+    monkeypatch.setattr(add_places_mod.geocode, "geocode_places", fake)
+    console = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr(sys, "stdout", console)
+    assert add_places_mod.main(["--dir", str(snapshot), "--benchmark-dir", str(benchmark), "--fix-area-matches"]) == 0
+    console.flush()
+    assert b"to Elko;???, Nevada" in console.buffer.getvalue()  # replaced, not a UnicodeEncodeError
 
 
 def test_without_the_flag_nothing_changes(snapshot, benchmark, fake_nominatim):

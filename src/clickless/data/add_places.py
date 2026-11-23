@@ -172,6 +172,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fix-area-matches", action="store_true",
                    help="re-geocode stored places that resolved to a county or state, and remove their routes")
     args = p.parse_args(argv)
+    # Nominatim names can be non-Latin ("Cherokee;ᏣᎳᎩ"); a cp1252 Windows console must not crash on them
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     return add_places(args.dir, args.benchmark_dir, args.cache_dir, fix_area_matches=args.fix_area_matches)
 
 
