@@ -61,6 +61,7 @@ from clickless.pipeline import build_pipeline
 from .config_names import ABLATIONS, SnapshotRequired, config_path, data_source, require_snapshot  # noqa: F401
 from .llm_residency import LLMResidency
 from .metrics.grounding import claim_support, freshness_mislabel_rate
+from .metrics.planning import planning_metrics
 from .metrics.request_understanding import (
     city_level_place_prf,
     clarification_prf,
@@ -70,6 +71,7 @@ from .metrics.request_understanding import (
     silent_assumption_rate,
     understanding_cis,
 )
+from .oracle.label_setting import LabelSettingOracle
 from .parser_trace import ParserTrace
 from .schema import BenchmarkItem, FixtureItemsRefused, load_items
 from .snapshot_id import snapshot_info
@@ -79,10 +81,14 @@ _DIGEST_COMMENT = re.compile(r"digest\s+([0-9a-f]{12,64})\b", re.IGNORECASE)
 
 
 def _safe(fn, *args) -> dict:
+    """One metric block failing must not lose the others or the results JSON: the error is recorded
+    in that block ({"error": "<Type>: <message>"}) and the run continues."""
     try:
         return fn(*args)
     except NotImplementedError as e:
         return {"not_implemented": str(e)}
+    except Exception as e:  # noqa: BLE001 - isolated per metric block on purpose
+        return {"error": f"{type(e).__name__}: {e}"}
 
 
 # --------------------------------------------------------------------------- run metadata
@@ -268,6 +274,13 @@ def exception_stage(exc: BaseException, parser: Any) -> str:
     return "parse" if any(frame.f_locals.get("self") is parser for frame, _ in frames) else "planning"
 
 
+def build_oracle(cfg: Mapping[str, Any], pipe) -> LabelSettingOracle:
+    """Oracle on the pipeline's frozen data. In OSRM mode the pipeline's router supplies ROUTES only
+    (data access through the contracts Router protocol); detours always come from the oracle's own model."""
+    osrm = cfg.get("routing", {}).get("mode") == "osrm"
+    return LabelSettingOracle.from_config(cfg, store=pipe.store, route_source=pipe.router.route if osrm else None)
+
+
 def run(
     config: str = "A",
     split: str = "dev",
@@ -333,15 +346,18 @@ def run(
         "bootstrap_ci95": _safe(understanding_cis, done, ordered, n_boot),
         "grounding": _safe(claim_support, ordered),  # each result's own evidence only (ADR 0015)
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
-        # TODO(Ian): planning (oracle), tradeoffs, handoff, latency p50/p95
+        "planning": _safe(planning_metrics, done, ordered, build_oracle(cfg, pipe)),
+        # TODO(Ian): tradeoffs, handoff, latency p50/p95
     }
+    # Planner/oracle disagreements are findings, reported on their own (docs/EVALUATION_ORACLE.md).
+    findings = metrics["planning"].pop("findings", []) if isinstance(metrics["planning"], dict) else []
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     label = "items" if items_paths else split
     out = repo_path(out_dir) / f"{cfg['name']}_{label}_{stamp}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"config": cfg["name"], "split": None if items_paths else split, "items": source,
                                "n": len(items), "excluded_fixture_items": excluded, "run_metadata": meta,
-                               "metrics": metrics, "rows": rows},
+                               "metrics": metrics, "findings": findings, "rows": rows},
                               indent=2, default=str))
     return out
 
