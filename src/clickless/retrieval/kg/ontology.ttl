@@ -58,11 +58,14 @@ cc:chargerLevel  a owl:DatatypeProperty ; rdfs:domain cc:ChargingPort ; rdfs:ran
 cc:amenityCategory a owl:DatatypeProperty ; rdfs:domain cc:Amenity ; rdfs:range xsd:string .
 cc:openingHours  a owl:DatatypeProperty ; rdfs:domain cc:Amenity ; rdfs:range xsd:string .
 
-# v0.3 (#157, CQ9) -------------------------------------------------------------------------
+# v0.3 (#157 CQ9, #158 CQ14) -------------------------------------------------------------------------
 # An explanation and its claims, written by build.add_explanation(graph, result). Claim text is
 # rdfs:label; cc:supportedBy (above) links a claim to the cc:Source of each KG fact it cites.
 cc:Explanation   a owl:Class .
 cc:hasClaim      a owl:ObjectProperty ; rdfs:domain cc:Explanation ; rdfs:range cc:Claim .
+
+# The vehicle's maximum DC charging power (Vehicle.max_dc_kw; absent when unknown). CQ14.
+cc:maxDcKw       a owl:DatatypeProperty ; rdfs:domain cc:Vehicle ; rdfs:range xsd:decimal .
 
 cc:CCS1    a cc:Connector .
 cc:NACS    a cc:Connector .

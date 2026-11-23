@@ -247,6 +247,8 @@ def _add_vehicles(g: Graph, vehicles) -> None:
             g.add((node, cc.supports, cc.connector(c.value)))
         for c in v.adapters:
             g.add((node, cc.supportsViaAdapter, cc.connector(c.value)))
+        if v.max_dc_kw is not None:  # unknown stays absent, as for port power (ADR 0010); CQ14
+            g.add((node, cc.maxDcKw, Literal(_decimal(v.max_dc_kw))))
 
 
 _NEAR_FIELD = "near["

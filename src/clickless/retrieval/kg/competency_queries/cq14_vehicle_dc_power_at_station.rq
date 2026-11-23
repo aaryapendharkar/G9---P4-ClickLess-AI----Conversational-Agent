@@ -1,0 +1,20 @@
+# CQ14: At what power can vehicle V charge at each DC fast port of station S it can use?
+# Author: Aarya (#158). The lower of the port's power and the vehicle's maximum DC power
+# (cc:maxDcKw, Vehicle.max_dc_kw). Usable as in CQ1 (native connector, or a documented adapter;
+# DC fast only here). If either power is unknown the effective power is unknown: the row is kept
+# with an empty ?effectiveKw (ADR 0010), never filled with the other value.
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT DISTINCT ?port ?connector ?portKw ?vehicleKw ?effectiveKw
+WHERE {
+  VALUES ?vehicle { cc:vehicle_REPLACE_ME }
+  VALUES ?station { cc:station_REPLACE_ME }
+  ?station cc:hasPort ?port .
+  ?port    cc:hasConnector ?connector ;
+           cc:chargerLevel "dc_fast" .
+  { ?vehicle cc:supports ?connector } UNION { ?vehicle cc:supportsViaAdapter ?connector }
+  OPTIONAL { ?port    cc:powerKw ?portKw }
+  OPTIONAL { ?vehicle cc:maxDcKw ?vehicleKw }
+  BIND (IF(?portKw < ?vehicleKw, ?portKw, ?vehicleKw) AS ?effectiveKw)
+}
+ORDER BY ?port

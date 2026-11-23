@@ -1,0 +1,19 @@
+# CQ15: Which data-freshness label does each station record get?
+# Author: Aarya (#158). The labels of data/provenance.py::status_label, by the same rules:
+# static reference data is not judged; cached/live data without a source update date is "source
+# update date unknown"; older than the cutoff is "may be out of date" (bind ?cutoff =
+# provenance.stale_cutoff(retrieved_at), as in CQ6); otherwise "up to date".
+PREFIX cc: <https://example.org/clickless#>
+
+SELECT ?station ?dataStatus ?freshness
+WHERE {
+  VALUES ?cutoff { cc:cutoff_REPLACE_ME }
+  ?station a cc:Station ;
+           cc:hasProvenance ?source .
+  ?source  cc:dataStatus ?dataStatus .
+  OPTIONAL { ?source cc:sourceUpdatedAt ?updated }
+  BIND (IF(?dataStatus = "static", "reference data",
+        IF(!BOUND(?updated), "source update date unknown",
+        IF(?updated <= ?cutoff, "may be out of date", "up to date"))) AS ?freshness)
+}
+ORDER BY ?station

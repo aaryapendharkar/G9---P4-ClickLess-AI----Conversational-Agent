@@ -8,11 +8,13 @@ it is, the query would match `cc:x_REPLACE_ME` and quietly return no rows.
 
 from __future__ import annotations
 
+import json
 import re
 from decimal import Decimal
 from pathlib import Path
 
 CQ_DIR = Path(__file__).parent / "competency_queries"
+INVENTORY = CQ_DIR / "inventory.json"
 PLACEHOLDER = "REPLACE_ME"
 
 
@@ -60,3 +62,29 @@ def run_competency_query(graph, name: str, **bindings) -> list:
     query = prepareQuery(competency_query_text(name, *bindings))
     terms = {var: term(value) for var, value in bindings.items()}
     return list(graph.query(query, initBindings=terms))
+
+
+def load_inventory() -> list[dict]:
+    """The competency-question inventory (CQ1-CQ20, inventory.json): id, question, status
+    ("tested", or "unsupported" with a reason), query file, example bindings, tests. The ontology
+    adequacy metric counts it (#158); tests/retrieval/test_competency_inventory.py keeps it honest."""
+    return json.loads(INVENTORY.read_text(encoding="utf-8"))["questions"]
+
+
+def example_bindings(entry: dict) -> dict:
+    """An inventory entry's example bindings as run_competency_query keywords: "cc:x" -> URI,
+    {"datetime": iso} -> datetime, anything else unchanged."""
+    from datetime import datetime
+
+    from rdflib import URIRef
+
+    from .build import CC_NS
+
+    def value(v):
+        if isinstance(v, str) and v.startswith("cc:"):
+            return URIRef(CC_NS + v[3:])
+        if isinstance(v, dict) and "datetime" in v:
+            return datetime.fromisoformat(v["datetime"])
+        return v
+
+    return {k: value(v) for k, v in (entry.get("example") or {}).items()}
