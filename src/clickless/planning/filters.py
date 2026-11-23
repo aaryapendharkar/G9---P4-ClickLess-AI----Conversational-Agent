@@ -25,9 +25,7 @@ _UNUSABLE_STATUS = {StationStatus.TEMPORARILY_UNAVAILABLE, StationStatus.PLANNED
 _ADAPTER_LEVELS = frozenset({ChargerLevel.DC_FAST})
 
 
-def compatible_ports(
-    vehicle: Vehicle, station: Station, override: list[Connector] | None = None
-) -> list[ChargingPort]:
+def compatible_ports(vehicle: Vehicle, station: Station, override: list[Connector] | None = None) -> list[ChargingPort]:
     """Ports on `station` the vehicle can physically use, native ports first.
 
     Compatibility comes only from the curated vehicle table (conservative: we may miss a valid
@@ -63,24 +61,34 @@ def compatible_ports(
 
 
 class DefaultHardConstraintFilter:
+    def station_rejection(self, station: Station, request: TripRequest, vehicle: Vehicle) -> str | None:
+        """The reason `station` can never be a stop for this request and vehicle, or None.
+
+        The station-level hard constraints (status, access, connector, power), in the order apply()
+        reports them. Retrieval uses this through the pipeline (#106) so that only usable stations
+        compete for the capped candidate slots; the detour check needs a measured candidate and
+        stays in apply().
+        """
+        ports = compatible_ports(vehicle, station, request.connectors_override)
+        if station.status in _UNUSABLE_STATUS:
+            return f"status:{station.status.value}"
+        if station.access != "public":
+            return "access:restricted"
+        if not ports:
+            return "connector"
+        if request.min_power_kw and not any((p.power_kw or 0) >= request.min_power_kw for p in ports):
+            return "power"
+        return None
+
     def apply(
         self, candidates: list[Candidate], request: TripRequest, vehicle: Vehicle
     ) -> tuple[list[Candidate], list[tuple[Candidate, str]]]:
         kept: list[Candidate] = []
         rejected: list[tuple[Candidate, str]] = []
         for c in candidates:
-            st = c.station
-            ports = compatible_ports(vehicle, st, request.connectors_override)
-            if st.status in _UNUSABLE_STATUS:
-                rejected.append((c, f"status:{st.status.value}"))
-            elif st.access != "public":
-                rejected.append((c, "access:restricted"))
-            elif not ports:
-                rejected.append((c, "connector"))
-            elif request.min_power_kw and not any(
-                (p.power_kw or 0) >= request.min_power_kw for p in ports
-            ):
-                rejected.append((c, "power"))
+            reason = self.station_rejection(c.station, request, vehicle)
+            if reason is not None:
+                rejected.append((c, reason))
             elif (
                 request.max_detour_min is not None
                 and c.detour_min_est is not None

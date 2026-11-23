@@ -15,8 +15,10 @@ Rules implemented:
     tests/test_architecture.py fails CI if a hashed file changes afterwards; verify_frozen()
     does the same check for any freeze directory.
   * assign_double_annotation(): 40 items (8 per author, stratified by category), each assigned
-    a second annotator who is neither the author nor the item's cross-checker. It only returns
-    the assignment list; item files are never modified.
+    a second annotator who is neither the author nor the item's cross-checker. configs/benchmark.yaml
+    sets who only gets dev items (`dev_only_annotators`, the parser owner), who is not a second
+    annotator at all (`excluded_annotators`) and fixed load caps (`annotator_caps`). It only
+    returns the assignment list; item files are never modified.
 
 CLI:
     python -m evaluation.splits dry-run [--raw DIR]        # print the split summary, write nothing
@@ -51,6 +53,7 @@ N_DOUBLE_PER_AUTHOR = 8
 DEV_FILE = Path("requests/dev/dev.jsonl")
 TEST_FILE = Path("requests/test/test.jsonl")
 FROZEN_FILE = Path("FROZEN.json")
+BENCHMARK_CONFIG = "configs/benchmark.yaml"  # dev_only_annotators for assign-double
 
 
 # --------------------------------------------------------------------------- helpers
@@ -318,18 +321,46 @@ def _largest_remainder(counts: dict[str, int], n: int, rng: random.Random) -> di
 
 
 def assign_double_annotation(
-    items, per_author: int = N_DOUBLE_PER_AUTHOR, seed: int = SEED, annotators: tuple[str, ...] = AUTHORS
+    items,
+    per_author: int = N_DOUBLE_PER_AUTHOR,
+    seed: int = SEED,
+    annotators: tuple[str, ...] = AUTHORS,
+    dev_ids: set[str] | None = None,
+    dev_only_annotators: tuple[str, ...] = (),
+    excluded_annotators: tuple[str, ...] = (),
+    annotator_caps: dict[str, int] | None = None,
 ) -> list[tuple[str, str]]:
     """Pick `per_author` items per author (stratified by category) and assign each a second annotator.
 
-    The second annotator is never the item's author or its cross-checker, and the load is spread
-    as evenly as possible across annotators. Returns [(item_id, second_annotator), ...] sorted by
-    item id. Raises ValueError if an item is not cross-checked yet, an author has too few items,
-    or no valid assignment exists.
+    Items are picked from every author in `annotators`; second annotators are `annotators` minus
+    `excluded_annotators` (people who have seen the gold, so their annotation would not be blind).
+    The second annotator is never the item's author or its cross-checker. Annotators in
+    `dev_only_annotators` (the parser owner, for the same reason her items go to dev) are only
+    assigned items in `dev_ids`; within each category, items they could take are picked first so
+    they can still carry a full load. `annotator_caps` fixes a maximum load for some annotators;
+    the others share the remaining items as evenly as possible (cap = ceil(rest / their number)).
+    Returns [(item_id, second_annotator), ...] sorted by item id. Raises ValueError if an item is
+    not cross-checked yet, an author has too few items, or no valid assignment exists.
     """
     items = _coerce(items)
     if unchecked := [i.id for i in items if i.cross_checked_by is None]:
         raise ValueError(f"cross-check every item before assigning double annotation; unchecked: {unchecked}")
+    if dev_only_annotators and dev_ids is None:
+        raise ValueError(f"dev_only_annotators {list(dev_only_annotators)} need dev_ids (the dev split)")
+    dev_ids = dev_ids or set()
+    second = tuple(a for a in annotators if a not in excluded_annotators)
+    caps_given = {a: c for a, c in (annotator_caps or {}).items() if a in second}
+    if not second or len(caps_given) == len(second):
+        raise ValueError("need at least one second annotator without a fixed cap")
+
+    def allowed(item: BenchmarkItem, annotator: str) -> bool:
+        if annotator in (item.author, item.cross_checked_by) or annotator in excluded_annotators:
+            return False
+        return annotator not in dev_only_annotators or item.id in dev_ids
+
+    def dev_only_can_take(item: BenchmarkItem) -> bool:
+        return any(allowed(item, a) for a in dev_only_annotators)
+
     rng = random.Random(seed)
 
     chosen: list[BenchmarkItem] = []
@@ -344,25 +375,30 @@ def assign_double_annotation(
         for cat in sorted(by_cat):
             pool = list(by_cat[cat])
             rng.shuffle(pool)
+            pool.sort(key=lambda i: not dev_only_can_take(i))  # stable: no-op without dev-only annotators
             chosen.extend(pool[: alloc[cat]])
 
-    # Balanced assignment: bipartite matching of items to annotator slots (capacity = ceil(n / k)).
-    cap = -(-len(chosen) // len(annotators))
+    # Balanced assignment: bipartite matching of items to annotator slots. Capped annotators get
+    # their cap; the rest share what is left (capacity = ceil(rest / k)).
+    rest = len(chosen) - sum(caps_given.values())
+    free_cap = -(-rest // (len(second) - len(caps_given)))
+    cap = {a: caps_given.get(a, free_cap) for a in second}
     eligible = {}
     for it in chosen:
-        cands = [a for a in annotators if a not in (it.author, it.cross_checked_by)]
+        cands = [a for a in second if allowed(it, a)]
         rng.shuffle(cands)
         eligible[it.id] = cands
-    owner: dict[str, list[str]] = {a: [] for a in annotators}  # annotator -> item ids
+    owner: dict[str, list[str]] = {a: [] for a in second}  # annotator -> item ids
     assigned: dict[str, str] = {}
 
     def place(item_id: str, seen: set[str]) -> bool:
-        cands = sorted(eligible[item_id], key=lambda a: len(owner[a]))  # least-loaded first (stable)
+        # capped annotators (narrow pools, e.g. dev-only) first, then least-loaded; stable for ties
+        cands = sorted(eligible[item_id], key=lambda a: (a not in caps_given, len(owner[a])))
         for a in cands:
             if a in seen:
                 continue
             seen.add(a)
-            if len(owner[a]) < cap:
+            if len(owner[a]) < cap[a]:
                 owner[a].append(item_id)
                 assigned[item_id] = a
                 return True
@@ -379,7 +415,7 @@ def assign_double_annotation(
 
     for it in sorted(chosen, key=lambda i: i.id):
         if not place(it.id, set()):
-            raise ValueError(f"no valid second annotator for {it.id} under a load cap of {cap}")
+            raise ValueError(f"no valid second annotator for {it.id} under load caps {cap}")
     return sorted(assigned.items())
 
 
@@ -409,18 +445,33 @@ def summary_table(result: SplitResult) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
-    from clickless.config import repo_path
+    from clickless.config import load_config, repo_path
 
     ap = argparse.ArgumentParser(prog="python -m evaluation.splits")
     ap.add_argument("command", choices=["dry-run", "freeze", "assign-double"])
     ap.add_argument("--raw", default=None, help="directory of raw <author>.jsonl files")
-    ap.add_argument("--out", default=None, help="benchmark directory (freeze only)")
+    ap.add_argument("--out", default=None, help="benchmark directory (freeze; assign-double reads its dev split)")
     ap.add_argument("--seed", type=int, default=SEED)
     args = ap.parse_args(argv)
     items = load_items(args.raw or repo_path("benchmark/requests/raw"))
 
     if args.command == "assign-double":
-        for item_id, annotator in assign_double_annotation(items, seed=args.seed):
+        cfg = load_config(BENCHMARK_CONFIG)
+        bench = Path(args.out) if args.out else repo_path("benchmark")
+        if (bench / FROZEN_FILE).exists():  # the frozen dev file is authoritative once it exists
+            verify_frozen(bench)
+            dev_ids = {i.id for i in load_items(bench / DEV_FILE)}
+        else:
+            dev_ids = {i.id for i in stratified_split(items, seed=args.seed).dev}
+        pairs = assign_double_annotation(
+            items,
+            seed=args.seed,
+            dev_ids=dev_ids,
+            dev_only_annotators=tuple(cfg.get("dev_only_annotators") or ()),
+            excluded_annotators=tuple(cfg.get("excluded_annotators") or ()),
+            annotator_caps=cfg.get("annotator_caps") or None,
+        )
+        for item_id, annotator in pairs:
             print(f"{item_id}\t{annotator}")
         return
     result = stratified_split(items, seed=args.seed)

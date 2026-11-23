@@ -1,7 +1,7 @@
 # ADR 0013: Category gate for preference matching
 
-- Status: proposed — needs the approvals listed under Approvals before merge
-- Date: 2026-11-08
+- Status: accepted (2 approvals: Hriday 2026-11-09, Deepti 2026-11-11)
+- Date: 2026-11-08 (accepted 2026-11-14)
 - Owner: Manas (retrieval)
 - Approvers: Hriday (planning and ranking read the scores), Deepti (the parser assigns the category the gate trusts)
 
@@ -89,5 +89,5 @@ accepted. Merge needs both.
 
 | Approver | Decision they approve | Required | Status |
 |---|---|---|---|
-| Hriday (planning, ranking) | Category is a hard gate in every matcher; planning keeps "score > 0 means matched" | yes | pending |
-| Deepti (parser) | The parser's `AmenityCategory` alone decides which amenities can satisfy a preference | yes | pending |
+| Hriday (planning, ranking) | Category is a hard gate in every matcher; planning keeps "score > 0 means matched" | yes | approved 2026-11-09 ([PR #39 comment](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/39#issuecomment-6732988526)) |
+| Deepti (parser) | The parser's `AmenityCategory` alone decides which amenities can satisfy a preference | yes | approved 2026-11-11 ([PR #39 review](https://github.com/aaryapendharkar/G9---P4-ClickLess-AI----Conversational-Agent/pull/39#pullrequestreview-5853128625)) |

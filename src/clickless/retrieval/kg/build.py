@@ -15,9 +15,13 @@ Conventions the competency queries rely on (docs/COMPETENCY_QUESTIONS.md):
   * native connectors only via cc:supports, documented adapters only via cc:supportsViaAdapter
     (no RDFS materialization in the stored graph, otherwise CQ5 returns nothing).
 
-TODO(Manas): serialize to data/snapshot/kg.ttl in the offline build and record its hash in the
-manifest; measure the in-memory build on the full snapshot (ADR 0001: keep spatial work outside
-the KG if it is too slow).
+Runtime Config C builds a route-scoped graph from the corridor candidates; competency queries and
+offline analysis can still call ``build_graph(store)`` for a complete graph. This follows ADR
+0001's fallback to keep request-time spatial scope outside the KG after the full snapshot measured
+7.2 million triples and about 7 GB of additional memory (#115).
+
+TODO(Manas): if a complete serialized KG is needed for offline analysis, write ``kg.ttl`` during
+the snapshot build and record its hash in the manifest. Runtime enrichment does not require it.
 """
 
 from __future__ import annotations
@@ -241,23 +245,64 @@ def build_graph(
     ontology_path: str = DEFAULT_ONTOLOGY,
     *,
     amenity_radius_m: float = DEFAULT_AMENITY_RADIUS_M,
+    stations: Iterable[Station] | None = None,
+    amenities: Iterable[Amenity] | None = None,
 ) -> Graph:
-    """DataStore -> rdflib.Graph: the ontology plus one node per record (see the module docstring)."""
+    """Build either the complete KG or a caller-selected record subgraph.
+
+    Leaving ``stations`` and ``amenities`` as ``None`` preserves the complete
+    graph used by competency queries and offline snapshot work.
+
+    Config C runtime enrichment passes only the stations and amenities already
+    selected for the current route. This keeps request-time memory proportional
+    to the corridor candidate set instead of the full national snapshot.
+    """
+
     try:
         from rdflib import Graph
     except ImportError as error:
         raise ImportError('the Config C knowledge graph needs the kg extra: pip install -e ".[kg]"') from error
 
-    g = Graph()
-    g.bind("cc", CC_NS)
-    g.parse(repo_path(ontology_path), format="turtle")
-    stations = sorted(store.stations.values(), key=lambda s: s.station_id)
-    amenities = sorted(store.amenities, key=lambda a: a.amenity_id)
-    for st in stations:
-        _add_station(g, st)
-    for a in amenities:
-        _add_amenity(g, a)
-    for st, a, d in near_pairs(stations, amenities, amenity_radius_m):
-        _add_near(g, st, a, d)
-    _add_vehicles(g, sorted(store.vehicles.values(), key=lambda v: v.vehicle_id))
-    return g
+    graph = Graph()
+    graph.bind("cc", CC_NS)
+    graph.parse(repo_path(ontology_path), format="turtle")
+
+    selected_stations = sorted(
+        store.stations.values() if stations is None else stations,
+        key=lambda station: station.station_id,
+    )
+    selected_amenities = sorted(
+        store.amenities if amenities is None else amenities,
+        key=lambda amenity: amenity.amenity_id,
+    )
+
+    for station in selected_stations:
+        _add_station(graph, station)
+
+    for amenity in selected_amenities:
+        _add_amenity(graph, amenity)
+
+    for station, amenity, distance_m in near_pairs(
+        selected_stations,
+        selected_amenities,
+        amenity_radius_m,
+    ):
+        _add_near(
+            graph,
+            station,
+            amenity,
+            distance_m,
+        )
+
+    # The curated vehicle collection is tiny and is needed by competency
+    # queries, so keeping it in both complete and route-scoped graphs has
+    # negligible cost and preserves the established ontology shape.
+    _add_vehicles(
+        graph,
+        sorted(
+            store.vehicles.values(),
+            key=lambda vehicle: vehicle.vehicle_id,
+        ),
+    )
+
+    return graph

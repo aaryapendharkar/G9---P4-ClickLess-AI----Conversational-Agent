@@ -13,23 +13,42 @@ Steps
      exists, so nothing is ever tuned on held-out items by accident.
   2. build_report(): reads every result JSON in the directory and writes
        report.md          all sections below
-       headline.csv       one row per config, value + 95 % CI per metric
-       paired.csv         A vs B and B vs C: McNemar (success rates), Wilcoxon (per-item scores)
+       headline.csv       one row per config, value + 95 % CI per metric, LLM fallback counts
+       paired.csv         A vs B, A vs C, B vs C, C vs C-noKG (when run): McNemar (success rates),
+                          Wilcoxon (per-item scores)
        breakdown.csv      by author / category / route_type, with item counts
+       errors.csv         errored items by stage (parse / planning) and error type
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
-       metadata.csv       git commit, model, digest, prompt version, snapshot id
+       oracle_search.csv  per config: items whose oracle Pareto search stopped early (budget / max_labels)
+       metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id,
+                          LLM GPU share, keep-alive
+
+Snapshot: each config's snapshot id comes from its own run_metadata (recorded by the process
+that ran it), so `--from` reports have it too. A report refuses to build (MixedSnapshots) when
+its configs ran on different snapshots, or when run_all's record disagrees with a run's own.
 
 Metric sources (no metric is reimplemented here)
-  * Request understanding (field F1, exact match, clarification F1, silent-assumption rate) is
+  * Request understanding (field F1, exact match, clarification F1, silent-assumption rate,
+    invented-constraint rate) is
     recomputed from the per-item rows with evaluation.metrics.request_understanding, and its CIs
-    with understanding_cis (percentile bootstrap, seed 573). Error rate (status "error" or
-    "not_implemented") uses evaluation.metrics.stats.bootstrap_ci.
+    with understanding_cis (percentile bootstrap, seed 573). Field F1 and exact match use
+    city-level place matching (primary); the "(strict)" columns also require the gold's state
+    suffix, which exists for geocoding (see that module's docstring). Every item with a parsed
+    request is scored, including items whose planning later failed.
+  * Errors (status "error" or "not_implemented") are split by stage: parse_error_rate (no parsed
+    request) and planning_error_rate (parsed, then failed, e.g. route not cached). The stage and
+    type come from the harness row ("error_stage", "error_type"), else from the result: a
+    request means planning, and a "no cached route" note means RouteNotCached. Rates are over
+    all items, with CIs from evaluation.metrics.stats.bootstrap_ci.
   * Plan feasibility / hard-violation rate (metrics.planning.feasibility), grounding
     (metrics.grounding.claim_support_rate) and freshness (metrics.freshness.
     freshness_mislabel_rate) are read from the harness's metric blocks. Their CI is taken from
     the block's "ci95": {key: [lo, hi]} when the metric provides one, else shown as n/a. A block
     that is missing or {"not_implemented": ...} is shown as n/a.
   * Paired tests use evaluation.metrics.stats.mcnemar / wilcoxon on the items both configs ran.
+  * LLM fallback rate: items whose row says parser_used == "rules_fallback" over the items an LLM
+    parser handled ("llm" + "rules_fallback"). Any fallback puts a warning at the top of
+    report.md, because those items measure the rules parser, not the configured LLM.
 
 Independence: building a report imports no system code. Only run_all() imports the harness (which
 runs the pipeline), lazily; tests/evaluation/test_report.py checks both.
@@ -39,22 +58,25 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import math
-import os
+import statistics
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from clickless.config import load_config, repo_path
+from clickless.config import repo_path
 from clickless.contracts import PlanResult
 
+from .config_names import SnapshotRequired, load_named_config, require_snapshot
 from .metrics.request_understanding import (
     asked,
     clarification_prf,
     extraction_prf,
+    invented_constraint_rate,
+    invented_constraints,
     item_exact_match,
     item_field_counts,
     prf,
@@ -62,24 +84,37 @@ from .metrics.request_understanding import (
     understanding_cis,
 )
 from .metrics.stats import bootstrap_ci, mcnemar, wilcoxon
-from .schema import BenchmarkItem, load_items
+from .schema import BenchmarkItem, FixtureItemsRefused, load_items
+from .snapshot_id import snapshot_info
 
 CONFIGS = ("A", "B", "C")
-PAIRS = (("A", "B"), ("B", "C"))
+PAIRS = (
+    ("A", "B"),
+    ("A", "C"),  # the full system against the baseline
+    ("B", "C"),
+    ("C", "C-noKG"),  # the KG ablation (configs/config_c_nokg.yaml), when it was run
+)
 BREAKDOWNS = ("author", "category", "route_type")
 INPUTS_FILE = "report_inputs.json"
 NA = "n/a"
 _ERROR_STATUSES = ("error", "not_implemented")
+LLM_PARSED = ("llm", "rules_fallback")
+ERROR_STAGES = ("parse", "planning")
 _REPORT_FILES = {INPUTS_FILE}
 
 # (column, label, where the value comes from). "understanding" metrics are recomputed from rows;
-# ("block", path, key) metrics are read from the result JSON's metric blocks.
+# ("error_rate", stage) from the rows' error stages; ("block", path, key) metrics are read from
+# the result JSON's metric blocks.
 HEADLINE: tuple[tuple[str, str, tuple], ...] = (
     ("field_f1", "Field F1 (micro)", ("understanding", "micro_f1")),
+    ("field_f1_strict", "Field F1 (strict)", ("understanding", "micro_f1_strict")),
     ("exact_match", "Exact match", ("understanding", "exact_match")),
+    ("exact_match_strict", "Exact match (strict)", ("understanding", "exact_match_strict")),
     ("clarification_f1", "Clarification F1", ("understanding", "clarification_f1")),
     ("silent_assumption_rate", "Silent-assumption rate", ("understanding", "silent_assumption_rate")),
-    ("error_rate", "Error rate", ("error_rate",)),
+    ("invented_constraint_rate", "Invented-constraint rate", ("understanding", "invented_constraint_rate")),
+    ("parse_error_rate", "Parse error rate", ("error_rate", "parse")),
+    ("planning_error_rate", "Planning error rate", ("error_rate", "planning")),
     ("plan_feasibility_rate", "Plan feasibility", ("block", ("planning", "feasibility"), "plan_feasibility_rate")),
     ("hard_violation_rate", "Hard-violation rate", ("block", ("planning", "feasibility"), "hard_violation_rate")),
     ("claim_support_rate", "Grounding (claim support)", ("block", ("grounding",), "claim_support_rate")),
@@ -89,6 +124,10 @@ HEADLINE: tuple[tuple[str, str, tuple], ...] = (
 
 class SplitRefused(ValueError):
     """Raised when the test split is requested without --final and a frozen benchmark."""
+
+
+class MixedSnapshots(ValueError):
+    """Raised when the configs in one report ran on different data (snapshots or fixtures)."""
 
 
 # --------------------------------------------------------------------------- step 1: run
@@ -107,18 +146,27 @@ def check_split(split: str, final: bool, frozen_file: Path | None = None) -> Non
 
 def snapshot_id(config: str) -> str:
     """'fixtures', or 'snapshot:<first 12 hex of sha256(MANIFEST.json)> (<draft|frozen>, created <ts>)'."""
-    cfg = load_config(config)
-    data = cfg.get("data", {})
-    source = os.environ.get("CLICKLESS_DATA_SOURCE", "").strip().lower() or data.get("source", "fixtures")
-    if source != "snapshot":
-        return source
-    manifest = repo_path(data.get("snapshot_dir", "data/snapshot")) / "MANIFEST.json"
-    if not manifest.is_file():
-        return "snapshot (no MANIFEST.json)"
-    raw = manifest.read_bytes()
-    meta = json.loads(raw)
-    kind = "frozen" if meta.get("frozen") else "draft"
-    return f"snapshot:{hashlib.sha256(raw).hexdigest()[:12]} ({kind}, created {meta.get('created_at', '?')})"
+    return str(snapshot_info(load_named_config(config))["snapshot_id"])
+
+
+def report_snapshots(
+    configs: Sequence[str], runs: Mapping[str, ConfigRun], recorded: Mapping[str, str]
+) -> dict[str, str | None]:
+    """Snapshot id per config: the run's own run_metadata first, else run_all's record (results
+    written before the harness recorded it). Raises MixedSnapshots if two configs differ, or if
+    run_all's record disagrees with what the run itself recorded."""
+    out: dict[str, str | None] = {}
+    for config in configs:
+        own = runs[config].meta.get("snapshot_id") if config in runs else None
+        parent = recorded.get(config)
+        if own and parent and own != parent:
+            raise MixedSnapshots(f"config {config}: run_metadata says {own!r} but report_inputs.json says {parent!r}")
+        out[config] = own or parent
+    used = {c: s for c, s in out.items() if s and c in runs}
+    if len(set(used.values())) > 1:
+        detail = "; ".join(f"{c}: {s}" for c, s in sorted(used.items()))
+        raise MixedSnapshots(f"configs in one report ran on different data ({detail})")
+    return out
 
 
 def run_all(
@@ -134,10 +182,14 @@ def run_all(
     """Run every config into <out_root>/<timestamp>/ and return that directory.
 
     `runner` defaults to evaluation.harness.run (imported here so building a report never loads
-    the pipeline). Failures are recorded per config instead of aborting the whole run.
+    the pipeline). Failures are recorded per config instead of aborting the whole run, except the
+    refusals below, which apply to the whole run and are raised before anything runs or is written:
+    the held-out test split without --final (check_split), and a split on the fixture world (#119).
     """
     if not items_paths:
         check_split(split, final)
+        for config in configs:
+            require_snapshot(config, load_named_config(config), split, items_paths)
     if runner is None:
         from .harness import run as runner  # runs the system under test; deliberately lazy
     stamp = stamp or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -158,6 +210,8 @@ def run_all(
             inputs["snapshot_id"][config] = snapshot_id(config)
             out = runner(config, split, None, out_dir=rel_dir, items_paths=items_paths, n_boot=n_boot)
             inputs["outputs"][config] = Path(out).name
+        except FixtureItemsRefused:
+            raise  # wrong items for this data source: applies to every config, so stop
         except Exception as e:  # noqa: BLE001 - one failing config must not hide the others
             inputs["failed"][config] = f"{type(e).__name__}: {e}"
     (run_dir / INPUTS_FILE).write_text(json.dumps(inputs, indent=2), encoding="utf-8")
@@ -181,6 +235,7 @@ class ConfigRun:
         self.results: dict[str, PlanResult] = {}
         self.status: dict[str, str] = {}
         self.latency: dict[str, float] = {}
+        self.error: dict[str, tuple[str, str]] = {}  # item id -> (stage, type) for errored items
         for row in self.rows:
             item = items_by_id.get(row["id"])
             if item is None:
@@ -191,6 +246,8 @@ class ConfigRun:
                 self.latency[item.id] = float(row["latency_ms"])
             if row.get("result") is not None:
                 self.results[item.id] = PlanResult.model_validate(row["result"])
+            if self.errored(item.id):
+                self.error[item.id] = error_stage_and_type(row, self.results.get(item.id))
 
     def pairs(self, ids: Sequence[str] | None = None) -> tuple[list[BenchmarkItem], list[PlanResult]]:
         """(items, results) for item ids that produced a PlanResult, in id order."""
@@ -199,6 +256,25 @@ class ConfigRun:
 
     def errored(self, item_id: str) -> bool:
         return self.status.get(item_id) in _ERROR_STATUSES or item_id not in self.results
+
+    def errored_at(self, item_id: str, stage: str) -> bool:
+        return self.error.get(item_id, ("", ""))[0] == stage
+
+
+def error_stage_and_type(row: Mapping[str, Any], result: PlanResult | None) -> tuple[str, str]:
+    """(stage, type) of one errored row: the harness's error_stage / error_type when recorded,
+    else derived from the result (a parsed request means a planning error)."""
+    stage = row.get("error_stage") or ("planning" if result is not None and result.request is not None else "parse")
+    kind = row.get("error_type")
+    if not kind:
+        notes = " ".join(result.notes) if result is not None else ""
+        if "no cached route" in notes:
+            kind = "RouteNotCached"
+        elif row.get("status") == "not_implemented":
+            kind = "NotImplementedError"
+        else:
+            kind = "unknown"
+    return str(stage), str(kind)
 
 
 def _items_for(payload: Mapping[str, Any]) -> dict[str, BenchmarkItem]:
@@ -263,12 +339,19 @@ def _understanding(items, results, n_boot: int) -> dict[str, tuple[float | None,
     ext = extraction_prf(items, results)
     clar = clarification_prf(items, results)
     silent = silent_assumption_rate(items, results)
+    invented = invented_constraint_rate(items, results)
     cis = understanding_cis(items, results, n=n_boot)
     return {
         "micro_f1": (_num(ext["micro_f1"]), _ci(cis.get("micro_f1"))),
+        "micro_f1_strict": (_num(ext["micro_f1_strict"]), _ci(cis.get("micro_f1_strict"))),
         "exact_match": (_num(ext["exact_match"]), _ci(cis.get("exact_match"))),
+        "exact_match_strict": (_num(ext["exact_match_strict"]), _ci(cis.get("exact_match_strict"))),
         "clarification_f1": (_num(clar["f1"]), _ci(cis.get("clarification_f1"))),
         "silent_assumption_rate": (_num(silent["silent_assumption_rate"]), _ci(cis.get("silent_assumption_rate"))),
+        "invented_constraint_rate": (
+            _num(invented["invented_constraint_rate"]),
+            _ci(cis.get("invented_constraint_rate")),
+        ),
     }
 
 
@@ -276,12 +359,12 @@ def headline(run: ConfigRun, n_boot: int = 10_000) -> dict[str, tuple[float | No
     """column -> (value or None, CI or None) for every HEADLINE metric."""
     items, results = run.pairs()
     und = _understanding(items, results, n_boot)
-    errors = [float(run.errored(i)) for i in sorted(run.items)]
     out: dict[str, tuple[float | None, tuple[float, float] | None]] = {}
     for column, _label, source in HEADLINE:
         if source[0] == "understanding":
             out[column] = und.get(source[1], (None, None))
         elif source[0] == "error_rate":
+            errors = [float(run.errored_at(i, source[1])) for i in sorted(run.items)]
             out[column] = (sum(errors) / len(errors), _ci(bootstrap_ci(errors, n=n_boot))) if errors else (None, None)
         else:
             block = _block(run.metrics, source[1])
@@ -301,10 +384,11 @@ def per_item(run: ConfigRun, item_id: str) -> dict[str, Any]:
             "exact_match": False,
             "clarification_correct": False,
             "no_error": False,
+            "no_invented_constraint": None,
             "field_f1": None,
             "latency_ms": run.latency.get(item_id),
         }
-    counts = item_field_counts(item, result)
+    counts = item_field_counts(item, result, level="city")  # primary, as in the headline
     f1 = prf(
         sum(c[0] for c in counts.values()), sum(c[1] for c in counts.values()), sum(c[2] for c in counts.values())
     )["f1"]
@@ -312,31 +396,68 @@ def per_item(run: ConfigRun, item_id: str) -> dict[str, Any]:
         "exact_match": item_exact_match(item, result),
         "clarification_correct": bool(item.clarification_required) == asked(result),
         "no_error": not run.errored(item_id),
+        # None (left out of the paired test) when there is no parsed request to judge
+        "no_invented_constraint": None if (inv := invented_constraints(item, result)) is None else not inv,
         "field_f1": _num(f1),
         "latency_ms": run.latency.get(item_id),
     }
 
 
-SUCCESS_OUTCOMES = ("exact_match", "clarification_correct", "no_error")
+SUCCESS_OUTCOMES = ("exact_match", "clarification_correct", "no_error", "no_invented_constraint")
 SCORE_OUTCOMES = ("field_f1", "latency_ms")
 
 
+GPU_SHARE_TOLERANCE = 0.01  # shares further apart than this are a different CPU/GPU split
+
+
+def gpu_share(run: ConfigRun) -> dict[str, Any]:
+    """The LLM's GPU share (size_vram / size per item, from the harness) as n / min / median / max."""
+    shares = sorted(float(r["gpu_share"]) for r in run.rows if r.get("gpu_share") is not None)
+    if not shares:
+        return {"n": 0, "min": None, "median": None, "max": None}
+    return {"n": len(shares), "min": shares[0], "median": statistics.median(shares), "max": shares[-1]}
+
+
+def gpu_share_warnings(shares: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Latency is only comparable when every LLM config ran with the same CPU/GPU split."""
+    recorded = {c: s for c, s in shares.items() if s["n"]}
+    warnings = [
+        f"{c}: the LLM's GPU share varied within the run ({s['min']:.2f}-{s['max']:.2f})"
+        for c, s in recorded.items()
+        if s["max"] - s["min"] > GPU_SHARE_TOLERANCE
+    ]
+    medians = [s["median"] for s in recorded.values()]
+    if len(medians) > 1 and max(medians) - min(medians) > GPU_SHARE_TOLERANCE:
+        warnings.insert(
+            0,
+            "the LLM's GPU share differs between configs ("
+            + ", ".join(f"{c} {s['median']:.2f}" for c, s in recorded.items())
+            + "), so latency comparisons between them are confounded",
+        )
+    return warnings
+
+
 def paired(a: ConfigRun, b: ConfigRun) -> list[dict[str, Any]]:
-    """McNemar on success outcomes and Wilcoxon on per-item scores, over items both configs ran."""
+    """McNemar on success outcomes and Wilcoxon on per-item scores, over items both configs ran.
+
+    An outcome that is None for an item in either config (no_invented_constraint without a parsed
+    request) leaves that item out of that outcome's test only.
+    """
     common = sorted(set(a.items) & set(b.items))
     pa = {i: per_item(a, i) for i in common}
     pb = {i: per_item(b, i) for i in common}
     rows: list[dict[str, Any]] = []
     for outcome in SUCCESS_OUTCOMES:
-        xa = [bool(pa[i][outcome]) for i in common]
-        xb = [bool(pb[i][outcome]) for i in common]
+        both = [i for i in common if pa[i][outcome] is not None and pb[i][outcome] is not None]
+        xa = [bool(pa[i][outcome]) for i in both]
+        xb = [bool(pb[i][outcome]) for i in both]
         test = mcnemar(xa, xb)
         rows.append(
             {
                 "pair": f"{a.config} vs {b.config}",
                 "outcome": outcome,
                 "test": "McNemar",
-                "n": len(common),
+                "n": len(both),
                 "rate_a": sum(xa) / len(xa) if xa else None,
                 "rate_b": sum(xb) / len(xb) if xb else None,
                 "b": test["b"],
@@ -385,6 +506,7 @@ def breakdown(run: ConfigRun) -> list[dict[str, Any]]:
             ext = extraction_prf(items, results) if items else {}
             clar = clarification_prf(items, results) if items else {}
             silent = silent_assumption_rate(items, results) if items else {}
+            invented = invented_constraint_rate(items, results) if items else {}
             out.append(
                 {
                     "config": run.config,
@@ -392,17 +514,77 @@ def breakdown(run: ConfigRun) -> list[dict[str, Any]]:
                     "group": group,
                     "n_items": len(ids),
                     "n_with_result": len(items),
-                    "error_rate": sum(run.errored(i) for i in ids) / len(ids),
+                    **{f"{s}_error_rate": sum(run.errored_at(i, s) for i in ids) / len(ids) for s in ERROR_STAGES},
                     "field_f1": _num(ext.get("micro_f1")),
+                    "field_f1_strict": _num(ext.get("micro_f1_strict")),
                     "exact_match": _num(ext.get("exact_match")),
+                    "exact_match_strict": _num(ext.get("exact_match_strict")),
                     "clarification_f1": _num(clar.get("f1")),
                     "silent_assumption_rate": _num(silent.get("silent_assumption_rate")),
+                    "invented_constraint_rate": _num(invented.get("invented_constraint_rate")),
                 }
             )
     return out
 
 
+def error_groups(run: ConfigRun) -> list[dict[str, Any]]:
+    """Errored items grouped by (stage, type), with counts, shares of all items and example ids."""
+    groups: dict[tuple[str, str], list[str]] = {}
+    for item_id in sorted(run.error):
+        groups.setdefault(run.error[item_id], []).append(item_id)
+    n = len(run.items)
+    return [
+        {
+            "config": run.config,
+            "stage": stage,
+            "error_type": kind,
+            "n": len(ids),
+            "share_of_items": len(ids) / n if n else None,
+            "example_ids": " ".join(ids[:5]),
+        }
+        for (stage, kind), ids in sorted(groups.items())
+    ]
+
+
 # --------------------------------------------------------------------------- step 2: write
+
+
+def parser_fallback(run: ConfigRun) -> dict[str, Any]:
+    """LLM fallback counts from the rows' parser_used / fallback_reason (written by the harness).
+
+    rate is None when no item was handled by an LLM parser (Config A, or results written before
+    the harness recorded parser_used; "recorded" tells the two apart)."""
+    used = [r.get("parser_used") for r in run.rows]
+    llm_rows = [r for r in run.rows if r.get("parser_used") in LLM_PARSED]
+    fell_back = [r for r in llm_rows if r.get("parser_used") == "rules_fallback"]
+    reasons: dict[str, int] = {}
+    for r in fell_back:
+        reason = str(r.get("fallback_reason") or "no reason recorded")
+        reasons[reason] = reasons.get(reason, 0) + 1
+    parsers = sorted({u for u in used if u and u != "rules_fallback"} | ({"llm"} if fell_back else set()))
+    return {
+        "recorded": any(u is not None for u in used),
+        "parsers": parsers,
+        "n_llm_parsed": len(llm_rows),
+        "n_fallback": len(fell_back),
+        "rate": len(fell_back) / len(llm_rows) if llm_rows else None,
+        "fallback_ids": sorted(r["id"] for r in fell_back),
+        "reasons": sorted(reasons.items(), key=lambda kv: (-kv[1], kv[0])),
+    }
+
+
+def _fallback_cell(fb: Mapping[str, Any]) -> list[str]:
+    if not fb["recorded"]:
+        return [NA, NA, NA, NA, "not recorded (results predate parser_used)"]
+    if fb["rate"] is None:
+        return [", ".join(fb["parsers"]) or NA, "0", "0", NA, "no LLM parser"]
+    reasons = "; ".join(f"{n}x {_short(reason)}" for reason, n in fb["reasons"][:3]) or "-"
+    return [", ".join(fb["parsers"]), str(fb["n_llm_parsed"]), str(fb["n_fallback"]), _fmt(fb["rate"]), reasons]
+
+
+def _short(text: str, limit: int = 120) -> str:
+    text = " ".join(text.split()).replace("|", "/")
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
 def _fmt(v: Any, digits: int = 3) -> str:
@@ -432,13 +614,51 @@ def _write_csv(path: Path, rows: list[dict[str, Any]], fields: Sequence[str]) ->
             w.writerow({k: "" if r.get(k) is None else r.get(k) for k in fields})
 
 
+def _error_summary(run: ConfigRun, ids: Sequence[str]) -> str:
+    """'ValueError x2 (deepti-025: ValueError: ...)': error types by count, with the first example."""
+    by_id = {r["id"]: r for r in run.rows}
+    kinds = Counter(by_id.get(i, {}).get("error_type") or run.status.get(i) or "no result" for i in ids)
+    first = next((i for i in ids if by_id.get(i, {}).get("error")), None)
+    text = ", ".join(f"{k} x{n}" for k, n in kinds.most_common())
+    return text + (f" (first: {first}: {by_id[first]['error']})" if first else "")
+
+
+def run_problems(
+    configs: Sequence[str], runs: Mapping[str, ConfigRun], failed: Mapping[str, str]
+) -> tuple[list[str], list[str]]:
+    """(why each config with nothing evaluated has nothing, item errors of configs that ran).
+
+    A report whose headline is all n/a must say why at the top: the config failed before writing
+    results, it ran no items, or every item errored. Configs where only some items errored are
+    listed separately, so a crash is visible even when the rest of the run is fine."""
+    nothing: list[str] = []
+    item_errors: list[str] = []
+    for config in configs:
+        run = runs.get(config)
+        if run is None:
+            why = failed.get(config, "no result JSON in this directory")
+            nothing.append(f"{config}: the config failed before writing results ({why})")
+            continue
+        if not run.items:
+            nothing.append(f"{config}: no items ran (the item files or split matched no benchmark items)")
+            continue
+        errored = sorted(i for i in run.items if run.errored(i))
+        if len(errored) == len(run.items):
+            nothing.append(f"{config}: all {len(run.items)} items errored: {_error_summary(run, errored)}")
+        elif errored:
+            item_errors.append(f"{config}: {len(errored)} of {len(run.items)} items: {_error_summary(run, errored)}")
+    return nothing, item_errors
+
+
 def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     """Write report.md and the CSVs into run_dir; return the report.md path."""
     run_dir = Path(run_dir)
     runs, inputs = load_runs(run_dir)
     configs = list(inputs.get("configs") or sorted(runs))
     failed: dict[str, str] = dict(inputs.get("failed") or {})
-    snapshot: dict[str, str] = dict(inputs.get("snapshot_id") or {})
+    snapshot = report_snapshots(configs, runs, dict(inputs.get("snapshot_id") or {}))
+
+    fallback = {c: parser_fallback(runs[c]) for c in configs if c in runs}
 
     # Headline
     head_rows: list[dict[str, Any]] = []
@@ -446,10 +666,14 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     for config in configs:
         run = runs.get(config)
         values = headline(run, n_boot) if run else {}
+        fb = fallback.get(config)
         row: dict[str, Any] = {
             "config": config,
             "n_items": len(run.items) if run else 0,
             "status": "ok" if run else ("failed: " + failed.get(config, "no result JSON")),
+            "llm_parsed": fb["n_llm_parsed"] if fb and fb["recorded"] else None,
+            "llm_fallbacks": fb["n_fallback"] if fb and fb["recorded"] else None,
+            "llm_fallback_rate": fb["rate"] if fb else None,
         }
         md = [config, str(row["n_items"])]
         for column, _label, _src in HEADLINE:
@@ -462,7 +686,7 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         md_head.append(md)
     head_fields = ["config", "status", "n_items"] + [
         f for c, _l, _s in HEADLINE for f in (c, f"{c}_ci_lo", f"{c}_ci_hi")
-    ]
+    ] + ["llm_parsed", "llm_fallbacks", "llm_fallback_rate"]
     _write_csv(run_dir / "headline.csv", head_rows, head_fields)
 
     # Paired comparisons
@@ -471,7 +695,7 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     for a, b in PAIRS:
         if a in runs and b in runs:
             pair_rows += paired(runs[a], runs[b])
-        else:
+        elif a in configs and b in configs:  # an ablation nobody asked for is not "missing"
             skipped_pairs.append(f"{a} vs {b}: n/a ({', '.join(c for c in (a, b) if c not in runs)} missing)")
     pair_fields = ["pair", "outcome", "test", "n", "rate_a", "rate_b", "b", "c", "statistic", "p_value", "note"]
     _write_csv(run_dir / "paired.csv", pair_rows, pair_fields)
@@ -484,13 +708,36 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "group",
         "n_items",
         "n_with_result",
-        "error_rate",
+        "parse_error_rate",
+        "planning_error_rate",
         "field_f1",
+        "field_f1_strict",
         "exact_match",
+        "exact_match_strict",
         "clarification_f1",
         "silent_assumption_rate",
+        "invented_constraint_rate",
     ]
     _write_csv(run_dir / "breakdown.csv", br_rows, br_fields)
+
+    # Invented hard constraints (#145), per item
+    inv_rows = [
+        {
+            "config": c,
+            "item_id": d["id"],
+            "fields": " ".join(d["fields"]),
+            "parsed_values": "; ".join(f"{k}={v}" for k, v in d["fields"].items()),
+        }
+        for c in configs
+        if c in runs
+        for d in invented_constraint_rate(*runs[c].pairs())["items"]
+    ]
+    _write_csv(run_dir / "invented_constraints.csv", inv_rows, ["config", "item_id", "fields", "parsed_values"])
+
+    # Errors by stage and type
+    err_rows = [r for c in configs if c in runs for r in error_groups(runs[c])]
+    err_fields = ["config", "stage", "error_type", "n", "share_of_items", "example_ids"]
+    _write_csv(run_dir / "errors.csv", err_rows, err_fields)
 
     # Findings
     find_rows = [
@@ -501,10 +748,33 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     ]
     _write_csv(run_dir / "findings.csv", find_rows, ["config", "item_id", "kind", "detail"])
 
+    # Oracle search: items left out of the front-based metrics because the Pareto search stopped early
+    search_fields = ["config", "n_items_searched", "n_incomplete", "incomplete_reasons", "pareto_time_budget_s",
+                     "items_incomplete"]
+    search_rows = []
+    for c in configs:
+        block = _block(runs[c].metrics, ("planning", "oracle_search")) if c in runs else None
+        if block is not None:
+            reasons = block.get("incomplete_reasons") or {}
+            search_rows.append(
+                {
+                    "config": c,
+                    "n_items_searched": block.get("n_items_searched"),
+                    "n_incomplete": block.get("n_incomplete"),
+                    "incomplete_reasons": ", ".join(f"{k}: {v}" for k, v in reasons.items()),
+                    "pareto_time_budget_s": block.get("pareto_time_budget_s"),
+                    "items_incomplete": " ".join(block.get("items_incomplete") or []),
+                }
+            )
+    _write_csv(run_dir / "oracle_search.csv", search_rows, search_fields)
+
     # Metadata
+    shares = {c: gpu_share(runs[c]) for c in configs if c in runs}
+    share_warnings = gpu_share_warnings(shares)
     meta_rows = []
     for config in configs:
         meta = runs[config].meta if config in runs else {}
+        share = shares.get(config, {})
         meta_rows.append(
             {
                 "config": config,
@@ -513,8 +783,16 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
                 "model": meta.get("model"),
                 "model_digest": meta.get("model_digest"),
                 "digest_check": meta.get("digest_check"),
+                "ollama_version": meta.get("ollama_version"),
+                "endpoint_host": meta.get("endpoint_host"),
                 "prompt_version": meta.get("prompt_version"),
                 "snapshot_id": snapshot.get(config),
+                "gpu_share_n": share.get("n", 0),
+                "gpu_share_min": share.get("min"),
+                "gpu_share_median": share.get("median"),
+                "gpu_share_max": share.get("max"),
+                "llm_keep_alive": meta.get("llm_keep_alive"),
+                "llm_warmup_s": meta.get("llm_warmup_s"),
             }
         )
     meta_fields = [
@@ -524,8 +802,16 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "model",
         "model_digest",
         "digest_check",
+        "ollama_version",
+        "endpoint_host",
         "prompt_version",
         "snapshot_id",
+        "gpu_share_n",
+        "gpu_share_min",
+        "gpu_share_median",
+        "gpu_share_max",
+        "llm_keep_alive",
+        "llm_warmup_s",
     ]
     _write_csv(run_dir / "metadata.csv", meta_rows, meta_fields)
 
@@ -540,15 +826,61 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         f"Configs: {', '.join(configs) or NA}. Bootstrap: {n_boot} resamples, seed 573, percentile 95 % CI.",
         "",
     ]
+    fell_back = [c for c in configs if c in fallback and fallback[c]["n_fallback"]]
+    if fell_back:
+        lines += ["> **Warning: LLM parser fallback.** These items were parsed by the rules fallback, "
+                  "not the configured LLM, so their results measure rules parsing:", ">"]
+        lines += [
+            f"> - {c}: {fallback[c]['n_fallback']}/{fallback[c]['n_llm_parsed']} items "
+            f"({fallback[c]['rate']:.1%}), e.g. {_short(fallback[c]['reasons'][0][0], 160)}"
+            for c in fell_back
+        ]
+        lines += [">", "> See \"LLM parser fallback\" below.", ""]
+    if share_warnings:
+        lines += ["**Latency warning:**", ""] + [f"- {w}" for w in share_warnings] + [""]
     if failed:
         lines += ["**Failed configs:**", ""] + [f"- {c}: {msg}" for c, msg in sorted(failed.items())] + [""]
+    excluded = {c: list(r.payload.get("excluded_fixture_items") or []) for c, r in runs.items()}
+    if any(excluded.values()):
+        lines += [
+            "Fixture-world items skipped on snapshot data: "
+            + "; ".join(f"{c}: {', '.join(ids)}" for c, ids in sorted(excluded.items()) if ids),
+            "",
+        ]
+    nothing, item_errors = run_problems(configs, runs, failed)
+    if nothing:
+        if len(nothing) == len(configs):
+            lines += ["**Nothing was evaluated in this run.** Every number below is n/a, for these reasons:", ""]
+        else:
+            lines += ["**Nothing evaluated for some configs:**", ""]
+        lines += [f"- {msg}" for msg in nothing] + [""]
+    if item_errors:
+        lines += ["**Item errors** (counted in the error rate; the run continued):", ""]
+        lines += [f"- {msg}" for msg in item_errors] + [""]
     lines += [
         "## Headline",
         "",
         "Value [95 % CI]. n/a = metric block missing or not implemented; [CI n/a] = the metric block reports no CI.",
+        "Field F1 and exact match compare places at city level; (strict) also requires the gold's state, "
+        "which annotators add for geocoding. Parse / planning error rates are over all items.",
         "",
     ]
     lines += _md_table(["Config", "n"] + [label for _c, label, _s in HEADLINE], md_head)
+    lines += [
+        "",
+        "## LLM parser fallback",
+        "",
+        "Items an LLM parser handled, and how many it handed to the rules fallback (timeout, unreachable "
+        "endpoint, or two invalid responses). Reasons are the parser's logged warnings.",
+        "",
+    ]
+    lines += _md_table(
+        ["Config", "Parser", "LLM-parsed", "Fallbacks", "Fallback rate", "Reasons"],
+        [[c, *_fallback_cell(fallback[c])] if c in fallback else [c, NA, NA, NA, NA, "no result JSON"]
+         for c in configs],
+    )
+    for c in fell_back:
+        lines.append(f"- {c} fallback items: {', '.join(fallback[c]['fallback_ids'])}")
     lines += [
         "",
         "## Paired comparisons",
@@ -577,6 +909,17 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
             ],
         )
     lines += [f"- {s}" for s in skipped_pairs]
+    lines += ["", "## Errors by stage and type", ""]
+    if err_rows:
+        lines += _md_table(
+            ["Config", "Stage", "Error type", "n", "Share of items", "Examples"],
+            [
+                [r["config"], r["stage"], r["error_type"], str(r["n"]), _fmt(r["share_of_items"]), r["example_ids"]]
+                for r in err_rows
+            ],
+        )
+    else:
+        lines.append("No errors.")
     lines += ["", "## Breakdowns", ""]
     for dim in BREAKDOWNS:
         rows = [r for r in br_rows if r["dimension"] == dim]
@@ -585,23 +928,68 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
             lines += [NA, ""]
             continue
         lines += _md_table(
-            ["Config", dim, "n", "Error rate", "Field F1", "Exact match", "Clarification F1", "Silent-assumption"],
+            ["Config", dim, "n", "Parse err", "Planning err", "Field F1", "F1 (strict)", "Exact match",
+             "EM (strict)", "Clarification F1", "Silent-assumption", "Invented-constraint"],
             [
                 [
                     r["config"],
                     r["group"],
                     str(r["n_items"]),
-                    _fmt(r["error_rate"]),
+                    _fmt(r["parse_error_rate"]),
+                    _fmt(r["planning_error_rate"]),
                     _fmt(r["field_f1"]),
+                    _fmt(r["field_f1_strict"]),
                     _fmt(r["exact_match"]),
+                    _fmt(r["exact_match_strict"]),
                     _fmt(r["clarification_f1"]),
                     _fmt(r["silent_assumption_rate"]),
+                    _fmt(r["invented_constraint_rate"]),
                 ]
                 for r in rows
             ],
         )
         lines.append("")
-    lines += ["## Findings (planner/oracle disagreements)", ""]
+    lines += [
+        "## Invented constraints",
+        "",
+        "Items whose parsed request has a hard constraint (connector, minimum power, maximum detour, "
+        "minimum arrival SoC) that the gold request does not have (#145). Separate from silent "
+        "assumptions, which only cover incomplete requests.",
+        "",
+    ]
+    if inv_rows:
+        lines += _md_table(
+            ["Config", "Item", "Invented", "Parsed values"],
+            [[r["config"], r["item_id"], r["fields"], r["parsed_values"]] for r in inv_rows],
+        )
+    else:
+        lines.append("None.")
+    lines += [
+        "",
+        "## Oracle search",
+        "",
+        "Items whose oracle Pareto search stopped early (time budget or max_labels). They get an "
+        "`oracle_search_incomplete` finding and are left out of the front-based metrics.",
+        "",
+    ]
+    if search_rows:
+        lines += _md_table(
+            ["Config", "Items searched", "Incomplete", "Reasons", "Budget (s)", "Items"],
+            [
+                [
+                    r["config"],
+                    str(r["n_items_searched"]),
+                    str(r["n_incomplete"]),
+                    r["incomplete_reasons"] or "-",
+                    "none" if r["pareto_time_budget_s"] is None else f"{r['pareto_time_budget_s']:g}",
+                    r["items_incomplete"] or "-",
+                ]
+                for r in search_rows
+            ],
+        )
+    else:
+        lines.append("None recorded (no planning block with an oracle_search block in these results).")
+    lines += ["", "## Findings (planner/oracle disagreements)", ""]
     if find_rows:
         lines += _md_table(
             ["Config", "Item", "Kind", "Detail"],
@@ -609,15 +997,37 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         )
     else:
         lines.append("None recorded (no planning block with findings in these results).")
+    lines += ["", "## LLM GPU residency", ""]
+    lines += [
+        "Share of the LLM held in GPU memory (size_vram / size from Ollama /api/ps), read before each "
+        "item after the harness renewed keep_alive. Configs without an LLM record none.",
+        "",
+    ]
+    lines += _md_table(
+        ["Config", "Items recorded", "Min", "Median", "Max", "Keep-alive", "Warm-up (s)"],
+        [
+            [
+                r["config"],
+                str(r["gpu_share_n"]),
+                _fmt(r["gpu_share_min"]),
+                _fmt(r["gpu_share_median"]),
+                _fmt(r["gpu_share_max"]),
+                _fmt(r["llm_keep_alive"]),
+                _fmt(r["llm_warmup_s"]),
+            ]
+            for r in meta_rows
+        ],
+    )
     lines += ["", "## Run metadata", ""]
     lines += _md_table(
-        ["Config", "Git commit", "Model", "Digest", "Prompt", "Snapshot"],
+        ["Config", "Git commit", "Model", "Digest", "Ollama", "Prompt", "Snapshot"],
         [
             [
                 r["config"],
                 _fmt(r["git_commit"]) + (" (dirty)" if r["git_dirty"] else ""),
                 _fmt(r["model"]),
                 _fmt(r["model_digest"]),
+                _fmt(r["ollama_version"]),
                 _fmt(r["prompt_version"]),
                 _fmt(r["snapshot_id"]),
             ]
@@ -649,9 +1059,9 @@ def main(argv: list[str] | None = None) -> None:
             if args.from_dir
             else run_all(args.configs, args.split, args.final, args.out, args.items, args.n_boot)
         )
-    except SplitRefused as e:
+        print(build_report(run_dir, n_boot=args.n_boot))
+    except (SplitRefused, MixedSnapshots, FixtureItemsRefused, SnapshotRequired) as e:
         raise SystemExit(f"refused: {e}") from e
-    print(build_report(run_dir, n_boot=args.n_boot))
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from .contracts import (
     ParseResult,
     PlanResult,
     Route,
+    Station,
     TripRequest,
     Vehicle,
 )
@@ -176,7 +177,13 @@ class Pipeline:
         )
         r = cfg["retrieval"]
         self.retriever = CorridorRetriever(
-            store, r["corridor_buffer_km"], r["amenity_radius_m"], r["max_candidates"]
+            store,
+            r["corridor_buffer_km"],
+            r["amenity_radius_m"],
+            r["max_candidates"],
+            usable=self._station_usable,
+            per_bin=r.get("max_usable_per_stretch"),
+            required_extra_per_bin=r.get("max_required_extra_per_stretch"),
         )
         self.enricher = (
             KGEnricher(store, cfg.get("kg", {}))
@@ -227,6 +234,15 @@ class Pipeline:
         self._routes: dict[str, Route] = {}
         self._pending: dict[str, _PendingClarification] = {}
 
+    def _station_usable(self, station: Station, request: TripRequest) -> bool:
+        """Station-level hard constraints for retrieval's capped selection (#106): only stations
+        this request's vehicle can stop at compete for the candidate slots. Same checks as the
+        filter's, so a station counted usable here can still only be rejected for its detour."""
+        if not request.vehicle_id or request.vehicle_id not in self.store.vehicles:
+            return True  # no vehicle to check against: every station competes, as before
+        vehicle = self.store.vehicle(request.vehicle_id)
+        return self.filter.station_rejection(station, request, vehicle) is None
+
     # ------------------------------------------------------------------ plan
     def run(self, text: str, request_id: str | None = None) -> PlanResult:
         rid = request_id or uuid.uuid4().hex[:8]
@@ -249,8 +265,13 @@ class Pipeline:
             config=self.name,
             status="ok",
             request=req,
+            parser=parse.parser,
+            fallback_reason=parse.fallback_reason,
             timings_ms=timings,
         )
+        # PlanResult validation stores a copy of the dict, so the later laps must write into the
+        # result's own dict; otherwise only "parse" reaches the saved result (#125).
+        timings = result.timings_ms
 
         if parse.needs_input:
             if self.clarifier:
@@ -283,6 +304,8 @@ class Pipeline:
                     config=self.name,
                     status="rejected_incomplete",
                     request=merged.request,
+                    parser=pending.parse.parser,
+                    fallback_reason=pending.parse.fallback_reason,
                     notes=merged.missing_fields + [
                         f"ambiguous {field}" for field in merged.ambiguous_fields
                     ],
@@ -304,6 +327,8 @@ class Pipeline:
                 status="needs_clarification",
                 request=merged.request,
                 clarification=next_question,
+                parser=pending.parse.parser,
+                fallback_reason=pending.parse.fallback_reason,
                 notes=[
                     f"clarified {pending.question.field} from answer: {answer!r}"
                 ] if answer_accepted else [],
@@ -316,6 +341,8 @@ class Pipeline:
             config=self.name,
             status="ok",
             request=merged.request,
+            parser=pending.parse.parser,
+            fallback_reason=pending.parse.fallback_reason,
             notes=[f"clarified {pending.question.field} from answer: {answer!r}"],
         )
         return self.plan_request(merged.request, result)
@@ -409,10 +436,44 @@ class Pipeline:
         if not verified_itineraries:
             return [], planning_notes, []
 
-        ranked_itineraries = self.ranker.rank(
-            verified_itineraries,
-            request,
+        # Config C's weighted ranker exposes an evidence-aware capability.
+        # Configs A/B, and the C-without-KG ablation, keep the standard Ranker
+        # interface and therefore receive no evidence credit.
+        rank_with_evidence = getattr(
+            self.ranker,
+            "rank_with_evidence",
+            None,
         )
+
+        has_candidate_evidence = any(
+            candidate.evidence
+            for candidate in candidates
+        )
+
+        evidence_ranking_available = (
+            self.enricher is not None
+            and rank_with_evidence is not None
+        )
+
+        if evidence_ranking_available and has_candidate_evidence:
+            ranked_itineraries = rank_with_evidence(
+                verified_itineraries,
+                request,
+                candidates,
+            )
+            planning_notes.append("evidence ranking: on")
+        else:
+            ranked_itineraries = self.ranker.rank(
+                verified_itineraries,
+                request,
+            )
+
+            if evidence_ranking_available:
+                planning_notes.append(
+                    "evidence ranking: off "
+                    "(no KG evidence on candidates)"
+                )
+
         alternatives = self.selector.select(
             ranked_itineraries,
             request,

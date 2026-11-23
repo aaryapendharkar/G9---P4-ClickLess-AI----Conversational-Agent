@@ -50,13 +50,13 @@ def test_provenance_sources_v03_still_valid_and_third_party_added():
         Provenance(source="WIKIPEDIA", retrieved_at=now, status=DataStatus.STATIC)
 
 
-# ---- contracts v0.5 (ADR 0015): additive PlanResult evidence ----
+# ---- contracts v0.6 (ADR 0016): visible LLM fallback metadata ----
 
 
-def test_contracts_version_is_0_5():
+def test_contracts_version_is_0_6():
     from clickless.contracts import CONTRACTS_VERSION
 
-    assert CONTRACTS_VERSION == "0.5.0"
+    assert CONTRACTS_VERSION == "0.6.0"
 
 
 def test_plan_result_evidence_is_optional_and_round_trips():

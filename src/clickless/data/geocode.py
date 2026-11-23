@@ -7,6 +7,11 @@ system asks the driver instead of guessing (safety-critical field, annotation gu
 Gazetteer keys (lowercase): the full string ("flagstaff, az") plus the bare city ("flagstaff")
 when exactly one geocoded place has that city name, so parser output without the state still
 resolves. Source: OSM Nominatim, 1 request/second per its usage policy, responses cached on disk.
+
+Nominatim's first hit for a small town can be the county named after it ("Elko, NV" -> Elko County,
+whose centre is 54 km from Elko). A county or state is never what a "Town, ST" or "Landmark, City, ST"
+place means, so the first result that is not one is used, out of the top 5; if only counties or
+states match, the place stays unresolved instead of being placed tens of km away.
 """
 
 from __future__ import annotations
@@ -27,6 +32,19 @@ US_STATES = frozenset(
     "OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR".split()
 )
 _STATE_SUFFIX = re.compile(r",\s*([A-Za-z]{2})\s*$")
+AREA_TYPES = frozenset({"county", "state", "country"})
+# A name *ending* in one of these is a county-level area ("Elko County", "Nome Census Area"); a word
+# like "State" elsewhere is not ("Arizona State University", "State College", "Texas State Capitol").
+_AREA_SUFFIX = re.compile(r"\b(county|parish|borough|census area)\s*$", re.I)
+SETTLEMENT_TYPES = frozenset({"city", "town", "village", "hamlet", "municipality"})
+STATE_NAMES = frozenset(
+    "Alabama Alaska Arizona Arkansas California Colorado Connecticut Delaware Florida Georgia Hawaii Idaho "
+    "Illinois Indiana Iowa Kansas Kentucky Louisiana Maine Maryland Massachusetts Michigan Minnesota "
+    "Mississippi Missouri Montana Nebraska Nevada Ohio Oklahoma Oregon Pennsylvania Tennessee Texas Utah "
+    "Vermont Virginia Washington Wisconsin Wyoming".split()
+) | {"New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota",
+     "Rhode Island", "South Carolina", "South Dakota", "West Virginia", "District of Columbia", "Puerto Rico"}
+CACHE_VERSION = "v2"  # v1 files kept only the first result (limit=1), which may be a county
 
 
 def is_geocodable(place: str) -> bool:
@@ -37,6 +55,50 @@ def is_geocodable(place: str) -> bool:
 def _bare_city(place: str) -> str | None:
     parts = [p.strip() for p in place.split(",")]
     return parts[0].lower() if len(parts) == 2 else None  # only "City, ST"
+
+
+def _asks_for_an_area(place: str) -> bool:
+    return bool(_AREA_SUFFIX.search(place.split(",")[0].strip()))
+
+
+def is_area_result(result: dict[str, Any]) -> bool:
+    """True for a Nominatim hit that is a county, state or country rather than a town or landmark."""
+    if (result.get("addresstype") or "").lower() in AREA_TYPES:
+        return True
+    rank = result.get("place_rank")
+    return rank is not None and int(rank) <= 12  # Nominatim: country 4, state 8, county 12, city 16
+
+
+def pick_result(place: str, results: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The hit to use, out of Nominatim's top results.
+
+    - A place that names a county ("Elko County, NV"): the first hit.
+    - "Town, ST": the first settlement (city/town/village/hamlet/municipality), so "Custer, SD" is the
+      town, not Custer State Park; failing that, the first hit that is not a county/state/country.
+    - "Landmark, City, ST": the first hit that is not a county/state/country.
+    None when only counties/states/countries match."""
+    if _asks_for_an_area(place):
+        return results[0] if results else None
+    candidates = [r for r in results if not is_area_result(r)]
+    if len(place.split(",")) == 2:
+        settlement = next((r for r in candidates if (r.get("addresstype") or "").lower() in SETTLEMENT_TYPES), None)
+        if settlement is not None:
+            return settlement
+    return candidates[0] if candidates else None
+
+
+def looks_like_area_match(place: str, details: dict[str, Any]) -> bool:
+    """For a stored geocode: did a town or landmark resolve to a county/state? A match makes
+    add_places --fix-area-matches delete routes, so for entries stored before CACHE_VERSION v2 (no
+    addresstype) only the display name's first part decides, and only when it ends in County, Parish,
+    Borough or Census Area, or the whole name is a state ("Nevada, United States")."""
+    if "error" in details or _asks_for_an_area(place):
+        return False
+    if details.get("addresstype") is not None or details.get("place_rank") is not None:
+        return is_area_result(details)
+    parts = [x.strip() for x in (details.get("display_name") or "").split(",")]
+    whole_state = len(parts) == 2 and parts[0] in STATE_NAMES and parts[1] == "United States"
+    return bool(_AREA_SUFFIX.search(parts[0])) or whole_state  # not "Washington, District of Columbia, ..."
 
 
 def benchmark_places(items: list[Any]) -> list[str]:
@@ -68,9 +130,9 @@ def geocode_places(
             results[place] = {"error": "not geocoded: no US state in the text (ambiguous on purpose)"}
             continue
         key = re.sub(r"[^a-z0-9]+", "_", place.lower()).strip("_")
-        path = cache / f"{key}.json"
+        path = cache / f"{key}.{CACHE_VERSION}.json"
         if not path.exists():
-            params = {"q": place, "format": "jsonv2", "limit": 1, "countrycodes": "us"}
+            params = {"q": place, "format": "jsonv2", "limit": 5, "countrycodes": "us"}
             for attempt in range(1, 4):
                 try:
                     resp = requests.get(endpoint, params=params, headers={"User-Agent": USER_AGENT}, timeout=60)
@@ -90,12 +152,17 @@ def geocode_places(
         if not saved["results"]:
             results[place] = {"error": "no Nominatim result"}
             continue
-        r = saved["results"][0]
+        r = pick_result(place, saved["results"])
+        if r is None:
+            results[place] = {"error": "only a county or state matched; name the town or landmark more precisely"}
+            continue
         results[place] = {
             "lat": float(r["lat"]),
             "lon": float(r["lon"]),
             "display_name": r.get("display_name"),
             "osm": f"{r.get('osm_type')}/{r.get('osm_id')}",
+            "addresstype": r.get("addresstype"),
+            "place_rank": r.get("place_rank"),
             "retrieved_at": saved["retrieved_at"],
         }
     return results

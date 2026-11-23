@@ -42,6 +42,9 @@
    `priority: "important"` only for explicit needs ("must", "need").
    "Accessible restroom" and "wheelchair-accessible restroom" are treated the same: set
    `wheelchair_required: true`. Only set it when the driver mentions accessibility.
+   Keep both fields on the amenity; do not move them into `hard_constraints`. Per proposed ADR
+   0003 Option A, planning will treat the combination of `wheelchair_required: true` and
+   `priority: "important"` as a hard requirement, subject to explicit consent before relaxation.
 6. Trade-off phrasing (any category, wherever the driver states it): add `"tradeoff_profile"`
    to `gold_request` — `fastest` ("in a hurry"), `comfort` ("no rush if there's good food"),
    otherwise omit. `priority_tradeoff` items must have it; items in other categories (e.g.
@@ -57,4 +60,8 @@ dinner"), `accessibility`, `priority_tradeoff`, `infeasible`.
 - Every item is cross-checked by your learning buddy (ring order in `TEAM_PLAN.md`): fix typos,
   flag disagreements in `notes`, never silently change someone's gold.
 - 40 items are independently re-annotated (blind) for Cohen's κ / field agreement
-  (`evaluation/agreement.py`). Ian assigns them.
+  (`evaluation/agreement.py`). Ian assigns them (`python -m evaluation.splits assign-double`,
+  rules in `configs/benchmark.yaml`); Ian is not a second annotator himself (as benchmark owner he
+  has seen the gold) and Deepti only gets dev items. Each second annotator fills in
+  `benchmark/labels/double/<you>.jsonl` from the request text alone, without opening the original
+  item or its gold. Steps: `benchmark/labels/double/README.md`.

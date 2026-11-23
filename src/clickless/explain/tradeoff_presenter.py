@@ -63,11 +63,19 @@ def _describe_minute_delta(
 def render_cost_breakdown(cost: PlanCost) -> str:
     """Explain the recommended plan using its stored minutes-equivalent terms."""
 
+    evidence_credit_description = ""
+
+    if cost.evidence_credit_min:
+        evidence_credit_description = (
+            f" - verified evidence {cost.evidence_credit_min:.0f}"
+        )
+
     return (
         f"Why this ranks first ({cost.profile} priorities, in minutes-equivalent): "
         f"driving {cost.drive_min:.0f} + charging {cost.charge_min:.0f} + detour penalty "
         f"{cost.detour_penalty_min:.0f} + stop overhead {cost.stop_overhead_min:.0f} "
-        f"- requested amenities {cost.amenity_credit_min:.0f} = {cost.total_min:.0f}."
+        f"- requested amenities {cost.amenity_credit_min:.0f}"
+        f"{evidence_credit_description} = {cost.total_min:.0f}."
     )
 
 

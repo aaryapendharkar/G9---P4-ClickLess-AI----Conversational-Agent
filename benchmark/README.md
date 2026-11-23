@@ -5,6 +5,7 @@ requests/raw/<author>.jsonl   # each member writes 30 items here (one JSON objec
 requests/dev/                 # produced by evaluation.splits (50 items) + fixture_smoke.jsonl
 requests/test/                # produced by evaluation.splits (100 items) -- FROZEN, never hand-edit
 labels/relevance/             # graded relevance labels for nDCG@3 (30 test items, 2 annotators)
+labels/double/<annotator>.jsonl  # blind double annotation, 40 items over 4 annotators (labels/double/README.md)
 FROZEN.json                   # hash + date of the test split, written at freeze time
 ```
 
@@ -15,4 +16,8 @@ FROZEN.json                   # hash + date of the test split, written at freeze
   overlap any category; aim for ~2 each.
 - Deepti (parser owner) writes items that go to DEV only (proposal §II).
 - `dev/fixture_smoke.jsonl` uses the synthetic fixture world; it is NOT one of the 150 items.
+  `load_items` skips `fixture_*.jsonl` when it reads a directory, so the dev split (and
+  `make eval-dev`) is exactly the 50 frozen items; pass the file path to load the smoke items.
+- Double annotation (`python -m evaluation.splits assign-double`): annotators in
+  `configs/benchmark.yaml` `dev_only_annotators` (Deepti, the parser owner) only get dev items.
 - Real items must use vehicles from `data/curated/vehicles.csv` and real places.

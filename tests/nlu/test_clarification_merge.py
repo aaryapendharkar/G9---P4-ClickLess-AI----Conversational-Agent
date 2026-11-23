@@ -1,3 +1,5 @@
+import pytest
+
 from clickless.contracts import ClarificationQuestion, ParseResult
 from clickless.nlu.clarification import TemplateClarifier, merge_answer
 from clickless.nlu.rules_parser import RulesParser
@@ -17,6 +19,40 @@ def test_merge_answer_accepts_only_explicit_battery_percentage(store):
     assert "start_soc_pct" in vague.missing_fields
     assert accepted.request.start_soc_pct == 40
     assert "start_soc_pct" not in accepted.missing_fields
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["about 70%", "around 70 percent", "I have 70%", "roughly 70 percent left", "I am at 70% battery"],
+)
+def test_merge_answer_accepts_one_percentage_with_natural_filler(store, answer):
+    parse_result = RulesParser(store).parse("Phoenix to Flagstaff in my comet", "merge-natural-pct")
+    question = ClarificationQuestion(
+        field="start_soc_pct",
+        question="What percentage battery do you have right now?",
+    )
+
+    merged = merge_answer(parse_result, question, answer, store)
+
+    assert merged.request.start_soc_pct == 70
+    assert "start_soc_pct" not in merged.missing_fields
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["about 70% or 80%", "70% and 20 miles", "70 miles", "around 130%", "I have 70% charge left yesterday"],
+)
+def test_merge_answer_rejects_ambiguous_or_out_of_range_battery_answers(store, answer):
+    parse_result = RulesParser(store).parse("Phoenix to Flagstaff in my comet", "merge-invalid-pct")
+    question = ClarificationQuestion(
+        field="start_soc_pct",
+        question="What percentage battery do you have right now?",
+    )
+
+    merged = merge_answer(parse_result, question, answer, store)
+
+    assert merged.request.start_soc_pct is None
+    assert "start_soc_pct" in merged.missing_fields
 
 
 def test_merge_answer_does_not_change_unasked_fields(store):

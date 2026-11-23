@@ -255,3 +255,80 @@ def test_double_annotation_requires_cross_checks():
     items[3]["cross_checked_by"] = None
     with pytest.raises(ValueError, match="cross-check"):
         assign_double_annotation(items)
+
+
+def _dev_ids(items) -> set[str]:
+    return {i.id for i in stratified_split(items).dev}
+
+
+def test_dev_only_annotator_gets_only_dev_items():
+    raw = make_items(SHARED)
+    items = {x["id"]: BenchmarkItem.model_validate(x) for x in raw}
+    dev = _dev_ids(raw)
+    pairs = assign_double_annotation(raw, dev_ids=dev, dev_only_annotators=("deepti",))
+    assert len(pairs) == 40 and Counter(items[i].author for i, _ in pairs) == {a: 8 for a in AUTHORS}
+    for item_id, second in pairs:
+        it = items[item_id]
+        assert second not in (it.author, it.cross_checked_by)
+        if second == "deepti":
+            assert item_id in dev
+    for a in AUTHORS:  # still one item per category
+        assert sorted(items[i].category for i, _ in pairs if items[i].author == a) == sorted(set(MIX))
+    assert Counter(s for _, s in pairs)["deepti"] == 8  # still a full, balanced load
+    shuffled = raw[:]
+    random.Random(3).shuffle(shuffled)
+    assert assign_double_annotation(shuffled, dev_ids=dev, dev_only_annotators=("deepti",)) == pairs
+
+
+def test_no_dev_only_annotators_leaves_the_assignment_unchanged():
+    raw = make_items(SHARED)
+    assert assign_double_annotation(raw, dev_ids=_dev_ids(raw)) == assign_double_annotation(raw)
+
+
+def test_dev_only_annotators_need_the_dev_split():
+    with pytest.raises(ValueError, match="dev_ids"):
+        assign_double_annotation(make_items(), dev_only_annotators=("deepti",))
+
+
+def test_dev_only_rule_fails_loudly_when_unsatisfiable():
+    with pytest.raises(ValueError, match="no valid second annotator"):
+        assign_double_annotation(make_items(), dev_ids=set(), dev_only_annotators=("deepti", "ian"))
+
+
+def test_excluded_annotator_gets_nothing_but_their_items_are_still_annotated():
+    raw = make_items(SHARED)
+    items = {x["id"]: BenchmarkItem.model_validate(x) for x in raw}
+    dev = _dev_ids(raw)
+    kwargs = dict(dev_ids=dev, dev_only_annotators=("deepti",), excluded_annotators=("ian",),
+                  annotator_caps={"deepti": 8})  # fmt: skip
+    pairs = assign_double_annotation(raw, **kwargs)
+    assert len(pairs) == 40 and Counter(items[i].author for i, _ in pairs) == {a: 8 for a in AUTHORS}
+    for a in AUTHORS:  # still one item per category, including ian's own items
+        assert sorted(items[i].category for i, _ in pairs if items[i].author == a) == sorted(set(MIX))
+    for item_id, second in pairs:
+        it = items[item_id]
+        assert second != "ian" and second not in (it.author, it.cross_checked_by)
+        if second == "deepti":
+            assert item_id in dev
+    load = Counter(s for _, s in pairs)
+    assert load["deepti"] == 8  # capped annotator is filled first, up to the cap
+    assert sorted(load[a] for a in ("aarya", "hriday", "manas")) == [10, 11, 11]  # the rest, evenly
+    shuffled = raw[:]
+    random.Random(5).shuffle(shuffled)
+    assert assign_double_annotation(shuffled, **kwargs) == pairs
+
+
+def test_caps_and_exclusions_must_leave_an_uncapped_annotator():
+    with pytest.raises(ValueError, match="without a fixed cap"):
+        assign_double_annotation(make_items(), excluded_annotators=("aarya", "manas", "hriday", "ian"),
+                                 annotator_caps={"deepti": 8})  # fmt: skip
+
+
+def test_benchmark_config_parser_owner_dev_only_and_owner_excluded():
+    from clickless.config import load_config
+    from evaluation.splits import BENCHMARK_CONFIG, PARSER_OWNER
+
+    cfg = load_config(BENCHMARK_CONFIG)
+    assert cfg["dev_only_annotators"] == [PARSER_OWNER]
+    assert cfg["excluded_annotators"] == ["ian"]  # benchmark owner: has seen nearly all gold
+    assert cfg["annotator_caps"] == {PARSER_OWNER: 8}

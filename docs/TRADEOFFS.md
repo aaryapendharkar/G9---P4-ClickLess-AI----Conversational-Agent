@@ -31,6 +31,11 @@ cost = w_drive · drive_min                (includes detour driving)
   by the matcher's score in [0, 1] (TF-IDF in A, SBERT in B/C).
 * Accessibility: only amenities tagged `wheelchair=yes` count toward `restroom_wheelchair`;
   `unknown` never counts (proposal §II).
+* Config C evidence coverage is the supported share of displayed station-name, selected-connector,
+  selected-power and amenity-name facts. Connector and power evidence must describe the same KG
+  port. A direct trip has full coverage because it displays no unsupported charging-stop facts,
+  but evidence credit is activated only when the request's candidates actually contain KG
+  evidence. Configs A/B and the C-without-KG ablation therefore receive zero evidence credit.
 * One-sentence explanation for the report: *"In the balanced profile we treat a lunch stop the
   driver asked for as worth up to 15 extra minutes, and an accessible restroom as worth 20."*
 
@@ -43,6 +48,11 @@ cost = w_drive · drive_min                (includes detour driving)
 | overhead per stop (min) | 5 | 8 | 3 |
 | food / coffee / restroom (min) | 15 / 8 / 10 | 3 / 2 / 3 | 30 / 15 / 15 |
 | accessible restroom (min) | 20 | 15 | 30 |
+| Config C evidence credit (min) | 5 | 5 | 5 |
+
+The Config C evidence credit is shared across all three profiles. It is stored
+once under `evidence.evidence_credit_min`; Configs A/B and the no-KG ablation
+explicitly use zero.
 
 The driver picks a profile in words ("I'm in a hurry", "no rush if there's good food") or with
 explicit overrides ("food matters more than time" → `amenity_value_min.food` up). Values are
