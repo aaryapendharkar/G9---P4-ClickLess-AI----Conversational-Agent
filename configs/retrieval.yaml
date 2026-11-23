@@ -3,6 +3,7 @@ corridor_buffer_km: 8
 amenity_radius_m: 400            # proposal §II: Station NEAR Amenity within 400 m straight-line
 max_candidates: 60
 max_usable_per_stretch: 2       # #133: at most 2 usable stations (fastest first) per ~25 km of route reach the planner
+max_required_extra_per_stretch: 2  # #133/#136: plus up to 2 per stretch that satisfy an important amenity (closest to the route first)
 sbert_model: sentence-transformers/all-MiniLM-L6-v2   # pin the exact model for reproducibility
 sbert_revision: 1110a243fdf4706b3f48f1d95db1a4f5529b4d41  # Hugging Face commit of sbert_model (main on 2026-11-07)
 sbert_device: cpu                # GPU/MPS kernels can change the last digits of embeddings

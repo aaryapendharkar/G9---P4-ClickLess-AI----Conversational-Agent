@@ -1,10 +1,11 @@
-# ADR 0018: Route-distributed candidates, at most 2 usable per stretch
+# ADR 0018: Route-distributed candidates, at most 2 usable per stretch (+ required amenities)
 
-- Status: proposed
+- Status: accepted (2 approvals: Hriday 2026-11-22, Aarya 2026-11-23, on PR #133). Decision 4 (required-amenity
+  retention) was added on 2026-11-23 at Hriday's request (#136); his re-review on PR #133 is required before merge.
 - Date: 2026-11-21
 - Owner: Ian (evaluation)
 - Approvers: Hriday (planning, integration), Aarya (data, evaluation); two approvals needed (`docs/TEAM_PLAN.md`)
-- Related: #106, #105, PR #133, #134 (closed)
+- Related: #106, #105, PR #133, #134 (closed), #136 / ADR 0003 (required accessibility), #153 (port-aware ranking)
 
 ## Context
 `CorridorRetriever` hands the planner at most `max_candidates: 60` stations. Before #133 it kept
@@ -57,6 +58,15 @@ nearest-first can let an unusable station take a usable one's slot.
 3. **Cap of 60 kept.** If the bounded usable set still exceeds 60, it is shared round-robin across
    the stretches, fastest first. Stations the car can't use fill any free slots in route order;
    the hard-constraint filter removes them before planning, as before.
+4. **Required amenities are retained** (`max_required_extra_per_stretch: 2`, #136). Ranking by power
+   can drop the only station with something the driver needs: in demo scenario 4, the one charger
+   with a `wheelchair=yes` restroom (Flagstaff Chevrolet) lost its slot to faster chargers. After
+   steps 1–3, a usable station is added back when an amenity within `amenity_radius_m` satisfies a
+   preference the request marks `important`: same category, and `wheelchair=yes` when
+   `wheelchair_required` (the planner's rule, ADR 0003). At most 2 are added per stretch, closest
+   to the route first, on top of the cap of 60. `nice_to_have` and `other` preferences are never
+   retained (an `other` match is the matcher's decision, made after retrieval). A request without
+   a required preference skips this step, so its candidates are exactly those of steps 1–3.
 
 k = 2 is chosen because:
 - it has the best net plan time of all the variants;
@@ -64,6 +74,21 @@ k = 2 is chosen because:
 - it has no false "infeasible".
 
 Runner-up: k = 4 (one item slower than fastest-first instead of four; max 21.5 s).
+
+### Re-run with decision 4 (2026-11-23, on main `85173fe` + #133)
+Same 41 dev items + 2 demo trips, same method (Config A on gold requests, snapshot, oracle from #74
+@ `c566ff3`).
+
+| Variant | Planner–oracle agreement | False "infeasible" | Returned plans failing the oracle check | Planning s median / p90 / max |
+|---|---|---|---|---|
+| main (first 60 along the route) | 36/43 | 7 | 0 | 0.07 / 0.30 / 2.5 |
+| k = 2 per stretch (decisions 1–3) | 43/43 | 0 | 0 | 0.09 / 0.80 / 5.4 |
+| **k = 2 + required-amenity retention (1–4)** | **43/43** | **0** | **0** | **0.09 / 2.58 / 5.5** |
+
+Decision 4 changes the candidates of exactly the 8 requests with an `important` amenity (1–16 extra
+stations each). The other 35 have identical candidates. Recommended plans: 3 unchanged, 2 faster
+(aarya-026 and deepti-027, −7.5 min), deepti-024 −0.2 min, and 2 that now stop for the required
+restroom (deepti-005 +2.0 min, deepti-010 +6.6 min).
 
 ## Consequences
 - **Results:** the cut changes candidate sets on 38 of 43 items and the recommended plan on 25:
@@ -86,4 +111,9 @@ Runner-up: k = 4 (one item slower than fastest-first instead of four; max 21.5 s
     unusable-station regressions with and without the bound, and the per-stretch bound;
   - `tests/integration/test_long_route_candidates.py`: deepti-014/015 and LA → SF plan and verify
     on the snapshot;
-  - the snapshot indexed/brute-force equivalence tests are unchanged.
+  - the snapshot indexed/brute-force equivalence tests are unchanged;
+  - required-amenity retention: unit tests on both methods (kept beyond the k = 2 picks, bounded,
+    closest first, `wheelchair=yes` only; unchanged candidates without an important amenity), and
+    `tests/integration/test_required_amenity_candidates.py` (scenario 4 keeps Flagstaff Chevrolet).
+- **Planning time:** retention adds at most 2 stations per stretch for requests with a required
+  amenity; the dev p90 rises from 0.8 to 2.6 s, max 5.5 s.

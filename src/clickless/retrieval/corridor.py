@@ -40,6 +40,15 @@ station through (up to 60) made planning time explode (max 356 s on the dev set)
 keeps every dev item and demo trip feasible with max 6.2 s and better plans than the fastest-first
 cut. None (the retriever's default) means no bound.
 
+required_extra_per_bin (config `max_required_extra_per_stretch`, #133 / #136) keeps stations the
+power-ordered cap would drop but the driver needs. A preference is required when the request marks
+it `important` (with `wheelchair_required`, only a `wheelchair=yes` amenity satisfies it, the planner's
+rule; ADR 0003). After the selection above, a usable station with such an amenity within the amenity
+radius is added back, at most required_extra_per_bin per stretch, closest to the route first. These
+extras sit on top of max_candidates. A request without a required preference skips this step, so
+its candidates are exactly the ones above. `other` preferences are not retained: whether an `other`
+amenity satisfies the phrase is the matcher's decision, made after retrieval.
+
 TODO(Manas): a BallTree / R-tree could replace the grids; the equivalence tests stay the contract.
 """
 
@@ -50,7 +59,7 @@ from collections import defaultdict
 from collections.abc import Callable, Sequence
 
 from ..common.geo import EARTH_RADIUS_KM, haversine_km, nearest_on_polyline, point_segment_km
-from ..contracts import Candidate, NearbyAmenity, Route, Station, TripRequest
+from ..contracts import Amenity, AmenityCategory, Candidate, NearbyAmenity, Route, Station, TripRequest
 from ..data import DataStore
 
 METHODS = ("indexed", "brute_force")
@@ -170,6 +179,58 @@ def _per_bin_quota(
     return sorted(keep)
 
 
+RequiredPreference = tuple[AmenityCategory, bool]  # (category, wheelchair_required)
+
+
+def required_preferences(request: TripRequest | None) -> list[RequiredPreference]:
+    """The request's amenities that retrieval must not drop: `important` ones, except `other`."""
+    if request is None:
+        return []
+    return [
+        (p.category, p.wheelchair_required)
+        for p in request.amenities
+        if p.priority == "important" and p.category != AmenityCategory.OTHER
+    ]
+
+
+def satisfies_required(amenities: Sequence[Amenity], required: Sequence[RequiredPreference]) -> bool:
+    """True if one of the amenities satisfies a required preference: same category and, when
+    wheelchair access is required, explicitly `wheelchair=yes` (unknown never counts)."""
+    return any(
+        a.category == category and (not wheelchair or a.wheelchair == "yes")
+        for a in amenities
+        for category, wheelchair in required
+    )
+
+
+def select_required_extras(
+    along_km: Sequence[float],
+    offroute_km: Sequence[float],
+    keep: Sequence[int],
+    route_km: float,
+    required: Sequence[bool],
+    per_bin: int,
+    bin_km: float = DEFAULT_BIN_KM,
+    usable: Sequence[bool] | None = None,
+) -> list[int]:
+    """Indices (ascending, not in `keep`) of usable entries that satisfy a required preference,
+    at most per_bin per bin_km stretch, closest to the route first (ties: list order)."""
+    if per_bin <= 0:
+        return []
+    kept = set(keep)
+    n_bins = max(1, math.ceil(route_km / bin_km)) if route_km > 0 else 1
+    width = route_km / n_bins if route_km > 0 else 1.0
+    bins: dict[int, list[int]] = {}
+    for i in range(len(along_km)):
+        if i in kept or not required[i] or (usable is not None and not usable[i]):
+            continue
+        bins.setdefault(min(n_bins - 1, max(0, int(along_km[i] / width))), []).append(i)
+    extra: list[int] = []
+    for b in bins.values():
+        extra += sorted(b, key=lambda i: (offroute_km[i], i))[:per_bin]
+    return sorted(extra)
+
+
 def _spread(
     along_km: Sequence[float], max_candidates: int, route_km: float, bin_km: float, power_kw: Sequence[float] | None
 ) -> list[int]:
@@ -214,6 +275,7 @@ class CorridorRetriever:
         bin_km: float = DEFAULT_BIN_KM,
         usable: Callable[[Station, TripRequest], bool] | None = None,
         per_bin: int | None = None,
+        required_extra_per_bin: int | None = None,
     ):
         if method not in METHODS:
             raise ValueError(f"method must be one of {METHODS}, got {method!r}")
@@ -226,6 +288,8 @@ class CorridorRetriever:
         # the planner's filter); retrieval itself knows nothing about vehicles or connectors.
         self.usable = usable
         self.per_bin = per_bin  # at most this many usable candidates per bin_km stretch (None: no bound)
+        # extra stations per stretch kept because they satisfy a required amenity (None/0: off)
+        self.required_extra_per_bin = required_extra_per_bin
         self.method = method
         self._station_grid: dict[Cell, list[int]] | None = None  # built lazily, rebuilt if the store changes
         self._stations: list = []
@@ -244,6 +308,31 @@ class CorridorRetriever:
             return None
         return [self.usable(st, request) for st in stations]
 
+    def _with_required_extras(
+        self,
+        keep: list[int],
+        along_km: Sequence[float],
+        offroute_km: Sequence[float],
+        route_km: float,
+        usable: Sequence[bool] | None,
+        request: TripRequest | None,
+        amenities_of: Callable[[int], Sequence[Amenity]],
+    ) -> list[int]:
+        """`keep` plus the stations kept for a required amenity (see the module docstring).
+        Unchanged when the request has no required preference or the bound is off."""
+        required_prefs = required_preferences(request)
+        if not self.required_extra_per_bin or not required_prefs:
+            return keep
+        kept = set(keep)
+        required = [
+            i not in kept and (usable is None or usable[i]) and satisfies_required(amenities_of(i), required_prefs)
+            for i in range(len(along_km))
+        ]
+        extra = select_required_extras(
+            along_km, offroute_km, keep, route_km, required, self.required_extra_per_bin, self.bin_km, usable
+        )
+        return sorted(keep + extra)
+
     # ------------------------------------------------------------------ reference implementation
     def _candidates_brute_force(self, route: Route, request: TripRequest | None = None) -> list[Candidate]:
         poly = [(p.lat, p.lon) for p in route.geometry]
@@ -261,14 +350,25 @@ class CorridorRetriever:
                 Candidate(station=st, route_index=seg, along_route_km=along, offroute_km=off_km, amenities=nearby)
             )
         out.sort(key=lambda c: c.along_route_km)
+        along, route_km = [c.along_route_km for c in out], polyline_km(poly)
+        usable = self._usable_flags([c.station for c in out], request)
         keep = select_distributed(
-            [c.along_route_km for c in out],
+            along,
             self.max_candidates,
-            polyline_km(poly),
+            route_km,
             self.bin_km,
             [max_power_kw(c.station) for c in out],
-            self._usable_flags([c.station for c in out], request),
+            usable,
             self.per_bin,
+        )
+        keep = self._with_required_extras(
+            keep,
+            along,
+            [c.offroute_km for c in out],
+            route_km,
+            usable,
+            request,
+            lambda i: [n.amenity for n in out[i].amenities],
         )
         return [out[i] for i in keep]
 
@@ -320,14 +420,25 @@ class CorridorRetriever:
             while len(self._route_scans) > _ROUTE_MEMO:
                 del self._route_scans[next(iter(self._route_scans))]
 
+        along, route_km = [f[0] for f in found], polyline_km(poly)
+        usable = self._usable_flags([self._stations[f[1]] for f in found], request)
         keep = select_distributed(
-            [f[0] for f in found],
+            along,
             self.max_candidates,
-            polyline_km(poly),
+            route_km,
             self.bin_km,
             [max_power_kw(self._stations[f[1]]) for f in found],
-            self._usable_flags([self._stations[f[1]] for f in found], request),
+            usable,
             self.per_bin,
+        )
+        keep = self._with_required_extras(
+            keep,
+            along,
+            [f[3] for f in found],
+            route_km,
+            usable,
+            request,
+            lambda i: [self.store.amenities[ai] for ai, _ in self._links_for(self._stations[found[i][1]])],
         )
         out = []
         for along, si, seg, off_km in (found[i] for i in keep):

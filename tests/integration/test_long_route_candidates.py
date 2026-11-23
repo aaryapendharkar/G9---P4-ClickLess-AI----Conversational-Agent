@@ -6,6 +6,7 @@ Needs the downloaded snapshot with its route cache; skipped otherwise (like the 
 """
 
 import json
+import math
 
 import pytest
 
@@ -47,7 +48,9 @@ def test_issue_105_items_get_a_verified_plan(snapshot_pipe, item_id):
     req = _dev_request(snapshot_pipe.store, item_id)
     route = snapshot_pipe.router.route(req.origin, req.destination)
     cands = snapshot_pipe.retriever.candidates(route, req)
-    assert len(cands) == 60
+    # 60 under the cap, plus at most 2 per ~25 km stretch kept for a required amenity (#133 / #136):
+    # deepti-015's gold request marks lunch important
+    assert 60 <= len(cands) <= 60 + 2 * math.ceil(route.distance_km / 25)
     assert max(c.along_route_km for c in cands) > 0.8 * route.distance_km  # before #106: all within 2.1 km
     result = _plan(snapshot_pipe, req)
     assert result.status == "ok" and result.alternatives
