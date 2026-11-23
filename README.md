@@ -129,6 +129,10 @@ python -m evaluation.report --configs C-noKG --split dev  # KG ablation
 python -m evaluation.report --from results/<timestamp>    # rebuild a report from saved runs
 make bench-check                                          # validate every benchmark file
 ```
+Evaluation needs the snapshot. A `--split` run (dev, test) on the synthetic fixture world is refused before anything
+runs (#119): set `CLICKLESS_DATA_SOURCE=snapshot` first. For a quick smoke run on the fixtures, pass
+`--items benchmark/requests/dev/fixture_smoke.jsonl` instead of a split.
+
 Runs write `results/<timestamp>/report.md` + CSVs (git-ignored). The held-out test split needs `--final`. The
 methodology and how to reproduce are in [`evaluations/README.md`](evaluations/README.md).
 
