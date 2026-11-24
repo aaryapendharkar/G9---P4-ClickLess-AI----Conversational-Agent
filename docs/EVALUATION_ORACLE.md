@@ -66,7 +66,9 @@ itinerary break any hard constraint.
   Departure targets are the exact need of every later node plus a `soc_grid_step_pct` grid. With a required
   accessible restroom each node has two label layers (with / without a qualifying stop so far); a label without one
   is dropped when a label with one beats it, and only the "with" layer reaches the destination. Without the
-  requirement there is one layer and the search is exactly the one without the rule. Returns the non-dominated plans over
+  requirement there is one layer and the search is exactly the one without the rule. A qualifying station may also be
+  left with the SoC it arrived with (0 min charge): otherwise a trip drivable without charging (deepti-022) could never
+  satisfy the requirement and the front would be empty while `is_feasible` is true. Returns the non-dominated plans over
   **(total time, detour, charge time)**. `complete=False` (with `incomplete_reason`) if the search inserts `max_labels`
   labels (`configs/evaluation.yaml`, 40,000 per search); never silently truncated. The label limit is deterministic:
   the same input and settings give the same `complete` flag, label count (`n_labels`) and front on any machine, so

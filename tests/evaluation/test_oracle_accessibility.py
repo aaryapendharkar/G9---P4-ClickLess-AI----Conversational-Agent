@@ -129,7 +129,13 @@ def test_no_stop_trip_does_not_satisfy_the_requirement():
     required = req(start=95.0, arrival_soc_pct_min=10, amenities=REQUIRED)
     fr = o.is_feasible(required)
     assert fr.feasible and "s90" in fr.witness  # it must stop, even though it doesn't need to charge
-    assert all(p.stops for p in o.pareto_plans(required).plans)
+    # The car arrives at s90 with more than it needs, so the front has a zero-charge restroom stop
+    # (found on deepti-022: feasible but an empty front before targets allowed departing as arrived).
+    plans = o.pareto_plans(required).plans
+    assert plans and all(p.stops for p in plans)
+    assert any(p.station_ids == ("s90",) and p.total_charge_min == 0.0 for p in plans)
+    for p in plans:
+        assert o.check_itinerary(required, from_plan(p)).ok
     rep = o.check_itinerary(required, itinerary())
     assert not rep.ok and access_violations(rep)
 
@@ -174,10 +180,11 @@ def test_feasible_iff_the_front_is_non_empty_and_every_front_plan_passes():
     for o in worlds:
         for scope in ("stop", "total"):
             oo = o.with_overrides(detour_scope=scope)
-            for start in (25.0, 50.0, 95.0):
-                r = req(start=start, amenities=REQUIRED, max_detour_min=10.0)
+            for start, arrival in ((25.0, None), (50.0, None), (95.0, None), (95.0, 10.0), (99.0, 10.0)):
+                r = req(start=start, amenities=REQUIRED, max_detour_min=10.0, arrival_soc_pct_min=arrival)
                 front = oo.pareto_plans(r)
-                assert bool(oo.is_feasible(r)) == bool(front.plans)
+                assert front.complete
+                assert bool(oo.is_feasible(r)) == bool(front.plans), (start, arrival, scope)
                 for p in front.plans:
                     assert oo.check_itinerary(r, from_plan(p)).ok
 

@@ -773,7 +773,12 @@ class LabelSettingOracle:
             ts.add(k * step)
             k += 1
         ts.add(hi)
-        return sorted(t for t in ts if arrive + EPS < t <= hi + EPS)
+        targets = sorted(t for t in ts if arrive + EPS < t <= hi + EPS)
+        if p.access_ok is not None and p.access_ok[i]:
+            # A stop for the required accessible restroom need not charge (0 min, charge_minutes):
+            # without this, a trip drivable with no charge could never satisfy the requirement.
+            targets.insert(0, arrive)
+        return targets
 
     def pareto_plans(self, request: TripRequest) -> ParetoResult:
         """Non-dominated plans. Cached per (request, settings) on the indexed path; always a copy."""
