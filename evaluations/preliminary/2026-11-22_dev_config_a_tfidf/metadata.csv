@@ -1,0 +1,2 @@
+config,git_commit,git_dirty,model,model_digest,digest_check,ollama_version,endpoint_host,prompt_version,snapshot_id,gpu_share_n,gpu_share_min,gpu_share_median,gpu_share_max,llm_keep_alive,llm_warmup_s
+A,5bf404970376b0dbb35a8efdd59c75ba8694f387,False,n/a,n/a,n/a,n/a,n/a,n/a,"snapshot:a352ddb69ca7 (draft, created 2026-11-23T03:32:21.129615+00:00)",0,,,,,

@@ -34,7 +34,6 @@ def test_amenities_linked_within_radius(pipe_a, demo_text):
     assert all(na.distance_m <= 400 for na in cv.amenities)
 
 
-@pytest.mark.xfail(reason="TODO(Manas): real TF-IDF should score related phrasing, not just category")
 def test_tfidf_matches_cuisine_phrase(store):
     from clickless.retrieval.tfidf_matcher import TfidfMatcher
 

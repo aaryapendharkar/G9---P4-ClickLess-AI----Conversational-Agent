@@ -101,7 +101,19 @@ def test_amenity_credit_only_for_requested_and_accessible(
         cfg_a["tradeoffs"],
     )
 
-    assert camp_verde_cost.amenity_credit_min == 15 + 20
+    camp_verde_stop = single_stop_itineraries_by_station["FIX-ST-004"].stops[0]
+    expected_camp_verde_credit = (
+        15 * camp_verde_stop.satisfied_preferences["food"]
+        + 20 * camp_verde_stop.satisfied_preferences["restroom_wheelchair"]
+    )
+
+    # Amenity values are maximum minute-equivalents. Real TF-IDF scores scale
+    # that credit instead of granting the old placeholder's all-or-nothing
+    # 15 + 20 minutes for any amenity in the requested category.
+    assert camp_verde_cost.amenity_credit_min == pytest.approx(
+        expected_camp_verde_credit
+    )
+    assert 0 < camp_verde_cost.amenity_credit_min < 15 + 20
     assert anthem_cost.amenity_credit_min == 0
 
     black_canyon_cost = plan_cost(
@@ -110,7 +122,15 @@ def test_amenity_credit_only_for_requested_and_accessible(
         cfg_a["tradeoffs"],
     )
 
-    assert black_canyon_cost.amenity_credit_min == 15
+    black_canyon_stop = single_stop_itineraries_by_station["FIX-ST-002"].stops[0]
+    expected_black_canyon_credit = (
+        15 * black_canyon_stop.satisfied_preferences["food"]
+    )
+
+    assert black_canyon_cost.amenity_credit_min == pytest.approx(
+        expected_black_canyon_credit
+    )
+    assert 0 < black_canyon_cost.amenity_credit_min < 15
 
 
 def test_weight_override(cfg_a, pipe_a, demo_text):

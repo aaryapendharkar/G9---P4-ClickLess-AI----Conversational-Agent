@@ -1,8 +1,29 @@
 # PRELIMINARY dev-set results: not final numbers
 
-Everything in this folder comes from the **dev split**, from a shakedown run made **before** several fixes were
-merged. These numbers are for the progress presentation only. Do not cite them as results. The final numbers come
-from a full dev re-run and then the sealed 100-item test split (`../README.md`).
+Everything in this folder comes from the **dev split**. These runs validate components and support tuning; they are
+not final held-out results. The final numbers come from the sealed 100-item test split (`../README.md`). Each run
+below records its own code and known caveats.
+
+## `2026-11-22_dev_config_a_tfidf/`: Config A after real TF-IDF (#156)
+
+This is the required full 50-item DEV rerun after Config A's category-only placeholder was replaced
+by deterministic TF-IDF cosine similarity. It used commit `5bf4049`, the verified
+`snapshot-v1-draft` release (`snapshot:a352ddb69ca7`), and the frozen DEV split. The held-out TEST
+split was not opened or evaluated.
+
+| Metric | Config A DEV result |
+|---|---:|
+| Items | 50 |
+| Field F1, city-level | 0.874 [0.835, 0.911] |
+| Exact match, city-level | 0.440 [0.300, 0.580] |
+| Clarification F1 | 0.432 [0.211, 0.615] |
+| Planning errors | 0 / 50 |
+| Plan feasibility | 0.500 |
+| Hard-violation rate | 0.036 |
+
+Five oracle searches reached the documented 40,000-label limit and are excluded from front-based
+metrics; the item ids and findings are recorded in `oracle_search.csv` and `findings.csv`. These are
+DEV results for validating and tuning Config A, not final held-out results.
 
 ## `2026-11-21_dev_deepti30/`: shakedown on 30 dev items
 
