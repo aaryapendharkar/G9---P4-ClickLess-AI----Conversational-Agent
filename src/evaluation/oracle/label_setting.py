@@ -14,6 +14,12 @@ Outputs per request:
   * check_itinerary(request, itinerary) -> CheckReport listing EVERY violated hard constraint
   * is_valid(itinerary, request) -> bool
 
+Required accessible restroom (ADR 0003 question 3, #162): when the request has a restroom
+preference with priority "important" AND wheelchair_required, a plan is valid only if one of its
+charging stops has a datastore amenity of category restroom tagged wheelchair == "yes" (unknown and
+limited never count) within amenity_radius_m (configs/retrieval.yaml) straight-line. Every other
+amenity preference stays soft and never changes an oracle answer.
+
 Disagreements with the planner are findings. Never change this oracle to match the planner: fix
 the documentation first, then whichever implementation is wrong.
 
@@ -45,6 +51,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from clickless.contracts import (
+    AmenityCategory,
     Itinerary,
     Place,
     PlanResult,
@@ -142,6 +149,9 @@ class OracleConfig:
     # tradeoffs.pareto_validity compares with. Never applied to is_feasible or check_itinerary.
     departure_buffer_pct: float = 0.0
     method: Method = "indexed"  # speed only: "exhaustive" is the reference path, same results
+    # configs/retrieval.yaml amenity_radius_m: straight-line radius of the required accessible
+    # restroom around a charging stop (#162). Used only when requires_accessible_restroom(request).
+    amenity_radius_m: float = 400.0
 
     def __post_init__(self) -> None:
         if self.method not in METHODS:
@@ -274,6 +284,9 @@ class _Problem:
     excluded: dict[str, int]
     penalty: float
     no_overlap_detail: str | None = None  # set when connectors_override shares nothing with the vehicle
+    # Required accessible restroom (#162): None when the request does not require one (the search is
+    # then exactly the one without the rule); otherwise, per node, whether a stop there satisfies it.
+    access_ok: list[bool] | None = None
 
     def drop(self, i: int, j: int) -> float:
         a, b = self.nodes[i], self.nodes[j]
@@ -405,6 +418,15 @@ def _final_front(plans: list[OraclePlan]) -> list[OraclePlan]:
     return sorted(final, key=lambda x: x.objectives)
 
 
+def requires_accessible_restroom(request: TripRequest) -> bool:
+    """A restroom preference that is both important and wheelchair_required is a hard constraint
+    (ADR 0003 question 3). nice_to_have + wheelchair, and other important amenities, stay soft."""
+    return any(
+        a.category == AmenityCategory.RESTROOM and a.priority == "important" and a.wheelchair_required
+        for a in request.amenities
+    )
+
+
 # --------------------------------------------------------------------------- the oracle
 
 
@@ -426,6 +448,9 @@ class LabelSettingOracle:
         self._requests: OrderedDict[str, Any] = OrderedDict()  # per-request context / problem
         self._requests_signature: tuple | None = None
         self._fronts: OrderedDict = _fronts if _fronts is not None else OrderedDict()  # shared Pareto cache
+        self._restroom_signature: tuple | None = None
+        self._restroom_ok: dict[str, bool] = {}  # station_id -> accessible restroom within the radius
+        self._accessible_restrooms: list[tuple[float, float]] = []
 
     @property
     def energy_cfg(self) -> Mapping[str, Any]:
@@ -447,6 +472,7 @@ class LabelSettingOracle:
             pareto_time_budget_s=None if budget is None else float(budget),
             max_labels=int(max_labels),
             diagnostic_buffer_km=float(ev.get("diagnostic_buffer_km", OracleConfig.diagnostic_buffer_km)),
+            amenity_radius_m=float(cfg["retrieval"]["amenity_radius_m"]),
         )
         return cls(store, dataclasses.replace(oc, **overrides), route_source)
 
@@ -468,7 +494,14 @@ class LabelSettingOracle:
         if self.cfg.method == "exhaustive":
             return build()
         store = self.store
-        signature = (id(store.stations), len(store.stations), id(store.vehicles), len(store.vehicles))
+        signature = (
+            id(store.stations),
+            len(store.stations),
+            id(store.vehicles),
+            len(store.vehicles),
+            id(store.amenities),
+            len(store.amenities),
+        )
         if signature != self._requests_signature:
             self._requests.clear()
             self._requests_signature = signature
@@ -545,6 +578,25 @@ class LabelSettingOracle:
             return self._road(ctx, geo.locate((station.lat, station.lon), ctx.poly))
         return self._road(ctx, self._index.locate(self.store.stations, ctx.route_key, ctx.poly, station))
 
+    def has_accessible_restroom(self, station: Station) -> bool:
+        """Some amenity in the store is a restroom tagged wheelchair == "yes" within amenity_radius_m
+        (straight line) of the station. "unknown" and "limited" never count (proposal section II)."""
+        amenities, radius = self.store.amenities, self.cfg.amenity_radius_m
+        signature = (id(amenities), len(amenities), radius)
+        if signature != self._restroom_signature:
+            self._restroom_signature = signature
+            self._restroom_ok = {}
+            self._accessible_restrooms = [
+                (a.lat, a.lon) for a in amenities if a.category == AmenityCategory.RESTROOM and a.wheelchair == "yes"
+            ]
+        found = self._restroom_ok.get(station.station_id)
+        if found is None:
+            here = (station.lat, station.lon)
+            found = self._restroom_ok[station.station_id] = any(
+                geo.great_circle_km(here, a) * 1000.0 <= radius for a in self._accessible_restrooms
+            )
+        return found
+
     def _problem(self, request: TripRequest) -> _Problem | FeasibilityResult:
         return self._cached("problem", request, lambda: self._build_problem(request))
 
@@ -569,7 +621,10 @@ class LabelSettingOracle:
             nodes = [_Node("origin", 0.0), _Node("destination", ctx.route.distance_km)]
             excluded = {"connector": len(self.store.stations)} if self.store.stations else {}
             detail = f"override {wanted} shares no connector with the vehicle's {supported}"
-            return _Problem(ctx, nodes, excluded, self.cfg.efficiency_penalty, no_overlap_detail=detail)
+            access = [False, False] if requires_accessible_restroom(request) else None
+            return _Problem(
+                ctx, nodes, excluded, self.cfg.efficiency_penalty, no_overlap_detail=detail, access_ok=access
+            )
         cm, dm = self.cfg.charging_model, self.cfg.detour_model
         max_detour = request.max_detour_min
         excluded: Counter[str] = Counter()
@@ -606,26 +661,40 @@ class LabelSettingOracle:
             stations.append(_Node("station", along, access_km(off, dm), det, st, ports[0]))
         stations.sort(key=lambda n: (n.along_km, n.station.station_id))
         nodes = [_Node("origin", 0.0), *stations, _Node("destination", ctx.route.distance_km)]
-        return _Problem(ctx, nodes, dict(excluded), self.cfg.efficiency_penalty)
+        access = None
+        if requires_accessible_restroom(request):
+            access = [n.kind == "station" and self.has_accessible_restroom(n.station) for n in nodes]
+        return _Problem(ctx, nodes, dict(excluded), self.cfg.efficiency_penalty, access_ok=access)
 
     # ---------------------------------------------------------------- feasibility (exact)
 
-    def _reach(self, p: _Problem, total_limit: float | None, floor_dest: float) -> tuple[bool, list[int], float]:
+    def _reach(
+        self, p: _Problem, total_limit: float | None, floor_dest: float, access: bool = True
+    ) -> tuple[bool, list[int], float]:
         """Can the destination be reached? Depart at the cap from every stop (charging never adds
         detour, so this maximises reach). Labels (soc, cumulative detour) are Pareto-pruned, so under
-        a trip-total detour limit a lower-reach, lower-detour path is kept alive."""
+        a trip-total detour limit a lower-reach, lower-detour path is kept alive.
+
+        With a required accessible restroom (p.access_ok; access=False ignores it) a label also
+        records whether a stop so far satisfies it (has). The destination accepts only labels that
+        do, and has=1 is better on that component (-has), so such a label can prune one without it.
+        Without the requirement the keys are exactly the ones of the search without the rule."""
         n, cap, reserve = len(p.nodes), self.cfg.cap, self.cfg.reserve
-        labels: list[list[tuple[float, float, tuple[int, ...]]]] = [[] for _ in range(n)]
-        labels[0] = [(p.ctx.start, 0.0, ())]
-        key = (lambda lab: (-lab[0], lab[1])) if total_limit is not None else (lambda lab: (-lab[0],))
+        need = p.access_ok if access else None
+        labels: list[list[tuple[float, float, int, tuple[int, ...]]]] = [[] for _ in range(n)]
+        labels[0] = [(p.ctx.start, 0.0, 0, ())]
+        if total_limit is not None:
+            key = (lambda lab: (-lab[0], lab[1], -lab[2])) if need else (lambda lab: (-lab[0], lab[1]))
+        else:
+            key = (lambda lab: (-lab[0], -lab[2])) if need else (lambda lab: (-lab[0],))
         furthest = 0.0
         for i in range(n - 1):
-            for soc, det, path in labels[i]:
+            for soc, det, has, path in labels[i]:
                 dep = p.ctx.start if i == 0 else max(soc, cap)
                 for j in range(i + 1, n):
                     arr = dep - p.drop(i, j)
                     if j == n - 1:
-                        if arr >= floor_dest - EPS:
+                        if arr >= floor_dest - EPS and (need is None or has):
                             return True, list(path), p.nodes[-1].along_km
                         continue
                     if arr < reserve - EPS:
@@ -633,7 +702,8 @@ class LabelSettingOracle:
                     nd = det + p.nodes[j].detour_min
                     if total_limit is not None and nd > total_limit + EPS:
                         continue
-                    if _insert(labels[j], (arr, nd, path + (j,)), key):
+                    nh = int(has or (need is not None and need[j]))
+                    if _insert(labels[j], (arr, nd, nh, path + (j,)), key):
                         furthest = max(furthest, p.nodes[j].along_km)
         return False, [], furthest
 
@@ -656,14 +726,20 @@ class LabelSettingOracle:
                 witness=ids,
                 unknown_status_station_ids=unknown,
             )
-        if p.no_overlap_detail is not None:
+        if p.access_ok is not None and self._reach(p, total, p.ctx.floor_dest, access=False)[0]:
+            reason, detail = (
+                "no_accessible_restroom",
+                "energy-feasible, but no feasible stop sequence has a charging stop with a restroom tagged "
+                f"wheelchair=yes within {self.cfg.amenity_radius_m:g} m (important + wheelchair_required)",
+            )
+        elif p.no_overlap_detail is not None:
             reason, detail = "connector_no_overlap", p.no_overlap_detail
-        elif total is not None and self._reach(p, None, p.ctx.floor_dest)[0]:
+        elif total is not None and self._reach(p, None, p.ctx.floor_dest, access=False)[0]:
             reason, detail = (
                 "detour_total_exceeded",
                 f"every feasible stop sequence exceeds {total} min of total detour",
             )
-        elif self._reach(p, total, self.cfg.reserve)[0]:
+        elif self._reach(p, total, self.cfg.reserve, access=False)[0]:
             reason, detail = (
                 "arrival_soc_unreachable",
                 f"the destination is reachable but not with {p.ctx.floor_dest}% left",
@@ -707,7 +783,14 @@ class LabelSettingOracle:
         key = (
             json.dumps(dataclasses.asdict(self.cfg), sort_keys=True, default=str),
             request.model_dump_json(),
-            (id(store.stations), len(store.stations), id(store.vehicles), len(store.vehicles)),
+            (
+                id(store.stations),
+                len(store.stations),
+                id(store.vehicles),
+                len(store.vehicles),
+                id(store.amenities),
+                len(store.amenities),
+            ),
         )
         found = self._fronts.get(key)
         if found is None:
@@ -727,14 +810,19 @@ class LabelSettingOracle:
         ctx, nodes, n = p.ctx, p.nodes, len(p.nodes)
         cm = self.cfg.charging_model
         total = request.max_detour_min if self.cfg.detour_scope == "total" else None
-        fronts: list[list[_Label]] = [[] for _ in range(n)]
-        fronts[0] = [_Label(0, 0.0, ctx.start, 0.0, 0.0, None, None)]
+        # Layer h of a node holds the labels with (h=1) or without (h=0) a stop that satisfies the
+        # required accessible restroom. Without the requirement there is one layer, and the search is
+        # exactly the one without the rule.
+        need = p.access_ok
+        layers = 1 if need is None else 2
+        fronts: list[list[list[_Label]]] = [[[] for _ in range(layers)] for _ in range(n)]
+        fronts[0][0] = [_Label(0, 0.0, ctx.start, 0.0, 0.0, None, None)]
         unknown = self._unknown_flags(nodes)
         count, complete, reason = 1, True, None
-        for i in range(n - 1):
+        for i, h in ((i, h) for i in range(n - 1) for h in range(layers)):
             if not complete:
                 break
-            for lab in list(fronts[i]):
+            for lab in list(fronts[i][h]):
                 if budget is not None and time.monotonic() - started >= budget:
                     complete, reason = False, "time_budget"
                     break
@@ -748,6 +836,9 @@ class LabelSettingOracle:
                     ]
                 for dep, cmin in deps:
                     for j in range(i + 1, n):
+                        nh = h or int(need is not None and need[j])
+                        if j == n - 1 and nh < layers - 1:
+                            continue  # the required accessible restroom was never reached
                         floor = ctx.floor_dest if j == n - 1 else self.cfg.reserve
                         if i > 0:  # leaving a charging stop: the planner's buffer policy, if any
                             floor = floor + self.cfg.departure_buffer_pct
@@ -768,7 +859,10 @@ class LabelSettingOracle:
                             (i, lab.soc, dep, cmin) if i > 0 else None,
                             lab.unk + unknown[j],
                         )
-                        if _insert_pref(fronts[j], new, _Label.key, _label_unk):
+                        k, u = new.key(), new.unk
+                        if nh < layers - 1 and any(_beats(o.key(), o.unk, k, u) for o in fronts[j][nh + 1]):
+                            continue  # beaten by a label that also has the accessible restroom
+                        if _insert_pref(fronts[j][nh], new, _Label.key, _label_unk):
                             count += 1
                             if count > self.cfg.max_labels:
                                 complete, reason = False, "max_labels"
@@ -777,7 +871,7 @@ class LabelSettingOracle:
                         break
                 if not complete:
                     break
-        plans = [self._to_plan(p, lab) for lab in fronts[-1]]
+        plans = [self._to_plan(p, lab) for lab in fronts[-1][layers - 1]]
         return ParetoResult(_final_front(plans), complete, incomplete_reason=reason, n_labels=count)
 
     def _pareto_fast(self, request: TripRequest) -> ParetoResult:
@@ -796,26 +890,32 @@ class LabelSettingOracle:
         reserve, floor_dest, max_labels = self.cfg.reserve, ctx.floor_dest, self.cfg.max_labels
         buffer = self.cfg.departure_buffer_pct
         duration, distance = ctx.route.duration_min, ctx.route.distance_km
-        fronts = [_Front() for _ in range(n)]
+        need = p.access_ok  # same layers as _pareto (one layer without the requirement)
+        layers = 1 if need is None else 2
+        top = layers - 1
+        fronts = [[_Front() for _ in range(layers)] for _ in range(n)]
         first = _Label(0, 0.0, ctx.start, 0.0, 0.0, None, None)
-        fronts[0].add(first, first.key())
+        fronts[0][0].add(first, first.key())
         unknown = self._unknown_flags(nodes)
         count, complete, reason = 1, True, None
         last = n - 1
-        for i in range(n - 1):
+        for i, h in ((i, h) for i in range(n - 1) for h in range(layers)):
             if not complete:
                 break
             # Per node i: the reference recomputes these for every label and departure, identically.
-            succ = []  # (j, drop, floor - EPS, add_det, drive, unknown_j)
+            succ = []  # (j, drop, floor - EPS, add_det, drive, unknown_j, layer of the new label)
             for j in range(i + 1, n):
+                nh = h or int(need is not None and need[j])
+                if j == last and nh < top:
+                    continue  # the required accessible restroom was never reached
                 floor = floor_dest if j == last else reserve
                 if i > 0:  # same buffer policy as _pareto
                     floor = floor + buffer
                 add_det = nodes[j].detour_min if j < last else 0.0
                 drive = duration * (nodes[j].along_km - nodes[i].along_km) / distance
-                succ.append((j, p.drop(i, j), floor - EPS, add_det, drive, unknown[j]))
+                succ.append((j, p.drop(i, j), floor - EPS, add_det, drive, unknown[j], nh))
             port = nodes[i].port
-            for lab in list(fronts[i].labels):
+            for lab in list(fronts[i][h].labels):
                 if budget is not None and time.monotonic() - started >= budget:
                     complete, reason = False, "time_budget"
                     break
@@ -832,7 +932,7 @@ class LabelSettingOracle:
                     charge = lab_charge + cmin
                     t3 = charge + EPS
                     stop = (i, lab.soc, dep, cmin) if i > 0 else None
-                    for j, drop, floor_eps, add_det, drive, unk_j in succ:
+                    for j, drop, floor_eps, add_det, drive, unk_j, nh in succ:
                         arr = dep - drop
                         if arr < floor_eps:
                             continue
@@ -841,12 +941,15 @@ class LabelSettingOracle:
                             continue
                         t = t_base + drive + add_det
                         neg_soc = -arr
-                        front = fronts[j]
+                        front = fronts[j][nh]
                         unk = lab_unk + unk_j
-                        if front.dominated(t + EPS, neg_soc + EPS, detour + EPS, t3, (t, neg_soc, detour, charge), unk):
+                        key = (t, neg_soc, detour, charge)
+                        if nh < top and fronts[j][top].dominated(t + EPS, neg_soc + EPS, detour + EPS, t3, key, unk):
+                            continue  # beaten by a label that also has the accessible restroom
+                        if front.dominated(t + EPS, neg_soc + EPS, detour + EPS, t3, key, unk):
                             continue
                         new = _Label(j, t, arr, detour, charge, lab, stop, unk)
-                        front.add(new, (t, neg_soc, detour, charge))
+                        front.add(new, key)
                         count += 1
                         if count > max_labels:
                             complete, reason = False, "max_labels"
@@ -855,7 +958,7 @@ class LabelSettingOracle:
                         break
                 if not complete:
                     break
-        plans = [self._to_plan(p, lab) for lab in fronts[-1].labels]
+        plans = [self._to_plan(p, lab) for lab in fronts[-1][top].labels]
         return ParetoResult(_final_front(plans), complete, incomplete_reason=reason, n_labels=count)
 
     def _unknown_flags(self, nodes: list[_Node]) -> list[int]:
@@ -930,6 +1033,8 @@ class LabelSettingOracle:
 
         soc, prev_along, prev_access = ctx.start, 0.0, 0.0
         replay, priced = True, True
+        restroom_required = requires_accessible_restroom(request)
+        restroom_found = False
         oracle_km = detour_sum = charge_sum = 0.0
         uses_unknown = False
         for k, stop in enumerate(itinerary.stops):
@@ -942,6 +1047,8 @@ class LabelSettingOracle:
                 bad("status", f"{st.station_id} is {st.status.value}", k)
             if st.access != "public":
                 bad("access", f"{st.station_id} is {st.access}", k)
+            if restroom_required and not restroom_found:
+                restroom_found = self.has_accessible_restroom(st)
             same = [p for p in st.ports if p.connector == stop.connector]
             compat = [p for p in same if port_compatible(p, vehicle, override)]
             if not compat:
@@ -1029,6 +1136,14 @@ class LabelSettingOracle:
                 legs_km = sum(leg.distance_km for leg in itinerary.legs)
                 if abs(legs_km - oracle_km) > cfg.route_distance_tol * oracle_km:
                     bad("route_distance", f"legs sum to {legs_km:.1f} km, oracle {oracle_km:.1f} km")
+        if restroom_required and not restroom_found:
+            # Contract code `access` (as the planner's verifier, #150); a code of its own would be a
+            # contract change (ADR 0004). The detail names the rule.
+            bad(
+                "access",
+                "required wheelchair-accessible restroom missing: no charging stop has a restroom tagged "
+                f"wheelchair=yes within {cfg.amenity_radius_m:g} m",
+            )
         if (
             cfg.detour_scope == "total"
             and max_detour is not None
