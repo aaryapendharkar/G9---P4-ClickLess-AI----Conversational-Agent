@@ -5,7 +5,7 @@
 # is in result.evidence: the station or amenity record, or the DERIVED station-amenity distance.
 # A claim citing only planning numbers (verified:... ids) or an id the result does not carry has
 # no source: it is still listed, with an empty ?source, so it is visible rather than dropped.
-PREFIX cc:   <https://example.org/clickless#>
+PREFIX cc:   <https://w3id.org/clickless#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
 SELECT ?claim ?text ?source ?sourceName ?sourceRecordId ?retrievedAt

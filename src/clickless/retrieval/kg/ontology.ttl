@@ -1,15 +1,22 @@
-@prefix cc:   <https://example.org/clickless#> .
+@prefix cc:   <https://w3id.org/clickless#> .
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix owl:  <http://www.w3.org/2002/07/owl#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 @prefix prov: <http://www.w3.org/ns/prov#> .
 
-# Minimal domain ontology v0.3 (proposal §III-C). Owner: Manas.
+# Minimal domain ontology v0.4 (proposal §III-C). Owner: Manas.
 # v0.2 (ADR 0015): the terms retrieval/kg/build.py writes and retrieval/kg/enrich.py reads, incl.
 # the four terms CQ2-CQ6 proposed in docs/COMPETENCY_QUESTIONS.md.
-# TODO(Manas): replace example.org namespace; align Claim/Source with PROV-O; add competency
-# questions in docs/COMPETENCY_QUESTIONS.md and make sure each is answerable.
+# v0.3 (#157, #158): the CQ9 explanation terms and cc:maxDcKw (CQ14).
+# v0.4 (ADR 0019, #159): final namespace https://w3id.org/clickless# (was the placeholder
+# https://example.org/clickless#) and the PROV-O alignment at the end of this file.
+# Data IRIs (cc:station_..., cc:source_..., ...) share the namespace; build.py mints them.
+
+<https://w3id.org/clickless> a owl:Ontology ;
+    rdfs:label "ClickLess EV charging-trip ontology" ;
+    rdfs:comment "Stations, ports, networks, connectors, vehicles, amenities and the provenance of their source records, for the ClickLess Config C knowledge graph. Provenance terms are aligned with PROV-O (ADR 0019)." ;
+    owl:versionInfo "0.4" .
 
 cc:Station       a owl:Class .
 cc:ChargingPort  a owl:Class .
@@ -33,8 +40,8 @@ cc:portCount     a owl:DatatypeProperty ; rdfs:domain cc:ChargingPort ; rdfs:ran
 cc:distanceM     a owl:DatatypeProperty ; rdfs:domain cc:Proximity ; rdfs:range xsd:decimal .
 cc:wheelchair    a owl:DatatypeProperty ; rdfs:domain cc:Amenity ; rdfs:range xsd:string .
 cc:status        a owl:DatatypeProperty ; rdfs:domain cc:Station ; rdfs:range xsd:string .
-cc:retrievedAt   a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
-cc:sourceUpdatedAt a owl:DatatypeProperty ; rdfs:range xsd:dateTime .
+cc:retrievedAt   a owl:DatatypeProperty ; rdfs:domain cc:Source ; rdfs:range xsd:dateTime .
+cc:sourceUpdatedAt a owl:DatatypeProperty ; rdfs:domain cc:Source ; rdfs:range xsd:dateTime .
 
 # v0.2 -------------------------------------------------------------------------------------
 # Station NEAR Amenity as an n-ary link, so the straight-line distance has a node to hang on.
@@ -71,3 +78,45 @@ cc:CCS1    a cc:Connector .
 cc:NACS    a cc:Connector .
 cc:CHADEMO a cc:Connector .
 cc:J1772   a cc:Connector .
+
+# v0.4 PROV-O alignment (ADR 0019) ------------------------------------------------------------
+# One-way axioms only (rdfs:subClassOf / rdfs:subPropertyOf), and only where the meaning matches:
+# every cc:Claim is a prov:Entity, but not every prov:Entity is a claim, so nothing here is
+# owl:equivalentClass or owl:equivalentProperty. The stored graph is NOT materialized: build.py
+# writes cc: triples only (as for cc:supportsViaAdapter, CQ5). A PROV-O consumer gets the prov:
+# view through these axioms, with an RDFS reasoner or with SPARQL paths such as
+# `?claim ?p ?source . ?p rdfs:subPropertyOf* prov:wasDerivedFrom` (tests/retrieval/test_kg_prov_alignment.py).
+#
+# The PROV-O terms used, declared as PROV-O declares them, so OWL tools need no owl:imports.
+prov:Entity          a owl:Class .
+prov:Collection      a owl:Class .
+prov:wasDerivedFrom  a owl:ObjectProperty .
+prov:hadMember       a owl:ObjectProperty .
+prov:generatedAtTime a owl:DatatypeProperty .
+
+# A cc:Source is one source record as ClickLess retrieved it (an AFDC station record, an OSM
+# amenity, a curated vehicle row, or a DERIVED value such as a haversine distance): a digital
+# entity. (cc:Source rdfs:subClassOf prov:Entity is declared with the class above.)
+# Our copy of the record exists from its retrieval on. For a DERIVED source, cc:retrievedAt is the
+# later input's retrieval time (ADR 0015 §4), the earliest time the computed value can exist.
+cc:retrievedAt   rdfs:subPropertyOf prov:generatedAtTime .
+
+# A claim is a sentence the explainer generated; it is cc:supportedBy a source only when it cites
+# a fact of that record that the result carries (ADR 0015 §5), i.e. the claim was made from it.
+cc:Claim         rdfs:subClassOf    prov:Entity .
+cc:supportedBy   rdfs:subPropertyOf prov:wasDerivedFrom .
+
+# An explanation is a structured set of claims.
+cc:Explanation   rdfs:subClassOf    prov:Collection .
+cc:hasClaim      rdfs:subPropertyOf prov:hadMember .
+
+# Deliberately not mapped (ADR 0019):
+#   cc:hasProvenance   its subjects are stations, amenities and station-amenity proximities, i.e.
+#                      the things, not records about them; prov:wasDerivedFrom would state that a
+#                      charging station was derived from a database record.
+#   cc:sourceUpdatedAt the generation time of the upstream revision, a different entity from our
+#                      retrieved copy; a second prov:generatedAtTime would give one entity two.
+#   cc:sourceName      a literal naming the provider; prov:wasAttributedTo needs a prov:Agent node.
+#   cc:sourceRecordId, cc:sourceUrl   identifiers of the upstream record (prov:atLocation takes a
+#                      prov:Location, not a URL literal).
+#   cc:dataStatus      ClickLess's static / cached / runtime label; PROV has no counterpart.

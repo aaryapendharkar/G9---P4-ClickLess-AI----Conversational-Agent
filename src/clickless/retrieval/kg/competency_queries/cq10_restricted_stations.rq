@@ -1,7 +1,7 @@
 # CQ10: Which stations are not open to the public, and what access does the source give?
 # Author: Aarya (#158, on Manas's behalf). Every station has cc:access ("public" or "restricted",
 # Station.access); planning never routes to a restricted one (planning/filters.py).
-PREFIX cc:   <https://example.org/clickless#>
+PREFIX cc:   <https://w3id.org/clickless#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
 SELECT ?station ?name ?access

@@ -2,7 +2,7 @@
 # Author: Aarya (learning swap). Assumes the stored graph asserts native connectors with
 # cc:supports and adapter connectors with cc:supportsViaAdapter only (no RDFS materialization of
 # the subPropertyOf link); otherwise every adapter connector would also match cc:supports.
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT ?connector
 WHERE {

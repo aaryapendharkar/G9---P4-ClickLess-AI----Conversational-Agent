@@ -2,7 +2,7 @@
 # Author: Aarya (#158). ADR 0010: a port whose power the source doesn't report has no cc:powerKw.
 # Such a station can still be used, but its charging time can only be estimated with an assumed
 # power, so the explanation must say so.
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT ?station
 WHERE {

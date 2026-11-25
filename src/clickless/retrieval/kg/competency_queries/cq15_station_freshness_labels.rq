@@ -3,7 +3,7 @@
 # static reference data is not judged; cached/live data without a source update date is "source
 # update date unknown"; older than the cutoff is "may be out of date" (bind ?cutoff =
 # provenance.stale_cutoff(retrieved_at), as in CQ6); otherwise "up to date".
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT ?station ?dataStatus ?freshness
 WHERE {

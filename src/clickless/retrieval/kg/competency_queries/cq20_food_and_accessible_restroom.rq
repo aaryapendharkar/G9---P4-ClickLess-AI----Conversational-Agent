@@ -1,7 +1,7 @@
 # CQ20: Which stations have both a food place and a wheelchair-accessible restroom within 400 m?
 # Author: Aarya (#158). The combined stop the benchmark's accessibility items ask for. Only an
 # explicit wheelchair=yes counts (an untagged restroom is unknown, never accessible; ADR 0011).
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT ?station ?food ?restroom
 WHERE {

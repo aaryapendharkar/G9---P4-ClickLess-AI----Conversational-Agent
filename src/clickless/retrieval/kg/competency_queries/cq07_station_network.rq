@@ -2,7 +2,7 @@
 # Author: Aarya (#157, on Manas's behalf). A station whose source reports no network has no
 # cc:operatedBy triple (build.py: nothing unknown gets a triple), so it returns no row: the
 # network is unknown, never guessed. Stations of one network share its node.
-PREFIX cc:   <https://example.org/clickless#>
+PREFIX cc:   <https://w3id.org/clickless#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
 SELECT ?network ?networkName

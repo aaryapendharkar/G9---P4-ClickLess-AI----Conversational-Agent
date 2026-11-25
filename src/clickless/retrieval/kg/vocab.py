@@ -1,4 +1,4 @@
-"""The cc: terms the KG code writes and reads (ontology.ttl v0.2). Owner: Manas.
+"""The cc: terms the KG code writes and reads (ontology.ttl v0.4, namespace: ADR 0019). Owner: Manas.
 
 Imports rdflib, so only build.py / enrich.py import this module, and only inside functions.
 Every term here must be declared in ontology.ttl (tests/retrieval/test_kg_enrichment.py checks).
