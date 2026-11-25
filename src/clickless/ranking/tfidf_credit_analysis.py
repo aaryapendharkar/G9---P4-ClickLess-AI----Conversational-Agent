@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from statistics import mean
 from typing import Any, Literal
 
 from ..contracts import Itinerary, TripRequest
@@ -193,6 +194,68 @@ def compare_policy_costs(
         )
 
     return comparison
+
+
+def summarize_policy_results(
+    item_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Summarize recommendation changes without hiding per-item evidence.
+
+    Keeping this reusable calculation in the installed ``clickless`` package
+    lets both the command-line analysis script and its tests import the same
+    implementation on developer machines and in CI.
+    """
+
+    planned_items = [
+        result
+        for result in item_results
+        if result["status"] == "planned"
+    ]
+
+    summary: dict[str, Any] = {
+        "items_loaded": len(item_results),
+        "items_planned": len(planned_items),
+        "items_skipped_or_unplanned": len(item_results) - len(planned_items),
+    }
+
+    if not planned_items:
+        return summary
+
+    raw_recommendations = {
+        result["item_id"]: result["policies"]["raw"]["recommended"][
+            "itinerary_id"
+        ]
+        for result in planned_items
+    }
+
+    summary["policy_results"] = {}
+
+    for policy in CREDIT_POLICIES:
+        recommended_results = [
+            result["policies"][policy]["recommended"]
+            for result in planned_items
+        ]
+        changed_item_ids = [
+            result["item_id"]
+            for result in planned_items
+            if result["policies"][policy]["recommended"]["itinerary_id"]
+            != raw_recommendations[result["item_id"]]
+        ]
+
+        summary["policy_results"][policy] = {
+            "recommendations_changed_from_raw": len(changed_item_ids),
+            "changed_item_ids": changed_item_ids,
+            "mean_recommended_amenity_credit_min": mean(
+                result["amenity_credit_min"]
+                for result in recommended_results
+            ),
+            "mean_recommended_amenity_satisfaction": mean(
+                result["amenity_satisfaction"]
+                for result in recommended_results
+            ),
+        }
+
+    return summary
 
 
 def _calculate_amenity_credit(

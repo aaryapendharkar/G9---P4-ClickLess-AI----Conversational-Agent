@@ -16,15 +16,14 @@ import argparse
 import json
 from dataclasses import asdict
 from pathlib import Path
-from statistics import mean
 from typing import Any
 
 from clickless.config import load_config, repo_path
 from clickless.contracts import AmenityPreference, TripRequest
 from clickless.pipeline import build_pipeline
 from clickless.ranking.tfidf_credit_analysis import (
-    CREDIT_POLICIES,
     compare_policy_costs,
+    summarize_policy_results,
 )
 from evaluation.harness import git_commit
 from evaluation.metrics.planning import request_from_item
@@ -224,52 +223,6 @@ def _analyze_item(
     }
 
 
-def _summarize(item_results: list[dict[str, Any]]) -> dict[str, Any]:
-    """Summarize recommendation changes without hiding per-item evidence."""
-
-    planned_items = [result for result in item_results if result["status"] == "planned"]
-
-    summary: dict[str, Any] = {
-        "items_loaded": len(item_results),
-        "items_planned": len(planned_items),
-        "items_skipped_or_unplanned": len(item_results) - len(planned_items),
-    }
-
-    if not planned_items:
-        return summary
-
-    raw_recommendations = {
-        result["item_id"]: result["policies"]["raw"]["recommended"]["itinerary_id"]
-        for result in planned_items
-    }
-
-    summary["policy_results"] = {}
-
-    for policy in CREDIT_POLICIES:
-        recommended_results = [
-            result["policies"][policy]["recommended"] for result in planned_items
-        ]
-        changed_item_ids = [
-            result["item_id"]
-            for result in planned_items
-            if result["policies"][policy]["recommended"]["itinerary_id"]
-            != raw_recommendations[result["item_id"]]
-        ]
-
-        summary["policy_results"][policy] = {
-            "recommendations_changed_from_raw": len(changed_item_ids),
-            "changed_item_ids": changed_item_ids,
-            "mean_recommended_amenity_credit_min": mean(
-                result["amenity_credit_min"] for result in recommended_results
-            ),
-            "mean_recommended_amenity_satisfaction": mean(
-                result["amenity_satisfaction"] for result in recommended_results
-            ),
-        }
-
-    return summary
-
-
 def run_analysis(
     output_path: Path,
     limit: int | None = None,
@@ -314,7 +267,7 @@ def run_analysis(
             **git_commit(),
             **snapshot_info(config),
         },
-        "summary": _summarize(item_results),
+        "summary": summarize_policy_results(item_results),
         "items": item_results,
     }
 

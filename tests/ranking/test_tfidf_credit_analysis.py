@@ -7,8 +7,8 @@ from clickless.ranking.tfidf_credit_analysis import (
     CREDIT_POLICIES,
     apply_credit_policy,
     compare_policy_costs,
+    summarize_policy_results,
 )
-from scripts.analyze_tfidf_credit import _summarize
 
 
 def test_raw_policy_preserves_original_scores_without_mutating_input():
@@ -247,7 +247,7 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
         },
     ]
 
-    summary = _summarize(item_results)
+    summary = summarize_policy_results(item_results)
 
     assert summary["items_loaded"] == 3
     assert summary["items_planned"] == 2
