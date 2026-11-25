@@ -27,6 +27,7 @@ from clickless.pipeline import build_pipeline
 from clickless.ranking.tfidf_credit_analysis import (
     PreparedAnalysisRequest,
     compare_policy_costs,
+    matcher_score_diagnostics,
     prepare_analysis_request,
     summarize_policy_results,
     verified_candidate_itineraries,
@@ -152,6 +153,11 @@ def run_analysis(
                 }
             )
 
+    matcher_diagnostics = matcher_score_diagnostics(
+        pipeline.matcher,
+        pipeline.store.amenities,
+    )
+
     report = {
         "config": "A",
         "split": "dev",
@@ -161,6 +167,7 @@ def run_analysis(
             **git_commit(),
             **snapshot_info(config),
         },
+        "matcher_diagnostics": matcher_diagnostics,
         "summary": summarize_policy_results(item_results),
         "items": item_results,
     }

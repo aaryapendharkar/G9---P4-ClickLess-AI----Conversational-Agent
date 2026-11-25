@@ -1,5 +1,7 @@
 """Tests for the DEV-only TF-IDF amenity-credit policy comparison."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from clickless.contracts import (
@@ -13,11 +15,128 @@ from clickless.ranking.tfidf_credit_analysis import (
     CREDIT_POLICIES,
     apply_credit_policy,
     compare_policy_costs,
+    matcher_score_diagnostics,
     prepare_analysis_request,
     summarize_policy_results,
     verified_candidate_itineraries,
 )
 from clickless.ranking.weighted_ranker import WeightedRanker
+from clickless.retrieval.tfidf_matcher import TfidfMatcher
+
+
+def _fixture_amenity(store, amenity_id):
+    """Find one readable fixture amenity for matcher diagnostics."""
+
+    return next(
+        amenity for amenity in store.amenities if amenity.amenity_id == amenity_id
+    )
+
+
+def test_matcher_diagnostics_report_named_and_unnamed_groups(
+    store,
+):
+    """Generated evidence must expose both document groups separately."""
+
+    named_diner = _fixture_amenity(
+        store,
+        "fix:a02",
+    )
+    unnamed_diner = named_diner.model_copy(
+        update={
+            "amenity_id": "analysis:unnamed-diner",
+            "name": None,
+        }
+    )
+    diagnostic_amenities = [
+        named_diner,
+        unnamed_diner,
+    ]
+    diagnostic_store = SimpleNamespace(amenities=diagnostic_amenities)
+    matcher = TfidfMatcher(diagnostic_store)
+
+    diagnostics = matcher_score_diagnostics(
+        matcher,
+        diagnostic_amenities,
+        queries=[
+            (
+                AmenityCategory.FOOD,
+                "lunch",
+            )
+        ],
+    )
+
+    assert len(diagnostics) == 1
+
+    lunch_diagnostic = diagnostics[0]
+
+    assert lunch_diagnostic["category"] == "food"
+    assert lunch_diagnostic["phrase"] == "lunch"
+    assert lunch_diagnostic["named"]["count"] == 1
+    assert lunch_diagnostic["unnamed"]["count"] == 1
+    assert (
+        lunch_diagnostic["unnamed"]["mean_score"]
+        > lunch_diagnostic["named"]["mean_score"]
+    )
+
+
+def test_generic_food_phrases_fall_back_to_known_category_terms(
+    store,
+):
+    """Out-of-vocabulary wording currently contributes only its category."""
+
+    matcher = TfidfMatcher(store)
+    diner = _fixture_amenity(store, "fix:a02")
+
+    category_only = AmenityPreference(
+        category=AmenityCategory.FOOD,
+        phrase="food",
+    )
+    lunch = AmenityPreference(
+        category=AmenityCategory.FOOD,
+        phrase="lunch",
+    )
+    quick_bite = AmenityPreference(
+        category=AmenityCategory.FOOD,
+        phrase="grab a quick bite",
+    )
+
+    category_score = matcher.score(category_only, diner)
+    lunch_score = matcher.score(lunch, diner)
+    quick_bite_score = matcher.score(quick_bite, diner)
+
+    assert 0.0 < category_score < 1.0
+    assert lunch_score == pytest.approx(category_score)
+    assert quick_bite_score == pytest.approx(category_score)
+
+
+def test_unnamed_amenity_can_outscore_same_named_document(
+    store,
+):
+    """A proper name can dilute shared category terms under L2 cosine."""
+
+    matcher = TfidfMatcher(store)
+    named_diner = _fixture_amenity(store, "fix:a02")
+    unnamed_diner = named_diner.model_copy(
+        update={
+            "amenity_id": "analysis:unnamed-diner",
+            "name": None,
+        }
+    )
+    lunch = AmenityPreference(
+        category=AmenityCategory.FOOD,
+        phrase="lunch",
+    )
+
+    named_score = matcher.score(
+        lunch,
+        named_diner,
+    )
+    unnamed_score = matcher.score(
+        lunch,
+        unnamed_diner,
+    )
+
+    assert 0.0 < named_score < unnamed_score < 1.0
 
 
 def test_prepare_analysis_request_records_parsed_and_fallback_phrases():
@@ -268,23 +387,19 @@ def test_policy_comparison_reports_policy_independent_trip_facts(
             for result in results_for_itinerary
         )
         assert all(
-            result.matched_preference_keys
-            == first_result.matched_preference_keys
+            result.matched_preference_keys == first_result.matched_preference_keys
             for result in results_for_itinerary
         )
         assert all(
-            result.total_time_min
-            == pytest.approx(first_result.total_time_min)
+            result.total_time_min == pytest.approx(first_result.total_time_min)
             for result in results_for_itinerary
         )
         assert first_result.total_time_min == pytest.approx(
-            itinerary.total_drive_min
-            + itinerary.total_charge_min
+            itinerary.total_drive_min + itinerary.total_charge_min
         )
 
     fastest_extra_time = min(
-        result.extra_time_vs_fastest_min
-        for result in comparison["raw"]
+        result.extra_time_vs_fastest_min for result in comparison["raw"]
     )
     assert fastest_extra_time == pytest.approx(0.0)
 

@@ -15,8 +15,20 @@ from dataclasses import dataclass
 from statistics import mean
 from typing import Any, Literal
 
-from ..contracts import AmenityPreference, Itinerary, Place, TripRequest
-from .cost import best_match_per_preference, plan_cost, resolve_profile
+from ..contracts import (
+    Amenity,
+    AmenityCategory,
+    AmenityPreference,
+    Itinerary,
+    Place,
+    TripRequest,
+)
+from .cost import (
+    amenity_value_for_preference,
+    best_match_per_preference,
+    plan_cost,
+    resolve_profile,
+)
 
 CreditPolicy = Literal["raw", "gated_full", "normalized"]
 PhraseSource = Literal["parsed", "category_fallback"]
@@ -25,6 +37,18 @@ CREDIT_POLICIES: tuple[CreditPolicy, ...] = (
     "raw",
     "gated_full",
     "normalized",
+)
+
+MATCHER_DIAGNOSTIC_QUERIES: tuple[
+    tuple[AmenityCategory, str],
+    ...,
+] = (
+    (AmenityCategory.FOOD, "lunch"),
+    (AmenityCategory.FOOD, "grab a quick bite"),
+    (AmenityCategory.FOOD, "food"),
+    (AmenityCategory.COFFEE, "coffee"),
+    (AmenityCategory.RESTROOM, "restroom"),
+    (AmenityCategory.RESTROOM, "bathroom break"),
 )
 
 
@@ -162,26 +186,20 @@ def verified_candidate_itineraries(
     for candidate in candidates:
         for nearby_amenity in candidate.amenities:
             for preference in request.amenities:
-                nearby_amenity.match_scores[preference.key] = (
-                    pipeline.matcher.score(
-                        preference,
-                        nearby_amenity.amenity,
-                    )
+                nearby_amenity.match_scores[preference.key] = pipeline.matcher.score(
+                    preference,
+                    nearby_amenity.amenity,
                 )
 
-        candidate.detour_min_est = (
-            pipeline.detour_measurer.detour_min(
-                route,
-                candidate,
-            )
+        candidate.detour_min_est = pipeline.detour_measurer.detour_min(
+            route,
+            candidate,
         )
 
-    compatible_candidates, _rejected_candidates = (
-        pipeline.filter.apply(
-            candidates,
-            request,
-            vehicle,
-        )
+    compatible_candidates, _rejected_candidates = pipeline.filter.apply(
+        candidates,
+        request,
+        vehicle,
     )
     planned_itineraries = pipeline.planner.plan(
         request,
@@ -200,6 +218,62 @@ def verified_candidate_itineraries(
             route,
         ).ok
     ]
+
+
+def matcher_score_diagnostics(
+    matcher: Any,
+    amenities: Sequence[Amenity],
+    queries: Sequence[tuple[AmenityCategory, str]] = MATCHER_DIAGNOSTIC_QUERIES,
+) -> list[dict[str, Any]]:
+    """Compare named and unnamed scores for fixed generic queries.
+
+    Every amenity in the selected datastore is included. Results therefore
+    describe the run's actual snapshot rather than a hand-picked example.
+    """
+
+    diagnostics: list[dict[str, Any]] = []
+
+    for category, phrase in queries:
+        preference = AmenityPreference(
+            category=category,
+            phrase=phrase,
+        )
+        category_amenities = [
+            amenity for amenity in amenities if amenity.category is category
+        ]
+        named_scores = [
+            matcher.score(preference, amenity)
+            for amenity in category_amenities
+            if amenity.name
+        ]
+        unnamed_scores = [
+            matcher.score(preference, amenity)
+            for amenity in category_amenities
+            if not amenity.name
+        ]
+
+        diagnostics.append(
+            {
+                "category": category.value,
+                "phrase": phrase,
+                "named": _score_group_summary(named_scores),
+                "unnamed": _score_group_summary(unnamed_scores),
+            }
+        )
+
+    return diagnostics
+
+
+def _score_group_summary(
+    scores: Sequence[float],
+) -> dict[str, int | float | None]:
+    """Return a deterministic count and mean for one document group."""
+
+    return {
+        "count": len(scores),
+        "mean_score": mean(scores) if scores else None,
+    }
+
 
 def apply_credit_policy(
     raw_scores_by_itinerary: Mapping[str, Mapping[str, float]],
@@ -439,93 +513,57 @@ def summarize_policy_results(
 
     for policy in CREDIT_POLICIES:
         recommended_results = [
-            result["policies"][policy]["recommended"]
-            for result in planned_items
+            result["policies"][policy]["recommended"] for result in planned_items
         ]
         changed_items = [
             result
             for result in planned_items
-            if result["policies"][policy]["recommended"][
-                "itinerary_id"
-            ]
+            if result["policies"][policy]["recommended"]["itinerary_id"]
             != raw_recommendations[result["item_id"]]
         ]
-        changed_item_ids = [
-            result["item_id"]
-            for result in changed_items
-        ]
+        changed_item_ids = [result["item_id"] for result in changed_items]
 
         changed_item_outcomes = []
 
         for result in changed_items:
-            raw_recommendation = result["policies"]["raw"][
-                "recommended"
-            ]
-            policy_recommendation = result["policies"][policy][
-                "recommended"
-            ]
+            raw_recommendation = result["policies"]["raw"]["recommended"]
+            policy_recommendation = result["policies"][policy]["recommended"]
 
-            raw_matched_preferences = set(
-                raw_recommendation[
-                    "matched_preference_keys"
-                ]
-            )
+            raw_matched_preferences = set(raw_recommendation["matched_preference_keys"])
             policy_matched_preferences = set(
-                policy_recommendation[
-                    "matched_preference_keys"
-                ]
+                policy_recommendation["matched_preference_keys"]
             )
 
             changed_item_outcomes.append(
                 {
                     "item_id": result["item_id"],
-                    "raw_itinerary_id": raw_recommendation[
-                        "itinerary_id"
-                    ],
-                    "policy_itinerary_id": policy_recommendation[
-                        "itinerary_id"
-                    ],
+                    "raw_itinerary_id": raw_recommendation["itinerary_id"],
+                    "policy_itinerary_id": policy_recommendation["itinerary_id"],
                     "gained_preference_keys": sorted(
-                        policy_matched_preferences
-                        - raw_matched_preferences
+                        policy_matched_preferences - raw_matched_preferences
                     ),
                     "lost_preference_keys": sorted(
-                        raw_matched_preferences
-                        - policy_matched_preferences
+                        raw_matched_preferences - policy_matched_preferences
                     ),
                     "additional_time_vs_raw_min": (
-                        policy_recommendation[
-                            "total_time_min"
-                        ]
-                        - raw_recommendation[
-                            "total_time_min"
-                        ]
+                        policy_recommendation["total_time_min"]
+                        - raw_recommendation["total_time_min"]
                     ),
                     "policy_extra_time_vs_fastest_min": (
-                        policy_recommendation[
-                            "extra_time_vs_fastest_min"
-                        ]
+                        policy_recommendation["extra_time_vs_fastest_min"]
                     ),
                     "stop_count_change_vs_raw": (
                         policy_recommendation["stop_count"]
                         - raw_recommendation["stop_count"]
                     ),
-                    "policy_drive_min": policy_recommendation[
-                        "drive_min"
-                    ],
-                    "policy_charge_min": policy_recommendation[
-                        "charge_min"
-                    ],
-                    "policy_detour_min": policy_recommendation[
-                        "detour_min"
-                    ],
+                    "policy_drive_min": policy_recommendation["drive_min"],
+                    "policy_charge_min": policy_recommendation["charge_min"],
+                    "policy_detour_min": policy_recommendation["detour_min"],
                 }
             )
 
         summary["policy_results"][policy] = {
-            "recommendations_changed_from_raw": len(
-                changed_item_ids
-            ),
+            "recommendations_changed_from_raw": len(changed_item_ids),
             "changed_item_ids": changed_item_ids,
             "changed_items_using_category_fallback": [
                 item_id
@@ -536,12 +574,10 @@ def summarize_policy_results(
             # These averages use the policy's own score scale. They are
             # descriptive only and must not be compared as objective quality.
             "mean_policy_scaled_recommended_credit_min": mean(
-                result["amenity_credit_min"]
-                for result in recommended_results
+                result["amenity_credit_min"] for result in recommended_results
             ),
             "mean_policy_scaled_recommended_satisfaction": mean(
-                result["amenity_satisfaction"]
-                for result in recommended_results
+                result["amenity_satisfaction"] for result in recommended_results
             ),
         }
 
@@ -555,25 +591,12 @@ def _calculate_amenity_credit(
     """Convert amenity scores into their configured minutes-equivalent credit."""
 
     return sum(
-        _amenity_value_for_preference(preference_key, amenity_values) * score
+        amenity_value_for_preference(
+            amenity_values,
+            preference_key,
+        )
+        * score
         for preference_key, score in preference_scores.items()
-    )
-
-
-def _amenity_value_for_preference(
-    preference_key: str,
-    amenity_values: Mapping[str, float],
-) -> float:
-    """Find a specific weight, falling back to the base amenity category.
-
-    For example, ``restroom_wheelchair`` first looks for its own configured
-    value. If none exists, it falls back to the ``restroom`` value.
-    """
-
-    base_category = preference_key.split("_")[0]
-    return amenity_values.get(
-        preference_key,
-        amenity_values.get(base_category, 0.0),
     )
 
 
