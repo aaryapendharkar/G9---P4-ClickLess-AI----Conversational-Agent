@@ -2,13 +2,77 @@
 
 import pytest
 
+from clickless.contracts import (
+    AmenityCategory,
+    AmenityPreference,
+    Place,
+    TripRequest,
+)
 from clickless.ranking.cost import plan_cost
 from clickless.ranking.tfidf_credit_analysis import (
     CREDIT_POLICIES,
     apply_credit_policy,
     compare_policy_costs,
+    prepare_analysis_request,
     summarize_policy_results,
+    verified_candidate_itineraries,
 )
+from clickless.ranking.weighted_ranker import WeightedRanker
+
+
+def test_prepare_analysis_request_records_parsed_and_fallback_phrases():
+    """The report must distinguish user wording from category fallback text."""
+
+    gold_request = TripRequest(
+        request_id="phrase-source",
+        raw_text="I want a sit-down meal and coffee",
+        origin=Place(text="Origin"),
+        destination=Place(text="Destination"),
+        vehicle_id="test-vehicle",
+        start_soc_pct=50,
+        amenities=[
+            AmenityPreference(category=AmenityCategory.FOOD),
+            AmenityPreference(category=AmenityCategory.COFFEE),
+        ],
+    )
+    parsed_request = TripRequest(
+        request_id="phrase-source",
+        raw_text=gold_request.raw_text,
+        amenities=[
+            AmenityPreference(
+                category=AmenityCategory.COFFEE,
+                phrase="coffee",
+            )
+        ],
+    )
+    resolved_places = {
+        "Origin": Place(text="Origin", lat=1.0, lon=2.0),
+        "Destination": Place(
+            text="Destination",
+            lat=3.0,
+            lon=4.0,
+        ),
+    }
+
+    prepared = prepare_analysis_request(
+        gold_request,
+        parsed_request,
+        resolved_places.__getitem__,
+    )
+
+    assert prepared.request.origin.resolved
+    assert prepared.request.destination.resolved
+    assert [
+        (
+            amenity.key,
+            amenity.phrase,
+            amenity.phrase_source,
+        )
+        for amenity in prepared.amenities
+    ] == [
+        ("food", "food", "category_fallback"),
+        ("coffee", "coffee", "parsed"),
+    ]
 
 
 def test_raw_policy_preserves_original_scores_without_mutating_input():
@@ -95,30 +159,9 @@ def test_policy_comparison_preserves_current_raw_cost(pipe_a, demo_text, cfg_a):
         demo_text,
         request_id="tfidf-credit-raw",
     ).request
-    vehicle = pipe_a.store.vehicle(request.vehicle_id)
-    route = pipe_a.router.route(request.origin, request.destination)
-    candidates = pipe_a.retriever.candidates(route, request)
-
-    for candidate in candidates:
-        candidate.detour_min_est = pipe_a.router.detour_min(route, candidate)
-
-        for nearby_amenity in candidate.amenities:
-            for preference in request.amenities:
-                nearby_amenity.match_scores[preference.key] = pipe_a.matcher.score(
-                    preference,
-                    nearby_amenity.amenity,
-                )
-
-    filtered_candidates, _notes = pipe_a.filter.apply(
-        candidates,
+    itineraries = verified_candidate_itineraries(
+        pipe_a,
         request,
-        vehicle,
-    )
-    itineraries = pipe_a.planner.plan(
-        request,
-        vehicle,
-        route,
-        filtered_candidates,
     )
 
     comparison = compare_policy_costs(
@@ -148,7 +191,7 @@ def test_policy_comparison_preserves_current_raw_cost(pipe_a, demo_text, cfg_a):
         assert experimental_cost.total_min == pytest.approx(current_cost.total_min)
 
 
-def test_policy_comparison_orders_every_policy_by_total_cost(
+def test_raw_policy_order_matches_weighted_ranker(
     pipe_a,
     demo_text,
     cfg_a,
@@ -159,30 +202,9 @@ def test_policy_comparison_orders_every_policy_by_total_cost(
         demo_text,
         request_id="tfidf-credit-ordering",
     ).request
-    vehicle = pipe_a.store.vehicle(request.vehicle_id)
-    route = pipe_a.router.route(request.origin, request.destination)
-    candidates = pipe_a.retriever.candidates(route, request)
-
-    for candidate in candidates:
-        candidate.detour_min_est = pipe_a.router.detour_min(route, candidate)
-
-        for nearby_amenity in candidate.amenities:
-            for preference in request.amenities:
-                nearby_amenity.match_scores[preference.key] = pipe_a.matcher.score(
-                    preference,
-                    nearby_amenity.amenity,
-                )
-
-    filtered_candidates, _notes = pipe_a.filter.apply(
-        candidates,
+    itineraries = verified_candidate_itineraries(
+        pipe_a,
         request,
-        vehicle,
-    )
-    itineraries = pipe_a.planner.plan(
-        request,
-        vehicle,
-        route,
-        filtered_candidates,
     )
 
     comparison = compare_policy_costs(
@@ -191,9 +213,80 @@ def test_policy_comparison_orders_every_policy_by_total_cost(
         cfg_a["tradeoffs"],
     )
 
-    for policy_results in comparison.values():
-        total_costs = [result.total_min for result in policy_results]
-        assert total_costs == sorted(total_costs)
+    weighted_ranker = WeightedRanker(
+        cfg_a["tradeoffs"],
+    )
+    live_ranked_itinerary_ids = [
+        itinerary.itinerary_id
+        for itinerary, _cost in weighted_ranker.rank(
+            itineraries,
+            request,
+        )
+    ]
+    analysis_ranked_itinerary_ids = [
+        result.itinerary_id for result in comparison["raw"]
+    ]
+
+    assert analysis_ranked_itinerary_ids == (live_ranked_itinerary_ids)
+
+
+def test_policy_comparison_reports_policy_independent_trip_facts(
+    pipe_a,
+    demo_text,
+    cfg_a,
+):
+    """Every policy must report the same physical facts for an itinerary."""
+
+    request = pipe_a.parser.parse(
+        demo_text,
+        request_id="tfidf-credit-neutral-facts",
+    ).request
+    itineraries = verified_candidate_itineraries(
+        pipe_a,
+        request,
+    )
+
+    comparison = compare_policy_costs(
+        itineraries,
+        request,
+        cfg_a["tradeoffs"],
+    )
+
+    for itinerary in itineraries:
+        results_for_itinerary = [
+            next(
+                result
+                for result in comparison[policy]
+                if result.itinerary_id == itinerary.itinerary_id
+            )
+            for policy in CREDIT_POLICIES
+        ]
+        first_result = results_for_itinerary[0]
+
+        assert all(
+            result.stop_count == first_result.stop_count
+            for result in results_for_itinerary
+        )
+        assert all(
+            result.matched_preference_keys
+            == first_result.matched_preference_keys
+            for result in results_for_itinerary
+        )
+        assert all(
+            result.total_time_min
+            == pytest.approx(first_result.total_time_min)
+            for result in results_for_itinerary
+        )
+        assert first_result.total_time_min == pytest.approx(
+            itinerary.total_drive_min
+            + itinerary.total_charge_min
+        )
+
+    fastest_extra_time = min(
+        result.extra_time_vs_fastest_min
+        for result in comparison["raw"]
+    )
+    assert fastest_extra_time == pytest.approx(0.0)
 
 
 def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
@@ -203,10 +296,24 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
         {
             "item_id": "planned-change",
             "status": "planned",
+            "amenities": [
+                {
+                    "key": "food",
+                    "phrase": "food",
+                    "phrase_source": "category_fallback",
+                }
+            ],
             "policies": {
                 "raw": {
                     "recommended": {
                         "itinerary_id": "direct",
+                        "stop_count": 0,
+                        "matched_preference_keys": [],
+                        "drive_min": 50.0,
+                        "charge_min": 0.0,
+                        "detour_min": 0.0,
+                        "total_time_min": 50.0,
+                        "extra_time_vs_fastest_min": 0.0,
                         "amenity_credit_min": 1.0,
                         "amenity_satisfaction": 0.1,
                     }
@@ -214,6 +321,13 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
                 "gated_full": {
                     "recommended": {
                         "itinerary_id": "food-stop",
+                        "stop_count": 1,
+                        "matched_preference_keys": ["food"],
+                        "drive_min": 52.0,
+                        "charge_min": 4.0,
+                        "detour_min": 2.0,
+                        "total_time_min": 56.0,
+                        "extra_time_vs_fastest_min": 6.0,
                         "amenity_credit_min": 15.0,
                         "amenity_satisfaction": 1.0,
                     }
@@ -221,6 +335,13 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
                 "normalized": {
                     "recommended": {
                         "itinerary_id": "food-stop",
+                        "stop_count": 1,
+                        "matched_preference_keys": ["food"],
+                        "drive_min": 52.0,
+                        "charge_min": 4.0,
+                        "detour_min": 2.0,
+                        "total_time_min": 56.0,
+                        "extra_time_vs_fastest_min": 6.0,
                         "amenity_credit_min": 15.0,
                         "amenity_satisfaction": 1.0,
                     }
@@ -234,6 +355,13 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
                 policy: {
                     "recommended": {
                         "itinerary_id": "same-stop",
+                        "stop_count": 1,
+                        "matched_preference_keys": ["coffee"],
+                        "drive_min": 40.0,
+                        "charge_min": 10.0,
+                        "detour_min": 1.0,
+                        "total_time_min": 50.0,
+                        "extra_time_vs_fastest_min": 0.0,
                         "amenity_credit_min": 5.0,
                         "amenity_satisfaction": 0.5,
                     }
@@ -252,7 +380,30 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
     assert summary["items_loaded"] == 3
     assert summary["items_planned"] == 2
     assert summary["items_skipped_or_unplanned"] == 1
+    assert summary["amenity_phrase_sources"] == {
+        "parsed": 0,
+        "category_fallback": 1,
+    }
+    assert summary["category_fallback_item_ids"] == ["planned-change"]
 
     gated_summary = summary["policy_results"]["gated_full"]
+
     assert gated_summary["recommendations_changed_from_raw"] == 1
     assert gated_summary["changed_item_ids"] == ["planned-change"]
+    assert gated_summary["changed_items_using_category_fallback"] == ["planned-change"]
+
+    changed_outcome = gated_summary["changed_item_outcomes"][0]
+
+    assert changed_outcome == {
+        "item_id": "planned-change",
+        "raw_itinerary_id": "direct",
+        "policy_itinerary_id": "food-stop",
+        "gained_preference_keys": ["food"],
+        "lost_preference_keys": [],
+        "additional_time_vs_raw_min": 6.0,
+        "policy_extra_time_vs_fastest_min": 6.0,
+        "stop_count_change_vs_raw": 1,
+        "policy_drive_min": 52.0,
+        "policy_charge_min": 4.0,
+        "policy_detour_min": 2.0,
+    }

@@ -10,15 +10,16 @@ Reviewers for the policy decision: Manas and Ian.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from statistics import mean
 from typing import Any, Literal
 
-from ..contracts import Itinerary, TripRequest
+from ..contracts import AmenityPreference, Itinerary, Place, TripRequest
 from .cost import best_match_per_preference, plan_cost, resolve_profile
 
 CreditPolicy = Literal["raw", "gated_full", "normalized"]
+PhraseSource = Literal["parsed", "category_fallback"]
 
 CREDIT_POLICIES: tuple[CreditPolicy, ...] = (
     "raw",
@@ -29,14 +30,176 @@ CREDIT_POLICIES: tuple[CreditPolicy, ...] = (
 
 @dataclass(frozen=True)
 class PolicyItineraryCost:
-    """One itinerary's ranking figures under one experimental credit policy."""
+    """One itinerary's policy score plus policy-independent trip facts."""
 
     policy: CreditPolicy
     itinerary_id: str
+    stop_count: int
+    matched_preference_keys: tuple[str, ...]
+    drive_min: float
+    charge_min: float
+    detour_min: float
+    total_time_min: float
+    extra_time_vs_fastest_min: float
     amenity_credit_min: float
     amenity_satisfaction: float
     total_min: float
 
+
+@dataclass(frozen=True)
+class AnalysisAmenity:
+    """One gold amenity preference and the origin of its TF-IDF phrase."""
+
+    key: str
+    phrase: str
+    phrase_source: PhraseSource
+
+
+@dataclass(frozen=True)
+class PreparedAnalysisRequest:
+    """Resolved gold request plus an audit trail for its amenity phrases."""
+
+    request: TripRequest
+    amenities: tuple[AnalysisAmenity, ...]
+
+
+def prepare_analysis_request(
+    gold_request: TripRequest,
+    parsed_request: TripRequest,
+    geocode: Callable[[str], Place],
+) -> PreparedAnalysisRequest:
+    """Resolve a gold request and record where each TF-IDF phrase came from.
+
+    Gold annotations control planning fields and constraints. The parsed request
+    contributes only natural-language amenity phrases. If the parser misses a
+    phrase, the deterministic category fallback is retained but explicitly
+    labelled so the report cannot present it as the user's wording.
+    """
+
+    if gold_request.origin is None or gold_request.destination is None:
+        raise ValueError("complete gold request must have origin and destination")
+
+    prepared_preferences: list[AmenityPreference] = []
+    analysis_amenities: list[AnalysisAmenity] = []
+
+    for gold_preference in gold_request.amenities:
+        parsed_match = next(
+            (
+                parsed_preference
+                for parsed_preference in parsed_request.amenities
+                if parsed_preference.key == gold_preference.key
+                and parsed_preference.phrase.strip()
+            ),
+            None,
+        )
+
+        if parsed_match is not None:
+            phrase = parsed_match.phrase
+            phrase_source: PhraseSource = "parsed"
+        else:
+            phrase = gold_preference.category.value
+            phrase_source = "category_fallback"
+
+        prepared_preference = gold_preference.model_copy(update={"phrase": phrase})
+        prepared_preferences.append(prepared_preference)
+        analysis_amenities.append(
+            AnalysisAmenity(
+                key=prepared_preference.key,
+                phrase=phrase,
+                phrase_source=phrase_source,
+            )
+        )
+
+    resolved_origin = geocode(gold_request.origin.text)
+    resolved_destination = geocode(gold_request.destination.text)
+
+    if not resolved_origin.resolved or not resolved_destination.resolved:
+        raise ValueError("gold origin or destination is not geocoded")
+
+    prepared_request = gold_request.model_copy(
+        update={
+            "origin": resolved_origin,
+            "destination": resolved_destination,
+            "amenities": prepared_preferences,
+        }
+    )
+
+    return PreparedAnalysisRequest(
+        request=prepared_request,
+        amenities=tuple(analysis_amenities),
+    )
+
+
+def verified_candidate_itineraries(
+    pipeline: Any,
+    request: TripRequest,
+) -> list[Itinerary]:
+    """Build verified itineraries through the same stages as the pipeline.
+
+    The analysis must compare policies over one shared candidate set. Keeping
+    this preparation beside the comparison code makes it directly testable and
+    prevents the command-line script from owning untested planning logic.
+    """
+
+    vehicle = pipeline.store.vehicle(request.vehicle_id)
+    route = pipeline.router.route(
+        request.origin,
+        request.destination,
+    )
+    candidates = pipeline.retriever.candidates(
+        route,
+        request,
+    )
+
+    reset_detour_state = getattr(
+        pipeline.detour_measurer,
+        "reset",
+        None,
+    )
+    if reset_detour_state is not None:
+        reset_detour_state()
+
+    for candidate in candidates:
+        for nearby_amenity in candidate.amenities:
+            for preference in request.amenities:
+                nearby_amenity.match_scores[preference.key] = (
+                    pipeline.matcher.score(
+                        preference,
+                        nearby_amenity.amenity,
+                    )
+                )
+
+        candidate.detour_min_est = (
+            pipeline.detour_measurer.detour_min(
+                route,
+                candidate,
+            )
+        )
+
+    compatible_candidates, _rejected_candidates = (
+        pipeline.filter.apply(
+            candidates,
+            request,
+            vehicle,
+        )
+    )
+    planned_itineraries = pipeline.planner.plan(
+        request,
+        vehicle,
+        route,
+        compatible_candidates,
+    )
+
+    return [
+        itinerary
+        for itinerary in planned_itineraries
+        if pipeline.verifier.verify(
+            itinerary,
+            request,
+            vehicle,
+            route,
+        ).ok
+    ]
 
 def apply_credit_policy(
     raw_scores_by_itinerary: Mapping[str, Mapping[str, float]],
@@ -134,6 +297,11 @@ def compare_policy_costs(
         for itinerary in itineraries
     }
 
+    fastest_total_time_min = min(
+        (itinerary.total_time_min for itinerary in itineraries),
+        default=0.0,
+    )
+
     current_cost_by_itinerary = {
         itinerary.itinerary_id: plan_cost(
             itinerary,
@@ -159,6 +327,15 @@ def compare_policy_costs(
             itinerary_id = itinerary.itinerary_id
             policy_scores = policy_scores_by_itinerary[itinerary_id]
             current_cost = current_cost_by_itinerary[itinerary_id]
+            raw_preference_scores = raw_scores_by_itinerary[itinerary_id]
+            matched_preference_keys = tuple(
+                sorted(
+                    preference_key
+                    for preference_key, score in raw_preference_scores.items()
+                    if score > 0.0
+                )
+            )
+            total_time_min = itinerary.total_time_min
 
             amenity_credit_min = _calculate_amenity_credit(
                 policy_scores,
@@ -180,6 +357,13 @@ def compare_policy_costs(
                 PolicyItineraryCost(
                     policy=policy,
                     itinerary_id=itinerary_id,
+                    stop_count=len(itinerary.stops),
+                    matched_preference_keys=matched_preference_keys,
+                    drive_min=itinerary.total_drive_min,
+                    charge_min=itinerary.total_charge_min,
+                    detour_min=itinerary.total_detour_min,
+                    total_time_min=total_time_min,
+                    extra_time_vs_fastest_min=(total_time_min - fastest_total_time_min),
                     amenity_credit_min=amenity_credit_min,
                     amenity_satisfaction=amenity_satisfaction,
                     total_min=adjusted_total_min,
@@ -190,7 +374,11 @@ def compare_policy_costs(
         # better. The itinerary ID provides deterministic ordering for a tie.
         comparison[policy] = sorted(
             policy_costs,
-            key=lambda result: (result.total_min, result.itinerary_id),
+            key=lambda result: (
+                result.total_min,
+                result.stop_count,
+                result.itinerary_id,
+            ),
         )
 
     return comparison
@@ -206,25 +394,44 @@ def summarize_policy_results(
     implementation on developer machines and in CI.
     """
 
-    planned_items = [
-        result
-        for result in item_results
-        if result["status"] == "planned"
+    planned_items = [result for result in item_results if result["status"] == "planned"]
+
+    amenity_records = [
+        amenity for result in item_results for amenity in result.get("amenities", [])
     ]
+    category_fallback_item_ids = sorted(
+        {
+            result["item_id"]
+            for result in item_results
+            if any(
+                amenity["phrase_source"] == "category_fallback"
+                for amenity in result.get("amenities", [])
+            )
+        }
+    )
+    category_fallback_item_id_set = set(category_fallback_item_ids)
 
     summary: dict[str, Any] = {
         "items_loaded": len(item_results),
         "items_planned": len(planned_items),
         "items_skipped_or_unplanned": len(item_results) - len(planned_items),
+        "amenity_phrase_sources": {
+            "parsed": sum(
+                amenity["phrase_source"] == "parsed" for amenity in amenity_records
+            ),
+            "category_fallback": sum(
+                amenity["phrase_source"] == "category_fallback"
+                for amenity in amenity_records
+            ),
+        },
+        "category_fallback_item_ids": category_fallback_item_ids,
     }
 
     if not planned_items:
         return summary
 
     raw_recommendations = {
-        result["item_id"]: result["policies"]["raw"]["recommended"][
-            "itinerary_id"
-        ]
+        result["item_id"]: result["policies"]["raw"]["recommended"]["itinerary_id"]
         for result in planned_items
     }
 
@@ -235,21 +442,104 @@ def summarize_policy_results(
             result["policies"][policy]["recommended"]
             for result in planned_items
         ]
-        changed_item_ids = [
-            result["item_id"]
+        changed_items = [
+            result
             for result in planned_items
-            if result["policies"][policy]["recommended"]["itinerary_id"]
+            if result["policies"][policy]["recommended"][
+                "itinerary_id"
+            ]
             != raw_recommendations[result["item_id"]]
         ]
+        changed_item_ids = [
+            result["item_id"]
+            for result in changed_items
+        ]
+
+        changed_item_outcomes = []
+
+        for result in changed_items:
+            raw_recommendation = result["policies"]["raw"][
+                "recommended"
+            ]
+            policy_recommendation = result["policies"][policy][
+                "recommended"
+            ]
+
+            raw_matched_preferences = set(
+                raw_recommendation[
+                    "matched_preference_keys"
+                ]
+            )
+            policy_matched_preferences = set(
+                policy_recommendation[
+                    "matched_preference_keys"
+                ]
+            )
+
+            changed_item_outcomes.append(
+                {
+                    "item_id": result["item_id"],
+                    "raw_itinerary_id": raw_recommendation[
+                        "itinerary_id"
+                    ],
+                    "policy_itinerary_id": policy_recommendation[
+                        "itinerary_id"
+                    ],
+                    "gained_preference_keys": sorted(
+                        policy_matched_preferences
+                        - raw_matched_preferences
+                    ),
+                    "lost_preference_keys": sorted(
+                        raw_matched_preferences
+                        - policy_matched_preferences
+                    ),
+                    "additional_time_vs_raw_min": (
+                        policy_recommendation[
+                            "total_time_min"
+                        ]
+                        - raw_recommendation[
+                            "total_time_min"
+                        ]
+                    ),
+                    "policy_extra_time_vs_fastest_min": (
+                        policy_recommendation[
+                            "extra_time_vs_fastest_min"
+                        ]
+                    ),
+                    "stop_count_change_vs_raw": (
+                        policy_recommendation["stop_count"]
+                        - raw_recommendation["stop_count"]
+                    ),
+                    "policy_drive_min": policy_recommendation[
+                        "drive_min"
+                    ],
+                    "policy_charge_min": policy_recommendation[
+                        "charge_min"
+                    ],
+                    "policy_detour_min": policy_recommendation[
+                        "detour_min"
+                    ],
+                }
+            )
 
         summary["policy_results"][policy] = {
-            "recommendations_changed_from_raw": len(changed_item_ids),
+            "recommendations_changed_from_raw": len(
+                changed_item_ids
+            ),
             "changed_item_ids": changed_item_ids,
-            "mean_recommended_amenity_credit_min": mean(
+            "changed_items_using_category_fallback": [
+                item_id
+                for item_id in changed_item_ids
+                if item_id in category_fallback_item_id_set
+            ],
+            "changed_item_outcomes": changed_item_outcomes,
+            # These averages use the policy's own score scale. They are
+            # descriptive only and must not be compared as objective quality.
+            "mean_policy_scaled_recommended_credit_min": mean(
                 result["amenity_credit_min"]
                 for result in recommended_results
             ),
-            "mean_recommended_amenity_satisfaction": mean(
+            "mean_policy_scaled_recommended_satisfaction": mean(
                 result["amenity_satisfaction"]
                 for result in recommended_results
             ),

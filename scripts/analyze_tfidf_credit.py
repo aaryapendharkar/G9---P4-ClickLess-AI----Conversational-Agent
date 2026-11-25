@@ -3,11 +3,15 @@
 This script is evidence for issue #166. It deliberately has no option for
 loading TEST, and it does not alter the live Config A ranking behavior.
 
-Run with snapshot data:
+Run with snapshot data in PowerShell:
 
     $env:CLICKLESS_DATA_SOURCE = "snapshot"
     python scripts/analyze_tfidf_credit.py --limit 3
-    python scripts/analyze_tfidf_credit.py
+
+Run with snapshot data in Bash:
+
+    CLICKLESS_DATA_SOURCE=snapshot \
+        python scripts/analyze_tfidf_credit.py --limit 3
 """
 
 from __future__ import annotations
@@ -19,11 +23,13 @@ from pathlib import Path
 from typing import Any
 
 from clickless.config import load_config, repo_path
-from clickless.contracts import AmenityPreference, TripRequest
 from clickless.pipeline import build_pipeline
 from clickless.ranking.tfidf_credit_analysis import (
+    PreparedAnalysisRequest,
     compare_policy_costs,
+    prepare_analysis_request,
     summarize_policy_results,
+    verified_candidate_itineraries,
 )
 from evaluation.harness import git_commit
 from evaluation.metrics.planning import request_from_item
@@ -31,20 +37,14 @@ from evaluation.schema import BenchmarkItem, load_items
 from evaluation.snapshot_id import snapshot_info
 
 DEV_ITEMS_PATH = "benchmark/requests/dev"
-DEFAULT_OUTPUT_PATH = ".venv/tfidf-credit-policy-dev.json"
+DEFAULT_OUTPUT_PATH = "results/preliminary/tfidf_credit_policy/dev.json"
 
 
 def _analysis_request(
     pipeline: Any,
     item: BenchmarkItem,
-) -> TripRequest | None:
-    """Build a resolved gold request while preserving natural amenity phrases.
-
-    Gold annotations define the fields that should influence planning. The
-    parser is used only to recover phrases such as "grab a quick bite", because
-    those phrases are the actual input to TF-IDF but are not stored separately
-    in the benchmark's structured gold fields.
-    """
+) -> PreparedAnalysisRequest | None:
+    """Build a resolved gold request with auditable amenity phrases."""
 
     gold_request = request_from_item(item)
 
@@ -57,111 +57,11 @@ def _analysis_request(
         request_id=item.id,
     ).request
 
-    amenities = [
-        _preference_with_parsed_phrase(
-            gold_preference,
-            parsed_request,
-        )
-        for gold_preference in gold_request.amenities
-    ]
-
-    resolved_origin = pipeline.store.geocode(gold_request.origin.text)
-    resolved_destination = pipeline.store.geocode(gold_request.destination.text)
-
-    if not resolved_origin.resolved or not resolved_destination.resolved:
-        raise ValueError("gold origin or destination is not geocoded")
-
-    return gold_request.model_copy(
-        update={
-            "origin": resolved_origin,
-            "destination": resolved_destination,
-            "amenities": amenities,
-        }
+    return prepare_analysis_request(
+        gold_request,
+        parsed_request,
+        pipeline.store.geocode,
     )
-
-
-def _preference_with_parsed_phrase(
-    gold_preference: AmenityPreference,
-    parsed_request: TripRequest,
-) -> AmenityPreference:
-    """Copy the matching parser phrase without accepting parser constraints."""
-
-    parsed_match = next(
-        (
-            parsed_preference
-            for parsed_preference in parsed_request.amenities
-            if parsed_preference.key == gold_preference.key
-        ),
-        None,
-    )
-
-    # If the parser missed the phrase, the category name remains a deterministic
-    # TF-IDF query instead of silently dropping the gold amenity preference.
-    phrase = (
-        parsed_match.phrase
-        if parsed_match is not None and parsed_match.phrase.strip()
-        else gold_preference.category.value
-    )
-
-    return gold_preference.model_copy(update={"phrase": phrase})
-
-
-def _candidate_itineraries(
-    pipeline: Any,
-    request: TripRequest,
-) -> list[Any]:
-    """Create verified candidate itineraries once for all three policies."""
-
-    vehicle = pipeline.store.vehicle(request.vehicle_id)
-    route = pipeline.router.route(
-        request.origin,
-        request.destination,
-    )
-    candidates = pipeline.retriever.candidates(route, request)
-
-    reset_detour_state = getattr(
-        pipeline.detour_measurer,
-        "reset",
-        None,
-    )
-    if reset_detour_state is not None:
-        reset_detour_state()
-
-    for candidate in candidates:
-        for nearby_amenity in candidate.amenities:
-            for preference in request.amenities:
-                nearby_amenity.match_scores[preference.key] = pipeline.matcher.score(
-                    preference,
-                    nearby_amenity.amenity,
-                )
-
-        candidate.detour_min_est = pipeline.detour_measurer.detour_min(
-            route,
-            candidate,
-        )
-
-    compatible_candidates, _rejected_candidates = pipeline.filter.apply(
-        candidates,
-        request,
-        vehicle,
-    )
-    planned_itineraries = pipeline.planner.plan(
-        request,
-        vehicle,
-        route,
-        compatible_candidates,
-    )
-
-    return [
-        itinerary
-        for itinerary in planned_itineraries
-        if pipeline.verifier.verify(
-            itinerary,
-            request,
-            vehicle,
-            route,
-        ).ok
-    ]
 
 
 def _analyze_item(
@@ -171,29 +71,29 @@ def _analyze_item(
 ) -> dict[str, Any]:
     """Return one benchmark item's comparable policy outcomes."""
 
-    request = _analysis_request(pipeline, item)
+    prepared_request = _analysis_request(pipeline, item)
 
-    if request is None:
+    if prepared_request is None:
         return {
             "item_id": item.id,
             "category": item.category,
             "status": "skipped_incomplete",
         }
 
-    itineraries = _candidate_itineraries(pipeline, request)
+    request = prepared_request.request
+    amenity_records = [asdict(amenity) for amenity in prepared_request.amenities]
+
+    itineraries = verified_candidate_itineraries(
+        pipeline,
+        request,
+    )
 
     if not itineraries:
         return {
             "item_id": item.id,
             "category": item.category,
             "status": "no_verified_itinerary",
-            "amenities": [
-                {
-                    "key": preference.key,
-                    "phrase": preference.phrase,
-                }
-                for preference in request.amenities
-            ],
+            "amenities": amenity_records,
         }
 
     policy_comparison = compare_policy_costs(
@@ -206,13 +106,7 @@ def _analyze_item(
         "item_id": item.id,
         "category": item.category,
         "status": "planned",
-        "amenities": [
-            {
-                "key": preference.key,
-                "phrase": preference.phrase,
-            }
-            for preference in request.amenities
-        ],
+        "amenities": amenity_records,
         "policies": {
             policy: {
                 "recommended": asdict(results[0]),
