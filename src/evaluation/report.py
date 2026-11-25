@@ -798,8 +798,12 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
 
     # Ontology adequacy (#158): once per run, only for configs that build the KG
     onto_fields = ["config", "status", "answerable", "total", "ontology_adequacy", "inventory_version", "kg",
-                   "failing_ids", "failing_reasons"]
-    onto_rows = [ontology_row(c, runs[c].metrics.get("ontology_adequacy") if c in runs else None) for c in configs]
+                   "snapshot_id", "failing_ids", "failing_reasons"]
+    onto_rows = [
+        {**ontology_row(c, runs[c].metrics.get("ontology_adequacy") if c in runs else None),
+         "snapshot_id": snapshot.get(c)}
+        for c in configs
+    ]
     _write_csv(run_dir / "ontology_adequacy.csv", onto_rows, onto_fields)
 
     # Metadata
@@ -1025,7 +1029,9 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         lines.append("None recorded (no planning block with an oracle_search block in these results).")
     lines += [
         "",
-        "## Ontology adequacy",
+        "## Ontology adequacy (competency questions on the fixture KG)",
+        "",
+        "Measures whether the ontology and queries can answer the CQs, not whether the snapshot data covers them.",
         "",
         "Competency questions (CQ1-CQ20, inventory.json) the KG answers: status \"tested\", the query "
         "runs, and it returns rows with the inventory's example bindings (or the inventory marks the "
@@ -1034,13 +1040,14 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "",
     ]
     lines += _md_table(
-        ["Config", "Answerable", "Share", "Inventory version", "Failing"],
+        ["Config", "Answerable", "Share", "Inventory version", "Snapshot", "Failing"],
         [
             [
                 r["config"],
                 r["status"] if r["answerable"] is None else f"{r['answerable']}/{r['total']}",
                 _fmt(r["ontology_adequacy"]),
                 NA if r["inventory_version"] is None else str(r["inventory_version"]),
+                r["snapshot_id"] or NA,
                 r["failing_reasons"] or ("-" if r["answerable"] is not None else NA),
             ]
             for r in onto_rows

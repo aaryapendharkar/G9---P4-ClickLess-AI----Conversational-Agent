@@ -15,10 +15,12 @@ currently `tested`.
 **The metric** (`src/evaluation/metrics/ontology_adequacy.py`, #158) runs each question's example
 bindings on the fixture KG, once per evaluation run and only for Config C. It reports
 `answerable / 20`, the failing ids with reasons, and the inventory version, in the report's
-"Ontology adequacy" section and in `ontology_adequacy.csv`. A question with an `example_note` (a
-free-text prerequisite, currently CQ9's "add an explanation first") can't be set up by the metric,
-so it counts as not answerable with reason "prerequisite not machine-readable". It would count if
-the prerequisite became machine-readable.
+"Ontology adequacy (competency questions on the fixture KG)" section (next to the snapshot id) and
+in `ontology_adequacy.csv`. It measures whether the ontology and queries can answer the CQs, not
+whether the snapshot data covers them. A question with an `example_note` (a free-text
+prerequisite, currently CQ9's "add an explanation first") can't be set up by the metric, so it
+counts as not answerable with reason "prerequisite not machine-readable". It would count if the
+prerequisite became machine-readable.
 
 | # | Question | Query file | Status |
 |---|---|---|---|

@@ -358,7 +358,7 @@ def test_build_report_writes_every_section_and_csv(run_dir):
         "### By category",
         "### By route_type",
         "## Oracle search",
-        "## Ontology adequacy",
+        "## Ontology adequacy (competency questions on the fixture KG)",
         "## Findings",
         "## Run metadata",
     ):
@@ -824,9 +824,11 @@ def test_ontology_adequacy_section_and_csv(tmp_path, run_dir):
     (run_dir / "A_items.json").write_text(json.dumps(a), encoding="utf-8")
 
     text = build_report(run_dir, n_boot=50).read_text(encoding="utf-8")
-    assert "| A | n/a: config A does not build the KG | n/a | n/a | n/a |" in text
-    assert "| B | n/a: no ontology_adequacy block | n/a | n/a | n/a |" in text
-    assert "| C | 19/20 | 0.950 | 1 | CQ9: prerequisite not machine-readable: n |" in text
+    assert "| A | n/a: config A does not build the KG | n/a | n/a | fixtures | n/a |" in text
+    assert "| B | n/a: no ontology_adequacy block | n/a | n/a | fixtures | n/a |" in text
+    assert "| C | 19/20 | 0.950 | 1 | fixtures | CQ9: prerequisite not machine-readable: n |" in text
     rows = {r["config"]: r for r in read_csv(run_dir / "ontology_adequacy.csv")}
     assert (rows["C"]["answerable"], rows["C"]["total"], rows["C"]["failing_ids"]) == ("19", "20", "CQ9")
+    assert "not whether the snapshot data covers them" in text
+    assert rows["C"]["snapshot_id"] == "fixtures"
     assert rows["A"]["answerable"] == "" and rows["A"]["status"].startswith("n/a")
