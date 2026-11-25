@@ -20,6 +20,8 @@ Steps
        errors.csv         errored items by stage (parse / planning) and error type
        findings.csv       planner/oracle disagreements (the result JSON's "findings")
        oracle_search.csv  per config: items whose oracle Pareto search stopped early (budget / max_labels)
+       ontology_adequacy.csv  per config: competency questions answerable / 20, failing ids with
+                          reasons, inventory version (Config C only; the others n/a)
        metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id,
                           LLM GPU share, keep-alive
 
@@ -42,7 +44,8 @@ Metric sources (no metric is reimplemented here)
     all items, with CIs from evaluation.metrics.stats.bootstrap_ci.
   * Plan feasibility / hard-violation rate (metrics.planning.feasibility), grounding
     (metrics.grounding.claim_support_rate) and freshness (metrics.freshness.
-    freshness_mislabel_rate) are read from the harness's metric blocks. Their CI is taken from
+    freshness_mislabel_rate) and ontology adequacy (metrics.ontology_adequacy, once per run, only
+    for configs that build the KG) are read from the harness's metric blocks. Their CI is taken from
     the block's "ci95": {key: [lo, hi]} when the metric provides one, else shown as n/a. A block
     that is missing or {"not_implemented": ...} is shown as n/a.
   * Paired tests use evaluation.metrics.stats.mcnemar / wilcoxon on the items both configs ran.
@@ -650,6 +653,31 @@ def run_problems(
     return nothing, item_errors
 
 
+def ontology_row(config: str, block: Mapping[str, Any] | None) -> dict[str, Any]:
+    """One ontology_adequacy.csv row; "n/a: <why>" status for configs without a scored block."""
+    row: dict[str, Any] = {"config": config, "answerable": None, "total": None, "ontology_adequacy": None,
+                           "inventory_version": None, "kg": None, "failing_ids": "", "failing_reasons": ""}
+    if not block:
+        return {**row, "status": "n/a: no ontology_adequacy block"}
+    if "not_applicable" in block:
+        return {**row, "status": f"n/a: {block['not_applicable']}"}
+    if "answerable" not in block:
+        why = block.get("error") or block.get("not_implemented") or "no result"
+        return {**row, "status": f"n/a: {why}"}
+    failing = block.get("failing") or []
+    return {
+        **row,
+        "status": "ok",
+        "answerable": block["answerable"],
+        "total": block.get("total"),
+        "ontology_adequacy": block.get("ontology_adequacy"),
+        "inventory_version": block.get("inventory_version"),
+        "kg": block.get("kg"),
+        "failing_ids": " ".join(str(f["id"]) for f in failing),
+        "failing_reasons": "; ".join(f"{f['id']}: {f['reason']}" for f in failing),
+    }
+
+
 def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     """Write report.md and the CSVs into run_dir; return the report.md path."""
     run_dir = Path(run_dir)
@@ -767,6 +795,12 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
                 }
             )
     _write_csv(run_dir / "oracle_search.csv", search_rows, search_fields)
+
+    # Ontology adequacy (#158): once per run, only for configs that build the KG
+    onto_fields = ["config", "status", "answerable", "total", "ontology_adequacy", "inventory_version", "kg",
+                   "failing_ids", "failing_reasons"]
+    onto_rows = [ontology_row(c, runs[c].metrics.get("ontology_adequacy") if c in runs else None) for c in configs]
+    _write_csv(run_dir / "ontology_adequacy.csv", onto_rows, onto_fields)
 
     # Metadata
     shares = {c: gpu_share(runs[c]) for c in configs if c in runs}
@@ -989,6 +1023,29 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         )
     else:
         lines.append("None recorded (no planning block with an oracle_search block in these results).")
+    lines += [
+        "",
+        "## Ontology adequacy",
+        "",
+        "Competency questions (CQ1-CQ20, inventory.json) the KG answers: status \"tested\", the query "
+        "runs, and it returns rows with the inventory's example bindings (or the inventory marks the "
+        "question empty on fixtures). Run once per run on the fixture KG, where those bindings are "
+        "valid; only configs that build the KG (C) are scored.",
+        "",
+    ]
+    lines += _md_table(
+        ["Config", "Answerable", "Share", "Inventory version", "Failing"],
+        [
+            [
+                r["config"],
+                r["status"] if r["answerable"] is None else f"{r['answerable']}/{r['total']}",
+                _fmt(r["ontology_adequacy"]),
+                NA if r["inventory_version"] is None else str(r["inventory_version"]),
+                r["failing_reasons"] or ("-" if r["answerable"] is not None else NA),
+            ]
+            for r in onto_rows
+        ],
+    )
     lines += ["", "## Findings (planner/oracle disagreements)", ""]
     if find_rows:
         lines += _md_table(

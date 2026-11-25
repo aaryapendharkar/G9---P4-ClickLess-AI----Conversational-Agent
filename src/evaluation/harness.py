@@ -61,6 +61,7 @@ from clickless.pipeline import build_pipeline
 from .config_names import ABLATIONS, SnapshotRequired, config_path, data_source, require_snapshot  # noqa: F401
 from .llm_residency import LLMResidency
 from .metrics.grounding import claim_support, freshness_mislabel_rate
+from .metrics.ontology_adequacy import ontology_adequacy
 from .metrics.planning import planning_metrics
 from .metrics.request_understanding import (
     city_level_place_prf,
@@ -275,6 +276,34 @@ def exception_stage(exc: BaseException, parser: Any) -> str:
     return "parse" if any(frame.f_locals.get("self") is parser for frame, _ in frames) else "planning"
 
 
+def kg_ontology_adequacy(cfg: Mapping[str, Any]) -> dict[str, Any]:
+    """Ontology adequacy (#158) for a config that builds the KG; {"not_applicable": ...} for the others.
+
+    Runs once per harness run, not per item, on the fixture KG: the inventory's example bindings name
+    fixture entities, so they are only valid there (metrics/ontology_adequacy.py). The KG code is
+    imported here, not in the metric, which only counts."""
+    if cfg.get("components", {}).get("retriever") != "corridor+kg":
+        return {"not_applicable": f"config {cfg.get('name')} does not build the KG"}
+    from clickless.data.loaders import DataStore
+    from clickless.retrieval.kg.build import DEFAULT_ONTOLOGY, build_graph
+    from clickless.retrieval.kg.competency import (
+        INVENTORY,
+        example_bindings,
+        load_inventory,
+        run_competency_query,
+    )
+
+    fixtures_dir = cfg["data"]["fixtures_dir"]
+    graph = build_graph(DataStore.from_dir(fixtures_dir), cfg.get("kg", {}).get("ontology", DEFAULT_ONTOLOGY))
+    version = json.loads(INVENTORY.read_text(encoding="utf-8")).get("version")
+    block = ontology_adequacy(
+        load_inventory(),
+        lambda entry: run_competency_query(graph, entry["query"], **example_bindings(entry)),
+        inventory_version=version,
+    )
+    return {**block, "kg": f"fixtures ({fixtures_dir})"}
+
+
 def build_oracle(cfg: Mapping[str, Any], pipe) -> LabelSettingOracle:
     """Oracle on the pipeline's frozen data. In OSRM mode the pipeline's router supplies ROUTES only
     (data access through the contracts Router protocol); detours always come from the oracle's own model."""
@@ -348,6 +377,7 @@ def run(
         "bootstrap_ci95": _safe(understanding_cis, done, ordered, n_boot),
         "grounding": _safe(claim_support, ordered),  # each result's own evidence only (ADR 0015)
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
+        "ontology_adequacy": _safe(kg_ontology_adequacy, cfg),  # once per run, Config C only (#158)
         "planning": _safe(planning_metrics, done, ordered, oracle),
         "tradeoffs": _safe(tradeoff_metrics, done, ordered, oracle, cfg["tradeoffs"], cfg.get("evaluation")),
         # nDCG@3 (metrics.planning.ndcg_at_k) is wired once graded relevance labels exist.
