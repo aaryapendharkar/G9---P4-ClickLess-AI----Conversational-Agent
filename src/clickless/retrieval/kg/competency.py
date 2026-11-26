@@ -88,3 +88,28 @@ def example_bindings(entry: dict) -> dict:
         return v
 
     return {k: value(v) for k, v in (entry.get("example") or {}).items()}
+
+
+def run_inventory_example(graph, entry: dict) -> list:
+    """Run an inventory entry's example on `graph`, setting up what it needs first.
+
+    An entry with `example_explanation` (CQ9) gets that explanation written into a copy of the graph
+    with build.add_explanation (its claims and evidence as a PlanResult), so the caller's graph is
+    never changed. Everything the example needs is in the inventory: no free-text prerequisite."""
+    spec = entry.get("example_explanation")
+    if spec:
+        from rdflib import Graph
+
+        from ...contracts import Claim, Evidence, PlanResult
+        from .build import add_explanation, explanation_uri
+
+        copy = Graph()
+        copy += graph
+        add_explanation(copy, PlanResult(
+            request_id=spec["request_id"], config="C", status="ok",
+            claims=[Claim.model_validate(c) for c in spec["claims"]],
+            evidence=[Evidence.model_validate(e) for e in spec.get("evidence", [])],
+        ))
+        bindings = {"explanation": explanation_uri(spec["request_id"]), **example_bindings(entry)}
+        return run_competency_query(copy, entry["query"], **bindings)
+    return run_competency_query(graph, entry["query"], **example_bindings(entry))

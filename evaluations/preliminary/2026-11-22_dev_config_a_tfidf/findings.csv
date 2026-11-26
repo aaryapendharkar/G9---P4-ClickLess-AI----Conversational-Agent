@@ -1,0 +1,14 @@
+config,item_id,kind,detail
+A,aarya-016,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+A,aarya-028,oracle_search_incomplete,max_labels (40000) hit; 1 plan(s) found; excluded from front-based metrics
+A,deepti-010,oracle_search_incomplete,max_labels (40000) hit; 2 plan(s) found; excluded from front-based metrics
+A,deepti-024,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+A,hriday-023,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+A,deepti-004,parse_changed_constraints,"connectors_override: gold ['CCS1'], parsed None"
+A,deepti-012,parse_changed_constraints,"min_power_kw: gold 100.0, parsed None"
+A,deepti-013,parse_changed_constraints,"arrival_soc_pct_min: gold 15.0, parsed None"
+A,deepti-018,parse_changed_constraints,"min_power_kw: gold 150.0, parsed None"
+A,deepti-026,parse_changed_constraints,"connectors_override: gold ['CHADEMO'], parsed None"
+A,hriday-011,parse_changed_constraints,"arrival_soc_pct_min: gold 15.0, parsed None"
+A,hriday-012,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None; min_power_kw: gold 100.0, parsed None"
+A,manas-001,parse_changed_constraints,"arrival_soc_pct_min: gold 25.0, parsed None"

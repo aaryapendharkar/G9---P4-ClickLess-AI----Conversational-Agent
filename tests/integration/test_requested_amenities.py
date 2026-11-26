@@ -6,6 +6,7 @@ import pytest
 from clickless.config import load_config
 from clickless.pipeline import build_pipeline
 from clickless.retrieval.embedding_matcher import EmbeddingMatcher
+from clickless.retrieval.tfidf_matcher import TfidfMatcher
 
 NEARBY = "  Nearby (requested): "
 
@@ -49,6 +50,30 @@ def test_config_a_reports_only_requested_amenities(pipe_a, store, demo_text):
     listed = _reported_amenities(pipe_a.run(demo_text, request_id="gate-a"), store)
 
     assert listed == ["Verde Fixture Kitchen", "Verde Fixture Restroom"]
+
+
+def test_config_a_carries_real_tfidf_scores_into_the_plan(pipe_a, store, demo_text):
+    """Planning keeps Config A's cosine scores instead of a binary category match."""
+
+    result = pipe_a.run(demo_text, request_id="tfidf-a")
+    shown_stop = result.alternatives[0].itinerary.stops[0]
+    amenity_by_id = {amenity.amenity_id: amenity for amenity in store.amenities}
+    shown_amenities = [amenity_by_id[amenity_id] for amenity_id in shown_stop.amenity_ids]
+
+    assert isinstance(pipe_a.matcher, TfidfMatcher)
+
+    # The pipeline scores nearby amenities before planning. Recomputing the
+    # best score through the same public matcher interface proves the planner
+    # preserved that value in ChargingStop.satisfied_preferences.
+    for preference in result.request.amenities:
+        expected_best_score = max(
+            pipe_a.matcher.score(preference, amenity)
+            for amenity in shown_amenities
+        )
+        recorded_score = shown_stop.satisfied_preferences[preference.key]
+
+        assert recorded_score == pytest.approx(expected_best_score)
+        assert 0.0 < recorded_score < 1.0
 
 
 @pytest.mark.network

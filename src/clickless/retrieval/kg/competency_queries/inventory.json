@@ -1,6 +1,6 @@
 {
-  "_comment": "Competency-question inventory (docs/COMPETENCY_QUESTIONS.md, #158). One entry per CQ. status: 'tested' = an executable query with expected-answer tests on the fixture KG; 'unsupported' entries must give a 'reason'. 'example' holds bindings that return at least one row on the fixture KG (except where 'example_note' says what else is needed, or 'empty_on_fixtures' says why the fixtures have no row and the tests build one): 'cc:x' is a URI in the cc: namespace, {'datetime': ISO} a timestamp, numbers and other strings are literals. Read it with clickless.retrieval.kg.competency.load_inventory() / example_bindings().",
-  "version": 1,
+  "_comment": "Competency-question inventory (docs/COMPETENCY_QUESTIONS.md, #158). One entry per CQ. status: 'tested' = an executable query with expected-answer tests on the fixture KG; 'unsupported' entries must give a 'reason'. 'example' holds bindings that return at least one row on the fixture KG (an 'example_explanation' is added to the graph first, as a PlanResult's claims and evidence via build.add_explanation; except where 'empty_on_fixtures' says why the fixtures have no row and the tests build one): 'cc:x' is a URI in the cc: namespace, {'datetime': ISO} a timestamp, numbers and other strings are literals. Read it with clickless.retrieval.kg.competency.load_inventory() / example_bindings(). Run one entry's example with competency.run_inventory_example(graph, entry): it adds the example explanation (on a copy of the graph) and binds the example.",
+  "version": 2,
   "questions": [
     {
       "id": "CQ1",
@@ -116,10 +116,37 @@
         "tests/retrieval/test_competency_query_answers.py::test_cq9_claims_with_their_sources",
         "tests/retrieval/test_competency_query_answers.py::test_cq9_on_a_real_config_c_result"
       ],
-      "example": {
-        "explanation": "cc:explanation_example"
-      },
-      "example_note": "needs an explanation added with build.add_explanation(graph, result) first"
+      "example": {},
+      "example_explanation": {
+        "request_id": "example",
+        "claims": [
+          {
+            "text": "Stop at Fixture Camp Verde Hub.",
+            "supported_by": [
+              "kg:FIX-ST-004:name"
+            ]
+          },
+          {
+            "text": "Arrive with about 22%.",
+            "supported_by": [
+              "verified:example:arrival"
+            ]
+          }
+        ],
+        "evidence": [
+          {
+            "evidence_id": "kg:FIX-ST-004:name",
+            "subject_id": "FIX-ST-004",
+            "field": "name",
+            "value": "Fixture Camp Verde Hub",
+            "provenance": {
+              "source": "SYNTHETIC",
+              "retrieved_at": "2026-10-22T00:00:00Z",
+              "status": "static"
+            }
+          }
+        ]
+      }
     },
     {
       "id": "CQ10",

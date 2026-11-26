@@ -13,6 +13,10 @@ through a reviewed PR (CODEOWNERS enforces this).
 | **Hriday** | `planning/`, `ranking/` | routing + energy, filters, ranking, verifier (+ trade-offs) | OSRM detours (cached), verifier power/detour checks, multi-stop planner |
 | **Ian** | `src/evaluation/`, `benchmark/` | benchmark protocol, oracle, harness, ablations, statistics | split + freeze tooling, oracle `is_valid`, extraction metrics |
 
+Implementation status note (2026-11-22): Hriday took over and completed the real TF-IDF matcher
+tracked in issue #156. This is a task-level handoff only; Manas remains the owner and reviewer for
+the broader `retrieval/` module shown above.
+
 Shared files (`contracts/`, `common/`, `pipeline.py`, frozen configs) need **2 approvals** and
 an ADR (`docs/decisions/`) when they change behaviour.
 
