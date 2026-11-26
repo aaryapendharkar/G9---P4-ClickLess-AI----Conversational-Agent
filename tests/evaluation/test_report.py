@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from evaluation.report import (
+    ConfigRun,
     MixedSnapshots,
     SplitRefused,
     build_report,
@@ -268,7 +269,7 @@ def test_paired_a_vs_c_is_in_the_report(run_dir):
     """A vs C (full system against the baseline) is reported, with the same tests as the other pairs."""
     runs, _ = load_runs(run_dir)
     expected = paired(runs["A"], runs["C"])
-    assert [r["pair"] for r in expected] == ["A vs C"] * 6
+    assert [r["pair"] for r in expected] == ["A vs C"] * 7  # 5 McNemar + 2 Wilcoxon
     build_report(run_dir, n_boot=100)
     written = [r for r in read_csv(run_dir / "paired.csv") if r["pair"] == "A vs C"]
     assert [(r["outcome"], r["test"], r["n"]) for r in written] == [
@@ -337,7 +338,7 @@ def test_c_nokg_ablation_gets_its_own_column_and_pair(run_dir):
     assert {r["config"] for r in read_csv(run_dir / "headline.csv")} == {"A", "B", "C", "C-noKG"}
     assert "| C-noKG | 6 |" in text
     pairs = read_csv(run_dir / "paired.csv")
-    assert [r["pair"] for r in pairs[::6]] == ["A vs B", "A vs C", "B vs C", "C vs C-noKG"]
+    assert list(dict.fromkeys(r["pair"] for r in pairs)) == ["A vs B", "A vs C", "B vs C", "C vs C-noKG"]
     em = next(r for r in pairs if r["pair"] == "C vs C-noKG" and r["outcome"] == "exact_match")
     assert (em["b"], em["c"]) == ("0", "0")  # same rows on both sides
 
@@ -382,8 +383,8 @@ def test_build_report_writes_every_section_and_csv(run_dir):
     assert "0.900 [0.800, 0.970]" in c_line and "0.050 [CI n/a]" in c_line and "0.950 [CI n/a]" in c_line
 
     pairs = read_csv(run_dir / "paired.csv")
-    assert [r["pair"] for r in pairs[::6]] == ["A vs B", "A vs C", "B vs C"]  # in PAIRS order
-    assert len(pairs) == 3 * 6  # 4 McNemar + 2 Wilcoxon outcomes per pair
+    assert list(dict.fromkeys(r["pair"] for r in pairs)) == ["A vs B", "A vs C", "B vs C"]  # in PAIRS order
+    assert len(pairs) == 3 * 7  # 5 McNemar + 2 Wilcoxon outcomes per pair
 
     br = read_csv(run_dir / "breakdown.csv")
     a_author = {r["group"]: r for r in br if r["config"] == "A" and r["dimension"] == "author"}
@@ -425,7 +426,7 @@ def test_missing_config_shows_failed_and_skips_its_pair(tmp_path, run_dir):
     assert "A vs C: n/a (C missing)" in text
     assert "B vs C: n/a (C missing)" in text
     c_line = next(line for line in text.splitlines() if line.startswith("| C |"))
-    assert c_line.count("n/a") == 13  # every headline metric
+    assert c_line.count("n/a") == 15  # every headline metric
     assert {r["pair"] for r in read_csv(run_dir / "paired.csv")} == {"A vs B"}
 
 
@@ -832,3 +833,78 @@ def test_ontology_adequacy_section_and_csv(tmp_path, run_dir):
     assert "not whether the snapshot data covers them" in text
     assert rows["C"]["snapshot_id"] == "fixtures"
     assert rows["A"]["answerable"] == "" and rows["A"]["status"].startswith("n/a")
+
+
+# --------------------------------------------------------------------------- per-item planning outcomes
+
+
+def _outcome(item_id, feasible, valid, n_itin=1, n_bad=0):
+    return {"item_id": item_id, "oracle_feasible": feasible, "got_valid_plan": valid, "n_itineraries": n_itin,
+            "n_violating_itineraries": n_bad, "violation_codes": ["connector"] if n_bad else []}
+
+
+OUTCOMES = [  # 4 oracle-feasible items, 3 valid; 5 itineraries, 2 violating (i2 twice)
+    _outcome("i1", True, True),
+    _outcome("i2", True, False, n_itin=2, n_bad=2),
+    _outcome("i3", False, False, n_itin=0),
+    _outcome("i4", True, True),
+    _outcome("i5", True, True, n_itin=1),
+]
+
+
+def _set_c_planning_items(run_dir, outcomes):
+    path = run_dir / "C_items.json"
+    d = json.loads(path.read_text(encoding="utf-8"))
+    d["metrics"]["planning"]["feasibility"]["items"] = outcomes
+    path.write_text(json.dumps(d), encoding="utf-8")
+
+
+def test_planning_rates_and_cis_come_from_per_item_outcomes(run_dir):
+    _set_c_planning_items(run_dir, OUTCOMES)
+    runs, _ = load_runs(run_dir)
+    h = headline(runs["C"], n_boot=500)
+    feas, (lo, hi) = h["plan_feasibility_rate"]
+    assert feas == pytest.approx(3 / 4) and 0 <= lo <= feas <= hi <= 1  # items, not the block's 0.9
+    hv, (lo, hi) = h["hard_violation_rate"]
+    assert hv == pytest.approx(2 / 5) and 0 <= lo <= hv <= hi <= 1  # pooled over itineraries
+    assert h["plan_feasibility_rate"] == headline(runs["C"], n_boot=500)["plan_feasibility_rate"]  # fixed seed
+    assert runs["C"].planning_source == "result JSON"
+    # B has no outcomes and no block: n/a, never a CI made up from nothing
+    assert headline(runs["B"], n_boot=100)["plan_feasibility_rate"] == (None, None)
+
+
+def test_backfilled_outcomes_are_used_but_never_override_the_result_json(run_dir):
+    backfill = {"configs": {"A": {"items": OUTCOMES[:2]}, "C": {"items": [_outcome("i1", True, False)]}}}
+    _set_c_planning_items(run_dir, OUTCOMES)
+    (run_dir / "planning_items.json").write_text(json.dumps(backfill), encoding="utf-8")
+    runs, _ = load_runs(run_dir)
+    assert runs["A"].planning_source == "planning_items.json (backfilled)" and set(runs["A"].planning) == {"i1", "i2"}
+    assert runs["C"].planning_source == "result JSON" and len(runs["C"].planning) == 5
+    assert "planning_items" not in {r.config for r in runs.values()}  # the sidecar is not a config run
+
+
+def test_report_labels_hard_violations_and_counts_verifier_disagreements(run_dir):
+    text = build_report(run_dir, n_boot=100).read_text(encoding="utf-8")
+    assert "Hard-violation rate (vs gold)" in text
+    assert "measured against the gold request (includes parser errors); verifier disagreements: A 0, B 0, C 1" in text
+    assert "no per-item planning outcomes in this run, so no CI" in text
+
+
+def test_valid_plan_mcnemar_and_kg_pair_outcomes(run_dir):
+    _set_c_planning_items(run_dir, OUTCOMES)
+    (run_dir / "planning_items.json").write_text(
+        json.dumps({"configs": {"B": {"items": [_outcome(o["item_id"], o["oracle_feasible"], True)
+                                                for o in OUTCOMES]}}}),
+        encoding="utf-8",
+    )
+    runs, _ = load_runs(run_dir)
+    rows = {r["outcome"]: r for r in paired(runs["B"], runs["C"])}
+    v = rows["got_valid_plan"]
+    assert (v["n"], v["b"], v["c"]) == (4, 1, 0)  # i2: B valid, C not; i3 is not oracle-feasible
+    a_vs_b = {r["outcome"]: r for r in paired(runs["A"], runs["B"])}["got_valid_plan"]
+    assert (a_vs_b["n"], a_vs_b["p_value"], a_vs_b["note"]) == (0, None, "no paired values")  # A has none
+    assert "kg_evidence_coverage" not in rows  # KG outcomes only for the ablation pair
+    c = runs["C"]
+    nokg = ConfigRun({**c.payload, "config": "C-noKG"}, c.items)
+    kg_rows = {r["outcome"]: r for r in paired(c, nokg)}
+    assert {"kg_evidence_coverage", "kg_claim_share"} <= set(kg_rows)

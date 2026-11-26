@@ -338,10 +338,35 @@ def _findings(evals: list[ItemEval], oracle: LabelSettingOracle) -> list[dict]:
 # --------------------------------------------------------------------------- metric blocks
 
 
+def _got_valid_plan(e: ItemEval) -> bool:
+    """The system returned a plan and the oracle accepts its recommended itinerary (gold request)."""
+    return e.result.status == "ok" and e.recommended is not None and e.recommended.ok
+
+
+def per_item_outcomes(evals: list[ItemEval]) -> list[dict[str, Any]]:
+    """One record per evaluable item, so the report can bootstrap over items and pair configs.
+
+    `got_valid_plan` is what plan feasibility counts (over oracle-feasible items only);
+    `n_itineraries` / `n_violating_itineraries` are what the hard-violation rate counts (every
+    returned alternative, checked against the GOLD request).
+    """
+    return [
+        {
+            "item_id": e.item_id,
+            "oracle_feasible": bool(e.feasibility.feasible),
+            "got_valid_plan": _got_valid_plan(e),
+            "n_itineraries": len(e.reports),
+            "n_violating_itineraries": sum(1 for r in e.reports if not r.ok),
+            "violation_codes": sorted({v.code for r in e.reports for v in r.violations}),
+        }
+        for e in evals
+    ]
+
+
 def feasibility_and_violations(items, results, oracle, evals: list[ItemEval] | None = None) -> dict[str, Any]:
     evals = evals if evals is not None else evaluate(items, results, oracle)[0]
     feasible = [e for e in evals if e.feasibility.feasible]
-    got_valid = sum(1 for e in feasible if e.result.status == "ok" and e.recommended is not None and e.recommended.ok)
+    got_valid = sum(1 for e in feasible if _got_valid_plan(e))
     rejected = sum(1 for e in feasible if e.result.status == "infeasible")
     reports = [r for e in evals for r in e.reports]
     codes = Counter(v.code for r in reports for v in r.violations)
@@ -361,6 +386,7 @@ def feasibility_and_violations(items, results, oracle, evals: list[ItemEval] | N
         "violations_by_code": dict(sorted(codes.items())),
         "n_uncheckable_itineraries": sum(e.uncheckable for e in evals),
         "n_leaf_feasibility_items": sum(1 for e in evals if e.feasibility.charge_time_excluded),
+        "items": per_item_outcomes(evals),
     }
 
 

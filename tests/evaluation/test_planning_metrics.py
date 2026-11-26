@@ -162,3 +162,29 @@ def test_unknown_status_reliance():
     # Front-based metrics only run where the planner returned a plan.
     none = unknown_status_reliance([item("s1")], [result("s1", status="infeasible")], o)
     assert none["n_oracle_plans"] == 0 and none["items_any_plan_unknown_status_share"] is None
+
+
+# --------------------------------------------------------------------------- per-item outcomes
+
+
+def test_per_item_outcomes_reproduce_the_block_rates():
+    from evaluation.planning_items import mismatches, totals
+
+    m = feasibility_and_violations(ITEMS, RESULTS, oracle())
+    by_id = {o["item_id"]: o for o in m["items"]}
+    assert sorted(by_id) == ["i1", "i2", "i3", "i4", "i5"]  # i6 is not evaluable
+    assert {i for i, o in by_id.items() if o["oracle_feasible"]} == {"i1", "i2", "i5"}
+    assert {i for i, o in by_id.items() if o["got_valid_plan"]} == {"i1", "i5"}
+    assert (by_id["i2"]["n_violating_itineraries"], by_id["i2"]["violation_codes"]) == (1, ["arrival_soc"])
+    assert (by_id["i4"]["n_violating_itineraries"], by_id["i4"]["violation_codes"]) == (1, ["connector"])
+    assert by_id["i3"]["n_itineraries"] == 0  # correctly rejected: nothing to check
+    assert mismatches(m, totals(m["items"])) == []  # the outcomes add up to the block
+
+
+def test_backfill_mismatch_names_the_differing_totals():
+    from evaluation.planning_items import mismatches, totals
+
+    m = feasibility_and_violations(ITEMS, RESULTS, oracle())
+    changed = [dict(o, got_valid_plan=False) if o["item_id"] == "i5" else o for o in m["items"]]
+    diffs = mismatches(m, totals(changed))
+    assert len(diffs) == 1 and diffs[0].startswith("plan_feasibility_rate: saved 0.666")

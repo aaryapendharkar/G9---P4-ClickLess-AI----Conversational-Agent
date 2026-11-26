@@ -59,15 +59,19 @@ cached routes) and its own implementation of the documented energy model.
 | Area | Metrics | Code |
 |---|---|---|
 | Request understanding | field-level P/R/F1 (micro and per field), exact match, clarification F1, silent-assumption rate, invented-constraint rate | `metrics/request_understanding.py` |
-| Planning | plan feasibility (oracle-feasible items that get an oracle-valid plan), hard-violation rate, infeasible-request handling, robustness under +15% consumption, nDCG@3 | `metrics/planning.py` |
+| Planning | plan feasibility (oracle-feasible items that get an oracle-valid plan), hard-violation rate (every returned itinerary checked against the **gold** request, so parser errors that lead to a bad plan count; the report also gives the number of planner-verifier/oracle disagreements), infeasible-request handling, robustness under +15% consumption, nDCG@3 | `metrics/planning.py` |
 | Trade-offs | Pareto validity of the shown alternatives, faithfulness of trade-off numbers, sensitivity to weights | `metrics/tradeoffs.py` |
-| Grounding | claim-support rate (every cited evidence id must support the claim), KG-evidence coverage, freshness-label errors | `metrics/grounding.py` |
+| Grounding | claim-support rate (every cited evidence id must support the claim), KG evidence coverage (share of the recommended plan's displayed stop facts supported by the result's own KG evidence), KG-cited claim share, freshness-label errors | `metrics/grounding.py` |
 | Handoff | the approved Google Maps URL contains each approved stop exactly once | `metrics/handoff.py` |
 
 **Statistics** (`metrics/stats.py`):
-- 95% percentile-bootstrap CIs (10,000 resamples, seed 573).
+- 95% percentile-bootstrap CIs (10,000 resamples, seed 573), resampling items. Plan feasibility and the
+  hard-violation rate use the per-item planning outcomes the harness saves (pooled ratio for violations,
+  so an item's itineraries stay together).
 - Paired tests between configs on the items both ran: McNemar for per-item success, Wilcoxon signed-rank for
-  per-item scores. Pairs: A vs B, A vs C, B vs C, and C vs C-noKG for the KG ablation.
+  per-item scores. Pairs: A vs B, A vs C, B vs C, and C vs C-noKG for the KG ablation. McNemar also covers
+  "got a valid plan" (oracle-feasible items); C vs C-noKG adds Wilcoxon on KG evidence coverage and the
+  KG-cited claim share.
 
 ## How to reproduce
 
@@ -81,6 +85,7 @@ $env:VOYAGER_API_KEY = ""
 python -m evaluation.report --configs A B C C-noKG --split dev                 # -> results/<timestamp>/
 python -m evaluation.report --configs A B C --items benchmark/requests/raw/deepti.jsonl   # a subset, e.g. one author
 python -m evaluation.report --from results/<timestamp>                         # rebuild report.md + CSVs from saved runs
+python -m evaluation.planning_items results/<timestamp>                        # older runs: per-item planning outcomes (oracle only), then --from
 python -m evaluation.report --configs A B C C-noKG --split test --final        # final run only, after all tuning
 ```
 Bash: `export CLICKLESS_DATA_SOURCE=snapshot`, then `make eval-dev` (all of A, B, C) or `make eval-dev CONFIGS="A B"`.
