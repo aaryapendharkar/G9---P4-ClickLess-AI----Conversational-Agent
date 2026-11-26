@@ -1,0 +1,97 @@
+# Freezes the reviewed draft snapshot as it is and publishes it as a new release (issue #36). Owner: Aarya.
+# Actions tab -> "snapshot freeze" -> Run workflow. Downloads the draft release, checks it
+# (python -m clickless.data.freeze_snapshot: manifest intact, ADRs accepted, no blocking validation
+# problem, routes valid and listed, no county/district place matches, every benchmark item routed),
+# sets "frozen": true in MANIFEST.json without changing any data file, and publishes the result as
+# a new release. Nothing is downloaded from AFDC, OSM, Nominatim or OSRM; refuses if the target
+# release already exists.
+name: snapshot freeze
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_release:
+        description: "Draft release to freeze"
+        default: snapshot-v1-draft
+        required: true
+      to_release:
+        description: "New release for the frozen snapshot (must not exist yet)"
+        default: snapshot-v1
+        required: true
+
+permissions:
+  contents: write  # create the release
+
+concurrency:
+  group: snapshot-release
+  cancel-in-progress: false
+
+jobs:
+  freeze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Refuse if the target release exists
+        run: |
+          if gh release view "${{ inputs.to_release }}" >/dev/null 2>&1; then
+            echo "::error title=Release exists::${{ inputs.to_release }} already exists; a frozen snapshot is never replaced"
+            exit 1
+          fi
+      - name: Download the draft
+        run: |
+          gh release download "${{ inputs.from_release }}" --pattern '*.zip' --dir downloaded
+          mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
+          python -m clickless.data.snapshot_report --verify-only
+          echo "DRAFT_ZIP_SHA=$(sha256sum downloaded/*.zip | cut -d' ' -f1)" >> "$GITHUB_ENV"
+      - name: Check and freeze
+        run: python -m clickless.data.freeze_snapshot --dir data/snapshot --from-release "${{ inputs.from_release }}"
+      - name: Report and zip
+        run: |
+          python -m clickless.data.snapshot_report --pack "results/${{ inputs.to_release }}.zip" --out results/snapshot-report.md
+          python -m clickless.data.snapshot_report --verify-only
+          python - <<'PY' > results/frozen.md
+          import hashlib, json
+          m = json.load(open("data/snapshot/MANIFEST.json"))
+          f = m["frozen_from"]
+          print(f"- Frozen at {m['frozen_at']} from `{f['release']}` (draft MANIFEST.json sha256 `{f['manifest_sha256']}`). "
+                f"Data files are byte-identical to that draft; only MANIFEST.json changed (`\"frozen\": true`).")
+          print(f"- Snapshot id: `snapshot:{hashlib.sha256(open('data/snapshot/MANIFEST.json','rb').read()).hexdigest()[:12]}`, "
+                f"{len(m['files'])} files.")
+          p, r = m["sources"]["places"], m["sources"]["routes"]
+          print(f"- Places: {p['resolved']} geocoded, unresolved: {', '.join(p['unresolved']) or 'none'}. "
+                f"Routes: {r['files']} files ({r['distinct_routes']} distinct), OSRM, pairs failed: {r['pairs_failed'] or 'none'}.")
+          PY
+          {
+            echo "**Frozen snapshot v1.** Issue #36. Do not modify; a change needs a new snapshot version."
+            echo
+            cat results/frozen.md
+            echo
+            echo "Use: unzip into \`data/snapshot/\` (replacing any draft), run \`make snapshot-verify\` (expect \`[] (intact)\`), then run with \`CLICKLESS_DATA_SOURCE=snapshot\`."
+            echo
+            echo "zip SHA-256: \`$(sha256sum "results/${{ inputs.to_release }}.zip" | cut -d' ' -f1)\` · draft zip SHA-256: \`${DRAFT_ZIP_SHA}\`"
+            echo
+            sed 's/^## Snapshot report/### Snapshot report/' results/snapshot-report.md
+            echo
+            echo "Built by the \`snapshot freeze\` workflow (run ${{ github.run_id }}). OSM data © OpenStreetMap contributors, ODbL."
+          } > results/release-notes.md
+      - name: Publish
+        run: |
+          gh release create "${{ inputs.to_release }}" "results/${{ inputs.to_release }}.zip" results/snapshot-report.md \
+            --title "Snapshot v1 (frozen)" --notes-file results/release-notes.md
+          {
+            echo "**Superseded by the frozen \`${{ inputs.to_release }}\`** (run ${{ github.run_id }}): use that release for all results."
+            echo
+            gh release view "${{ inputs.from_release }}" --json body --jq .body
+          } > results/draft-notes.md
+          gh release edit "${{ inputs.from_release }}" --notes-file results/draft-notes.md
+          echo "::notice title=Frozen snapshot published::https://github.com/${{ github.repository }}/releases/tag/${{ inputs.to_release }}"

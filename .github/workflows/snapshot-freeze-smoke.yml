@@ -1,0 +1,51 @@
+# Smoke test for "snapshot freeze" (issue #36), on pull requests that change it: freezes a copy of the
+# published draft on a GitHub runner exactly as the real workflow would, and comments the result on
+# the PR. Publishes nothing.
+name: snapshot freeze smoke
+
+on:
+  pull_request:
+    paths:
+      - src/clickless/data/freeze_snapshot.py
+      - .github/workflows/snapshot-freeze*.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - name: Freeze a copy of the draft
+        run: |
+          gh release download snapshot-v1-draft --pattern '*.zip' --dir downloaded
+          mkdir -p data/snapshot && unzip -q -o downloaded/*.zip -d data/snapshot
+          echo "draft MANIFEST sha256: $(sha256sum data/snapshot/MANIFEST.json | cut -c1-12)" | tee smoke.log
+          python -m clickless.data.freeze_snapshot --dir data/snapshot --check-only 2>&1 | tee -a smoke.log
+          python -m clickless.data.freeze_snapshot --dir data/snapshot --from-release snapshot-v1-draft 2>&1 | tee -a smoke.log
+          python -m clickless.data.snapshot_report --verify-only 2>&1 | tee -a smoke.log
+          python -m clickless.data.freeze_snapshot --dir data/snapshot --check-only 2>&1 | tee -a smoke.log || true
+          python -m clickless.data.add_routes --dir data/snapshot 2>&1 | tee -a smoke.log || true
+          python -m clickless.data.snapshot_report 2>&1 | head -n 12 | tee -a smoke.log
+      - name: Comment the result on the PR
+        if: always()
+        run: |
+          {
+            echo "**snapshot freeze smoke test** (run ${{ github.run_id }}, ${{ job.status }}): froze a copy of \`snapshot-v1-draft\`, published nothing"
+            echo '```'
+            cat smoke.log 2>/dev/null || echo "no log"
+            echo '```'
+          } > comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file comment.md
