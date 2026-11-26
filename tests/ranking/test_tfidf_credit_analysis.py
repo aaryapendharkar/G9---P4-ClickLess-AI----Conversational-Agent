@@ -1,9 +1,11 @@
 """Tests for the DEV-only TF-IDF amenity-credit policy comparison."""
 
+import importlib.util
 from types import SimpleNamespace
 
 import pytest
 
+from clickless.config import repo_path
 from clickless.contracts import (
     AmenityCategory,
     AmenityPreference,
@@ -23,7 +25,26 @@ from clickless.ranking.tfidf_credit_analysis import (
 from clickless.ranking.weighted_ranker import WeightedRanker
 from clickless.retrieval.tfidf_matcher import TfidfMatcher
 from evaluation.config_names import SnapshotRequired
-from scripts import analyze_tfidf_credit as analysis_script
+
+
+def _load_analysis_script():
+    """Load the repository script by path on both Windows and Linux."""
+
+    script_path = repo_path("scripts/analyze_tfidf_credit.py")
+    module_spec = importlib.util.spec_from_file_location(
+        "analyze_tfidf_credit_script",
+        script_path,
+    )
+
+    if module_spec is None or module_spec.loader is None:
+        raise ImportError(f"could not load analysis script from {script_path}")
+
+    analysis_script = importlib.util.module_from_spec(module_spec)
+    module_spec.loader.exec_module(analysis_script)
+    return analysis_script
+
+
+analysis_script = _load_analysis_script()
 
 
 def _fixture_amenity(store, amenity_id):
