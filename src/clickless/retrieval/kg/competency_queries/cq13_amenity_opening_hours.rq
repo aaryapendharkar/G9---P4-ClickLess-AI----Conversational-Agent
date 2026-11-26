@@ -1,7 +1,7 @@
 # CQ13: When are the amenities near station S open?
 # Author: Aarya (#158). cc:openingHours is the OSM opening_hours string, as tagged. An amenity
 # without one is reported as "unknown", never as always open.
-PREFIX cc:   <https://example.org/clickless#>
+PREFIX cc:   <https://w3id.org/clickless#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
 SELECT ?amenity ?category ?hours

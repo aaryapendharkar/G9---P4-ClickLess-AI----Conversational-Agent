@@ -5,7 +5,7 @@
 # DC fast ports only (an AC adapter is never inferred, ADR 0009). A port with unknown power is
 # listed with an empty ?power (ADR 0010) and sorts last. DISTINCT: a connector that is both native
 # and adapted matches a port twice.
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT DISTINCT ?station ?port ?connector ?power
 WHERE {

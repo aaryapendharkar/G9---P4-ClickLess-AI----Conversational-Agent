@@ -2,7 +2,7 @@
 # Author: Aarya (#158). cc:status is Station.status: available, planned, temporarily_unavailable
 # or unknown. Planned and temporarily unavailable stations are never planned through; unknown is
 # allowed but reported (unknown_status_reliance in the evaluation).
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT ?station ?status
 WHERE {

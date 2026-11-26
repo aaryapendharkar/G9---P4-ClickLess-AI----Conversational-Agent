@@ -4,7 +4,7 @@
 # has no cc:powerKw and never meets a threshold (ADR 0010: unknown, not 0 and not guessed). One
 # row per qualifying port, fastest first. Station status and access are not filtered here (CQ11,
 # CQ12 ask about them).
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT ?station ?port ?power
 WHERE {

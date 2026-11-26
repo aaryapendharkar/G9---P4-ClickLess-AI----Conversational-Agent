@@ -4,7 +4,7 @@
 # (retrieval.yaml amenity_radius_m) and the proposed term cc:amenityCategory (see
 # docs/COMPETENCY_QUESTIONS.md, "Ontology terms needed"). A documented adapter counts at DC fast
 # ports only, as in CQ1 and planning/filters.py::compatible_ports (#157).
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT DISTINCT ?station ?amenity ?connector
 WHERE {

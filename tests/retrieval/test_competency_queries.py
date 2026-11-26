@@ -4,6 +4,7 @@ import re
 
 import pytest
 
+from clickless.retrieval.kg.build import CC_NS
 from clickless.retrieval.kg.competency import CQ_DIR
 
 FILES = sorted(CQ_DIR.glob("cq*.rq"))
@@ -21,7 +22,7 @@ def test_cq1_to_cq6_exist():
 @pytest.mark.parametrize("path", FILES, ids=lambda p: p.name)
 def test_query_structure(path):
     body = _body(path)
-    assert re.search(r"PREFIX\s+cc:\s+<https://example\.org/clickless#>", body)
+    assert re.search(rf"PREFIX\s+cc:\s+<{re.escape(CC_NS)}>", body)  # the KG's namespace (ADR 0019)
     assert re.search(r"\bSELECT\b", body) and re.search(r"\bWHERE\b", body)
     assert body.count("{") == body.count("}") and body.count("(") == body.count(")")
     for prefix in set(re.findall(r"\b([a-z]+):[A-Za-z_]", body)) - {"https", "http"}:

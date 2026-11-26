@@ -13,6 +13,7 @@ traversal ergonomics, but a server to run and less aligned with the course).
 ## Decision (proposed)
 RDF with rdflib, ontology in `retrieval/kg/ontology.ttl`, provenance aligned with PROV-O,
 competency questions as SPARQL `.rq` files. KG serialized as `data/snapshot/kg.ttl`.
+ADR 0019 sets the namespace and spells out the PROV-O alignment.
 
 ## Consequences
 No extra service for teammates or CI. If corridor-scale queries are too slow in rdflib, keep

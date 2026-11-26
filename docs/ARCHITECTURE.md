@@ -51,6 +51,11 @@ Planner, filters, verifier and the approval gate are identical in all configs (p
 `data/afdc.py`, `data/vehicles.py`, `data/osm_amenities.py` → normalized JSON in the fixture
 layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.py` → `kg.ttl`.
 
+The KG ontology (`retrieval/kg/ontology.ttl`, v0.4) uses the namespace
+`https://w3id.org/clickless#` (prefix `cc:`) for its terms and for the data IRIs `build.py` mints.
+Its source-record, claim and explanation terms are aligned with PROV-O by one-way
+subclass/subproperty axioms, and the stored graph holds no `prov:` triples (ADR 0019).
+
 ## Dependency rules (enforced by tests/review)
 
 1. Modules talk only through `clickless.contracts` types and the Protocols in
@@ -85,7 +90,7 @@ layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.p
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
 | AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
-| KG build + enrichment (C) | v0.3: runtime rdflib graphs contain only the current route's corridor candidates and amenities; full graphs remain available for offline competency queries. The pipeline copies facts for displayed normal or relaxed alternatives into `PlanResult.evidence` (ADR 0015, issue #115) |
+| KG build + enrichment (C) | ontology v0.4: final namespace and PROV-O alignment (ADR 0019). Runtime rdflib graphs contain only the current route's corridor candidates and amenities; full graphs remain available for offline competency queries. The pipeline copies facts for displayed normal or relaxed alternatives into `PlanResult.evidence` (ADR 0015, issue #115) |
 | LLM parser, grounded explainer, evaluation splits/reporting | implemented; oracle and remaining statistics are still in progress |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning

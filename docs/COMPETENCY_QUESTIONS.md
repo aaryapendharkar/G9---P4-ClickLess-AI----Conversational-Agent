@@ -63,7 +63,13 @@ the graph's triples in reverse). CQ6 takes
 `cutoff=clickless.data.provenance.stale_cutoff(retrieved_at)`: a record is stale exactly when its
 source update time is at or before the cutoff, the same rule as `provenance.is_stale`.
 
-They use these terms, defined in `ontology.ttl` (v0.2, ADR 0015; v0.3 adds the CQ9 terms):
+**Namespace:** `cc:` = `https://w3id.org/clickless#` (ontology IRI `https://w3id.org/clickless`,
+ADR 0019). Every query declares it as `PREFIX cc:`, and `retrieval/kg/build.py::CC_NS` is its one
+Python definition. Data IRIs share it (`cc:station_FIX-ST-004`, `cc:source_station_FIX-ST-004`), so
+the inventory's example bindings are written as `cc:...`.
+
+They use these terms, defined in `ontology.ttl` (v0.2, ADR 0015; v0.3 adds the CQ9 terms; v0.4
+adds the final namespace and the PROV-O alignment, ADR 0019):
 
 | Term | Domain → range | Used by | Value |
 |---|---|---|---|
@@ -81,3 +87,21 @@ Graph-building assumptions: `cc:near` edges only for amenities within `amenity_r
 `cc:supports` and adapter connectors only `cc:supportsViaAdapter` (no RDFS materialization in
 the stored graph, otherwise CQ5 returns nothing); a documented adapter counts at DC fast ports
 only, as in `planning/filters.py::compatible_ports` (CQ1, CQ2); a port with unknown power has no `cc:powerKw`.
+
+### PROV-O alignment (ADR 0019)
+The provenance terms have one-way PROV-O axioms in `ontology.ttl`. The stored graph holds no
+`prov:` triples (the CQs read `cc:` terms, as above):
+
+| ClickLess term | PROV-O | Used by |
+|---|---|---|
+| `cc:Source` | `rdfs:subClassOf prov:Entity` | CQ4, CQ6, CQ9, CQ15, CQ17 |
+| `cc:retrievedAt` | `rdfs:subPropertyOf prov:generatedAtTime` | CQ4, CQ6, CQ9 |
+| `cc:Claim` | `rdfs:subClassOf prov:Entity` | CQ9 |
+| `cc:supportedBy` | `rdfs:subPropertyOf prov:wasDerivedFrom` | CQ9 |
+| `cc:Explanation` | `rdfs:subClassOf prov:Collection` | CQ9 |
+| `cc:hasClaim` | `rdfs:subPropertyOf prov:hadMember` | CQ9 |
+
+`cc:hasProvenance`, `cc:sourceUpdatedAt`, `cc:sourceName`, `cc:sourceRecordId`, `cc:sourceUrl` and
+`cc:dataStatus` are deliberately not mapped (ADR 0019 §2 gives the reasons). So CQ9 can also be
+asked in PROV-O terms only: `tests/retrieval/test_kg_prov_alignment.py` runs that query, using
+`rdfs:subPropertyOf*` paths, and gets exactly CQ9's claim → source → time rows.

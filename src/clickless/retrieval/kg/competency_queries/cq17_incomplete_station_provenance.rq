@@ -2,7 +2,7 @@
 #       cannot be traced back to the source record?
 # Author: Aarya (#158). Snapshot stations carry the AFDC record id and URL; synthetic or
 # hand-made records may not. One row per station with at least one missing; the two flags say which.
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT ?station ?sourceName ?missingRecordId ?missingUrl
 WHERE {

@@ -3,7 +3,7 @@
 # (cc:maxDcKw, Vehicle.max_dc_kw). Usable as in CQ1 (native connector, or a documented adapter;
 # DC fast only here). If either power is unknown the effective power is unknown: the row is kept
 # with an empty ?effectiveKw (ADR 0010), never filled with the other value.
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT DISTINCT ?port ?connector ?portKw ?vehicleKw ?effectiveKw
 WHERE {

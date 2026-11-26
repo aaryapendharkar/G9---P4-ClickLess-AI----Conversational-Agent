@@ -1,6 +1,7 @@
 """Load a DataStore into an RDF graph (Config C knowledge graph). Owner: Manas.
 
-Decisions: ADR 0001 (rdflib + SPARQL), ADR 0015 (what enrichment reads back as Evidence).
+Decisions: ADR 0001 (rdflib + SPARQL), ADR 0015 (what enrichment reads back as Evidence),
+ADR 0019 (namespace; PROV-O alignment lives in ontology.ttl, so no prov: triples are written here).
 Install with `pip install -e ".[kg]"`; rdflib is imported only when a graph is built.
 
 Nodes: one per Station, ChargingPort, Network, Amenity and Vehicle, one cc:Source per provenance
@@ -41,7 +42,9 @@ from ...contracts import Amenity, DataStatus, Evidence, PlanResult, Provenance, 
 if TYPE_CHECKING:  # rdflib is an optional extra
     from rdflib import Graph, URIRef
 
-CC_NS = "https://example.org/clickless#"
+# The ClickLess namespace (ADR 0019): ontology terms and the data IRIs minted below. The ontology
+# IRI is CC_NS without the "#". Every competency query declares the same `PREFIX cc:`.
+CC_NS = "https://w3id.org/clickless#"
 DEFAULT_ONTOLOGY = "src/clickless/retrieval/kg/ontology.ttl"
 DEFAULT_AMENITY_RADIUS_M = 400.0  # proposal §II; must equal configs/retrieval.yaml amenity_radius_m
 

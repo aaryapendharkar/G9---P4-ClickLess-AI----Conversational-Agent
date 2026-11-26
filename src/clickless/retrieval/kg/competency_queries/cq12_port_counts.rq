@@ -2,7 +2,7 @@
 # Author: Aarya (#158). A station's ports are grouped by connector and charger level; cc:portCount
 # is the number of physical points behind one port entry (ChargingPort.count), so the answer is
 # the sum over entries with the same connector and level.
-PREFIX cc: <https://example.org/clickless#>
+PREFIX cc: <https://w3id.org/clickless#>
 
 SELECT ?connector ?level (SUM(?count) AS ?points)
 WHERE {
