@@ -45,7 +45,7 @@ def raw(tmp_path):
     d.mkdir()
     lines = [
         _item("ian-001", "Phoenix", "Flagstaff"),
-        _item("ian-002", "Springfield", "Flagstaff"),  # unresolved on purpose: needs clarification
+        _item("ian-002", "Springfield", "Flagstaff", missing=["origin"]),  # ambiguous on purpose: clarification
         _item("ian-003", "Rochester", "Phoenix", missing=["origin"]),
     ]
     (d / "ian.jsonl").write_text("\n".join(json.dumps(x) for x in lines) + "\n", encoding="utf-8")
@@ -121,3 +121,21 @@ def test_check_only_changes_nothing(draft, raw, capsys):
     assert fs.main(["--dir", str(draft), "--raw-dir", str(raw), "--check-only"]) == 0
     assert (draft / "MANIFEST.json").read_bytes() == before
     assert "ready to freeze" in capsys.readouterr().out
+
+
+def test_refuses_a_complete_item_whose_place_does_not_resolve(draft, raw):
+    """Only items that mark the place as missing may leave it unresolved (Hriday's review on #170)."""
+    (raw / "more.jsonl").write_text(
+        json.dumps(_item("ian-005", "Springfield", "Flagstaff")) + "\n"  # complete, yet unresolvable
+        + json.dumps(_item("ian-006", "Phoenix", "Flagstaff", missing=["destination"])) + "\n",
+        encoding="utf-8")
+    problems = fs.freeze_problems(draft, str(raw))
+    assert any("unresolved place not marked missing" in p and "ian-005: origin 'Springfield'" in p for p in problems)
+    assert not any("ian-006" in p for p in problems)
+
+
+def test_refuses_a_complete_item_without_a_place(draft, raw):
+    item = _item("ian-007", "Phoenix", "Flagstaff")
+    del item["gold_request"]["destination"]
+    (raw / "more.jsonl").write_text(json.dumps(item) + "\n", encoding="utf-8")
+    assert any("ian-007: no destination" in p for p in fs.freeze_problems(draft, str(raw)))

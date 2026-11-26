@@ -12,7 +12,8 @@ changes; it refuses unless every check passes:
 - the validator finds no blocking problem (snapshot_report.collect, the same check as the report);
 - every file in routes/ is a valid Route listed in the manifest (add_routes.check_route_files);
 - no stored place is a county/state match or a district mismatch (geocode, #120 and #122);
-- every benchmark item that gives both places resolves them and finds its cached route.
+- every benchmark item resolves both places and finds its cached route, unless the item marks a
+  place as missing on purpose (`missing_safety_fields`, the clarification items).
 
 Then MANIFEST.json gets `"frozen": true`, `frozen_at` and `frozen_from` (the release and the
 SHA-256 of the draft's MANIFEST.json, so the frozen snapshot can be traced to the draft everyone
@@ -88,21 +89,27 @@ def _unrouted_benchmark_items(root, raw_dir: str) -> list[str]:
 
     store = DataStore.from_dir(root)
     router = CachedRouter(store, load_config("A")["energy"])
-    missing = []
+    unresolved, missing = [], []
     for item in load_items(repo_path(raw_dir)):
-        gold = item.gold_request
-        if not gold.get("origin") or not gold.get("destination"):
-            continue
         if {"origin", "destination"} & set(item.missing_safety_fields):
-            continue  # left unresolved on purpose (clarification items)
-        origin, destination = store.geocode(gold["origin"]), store.geocode(gold["destination"])
-        if not (origin.resolved and destination.resolved):
-            continue  # e.g. "Springfield": the benchmark expects a clarification, not a route
+            continue  # a place left out or ambiguous on purpose (clarification items such as "Springfield")
+        gold = item.gold_request
+        ends = {f: gold.get(f) for f in ("origin", "destination")}
+        bad = [f"{f} {text!r}" if text else f"no {f}" for f, text in ends.items()
+               if not text or not store.geocode(text).resolved]
+        if bad:  # a complete request whose place the snapshot can't resolve: never skipped silently
+            unresolved.append(f"{item.id}: {', '.join(bad)}")
+            continue
         try:
-            router.route(origin, destination)
+            router.route(store.geocode(ends["origin"]), store.geocode(ends["destination"]))
         except Exception as e:  # noqa: BLE001 - every missing route is a reason not to freeze
             missing.append(f"{item.id}: {type(e).__name__}")
-    return [f"benchmark items without a cached route: {missing}"] if missing else []
+    problems = []
+    if unresolved:
+        problems.append(f"benchmark items with an unresolved place not marked missing: {unresolved}")
+    if missing:
+        problems.append(f"benchmark items without a cached route: {missing}")
+    return problems
 
 
 def freeze(snapshot_dir: str = "data/snapshot", from_release: str | None = None,
