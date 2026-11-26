@@ -2,6 +2,9 @@
 
   * atomic-claim evidence support, FActScore-style (target >= 95 %) over PlanResult.claims
   * data-status (freshness) mislabeling rate (target 0 %)
+  * KG evidence coverage of the recommended plan's displayed stop facts, and the share of claims
+    that cite the KG (`kg_evidence`): what separates C from the C-noKG ablation, since claim
+    support is 1.0 for both by construction (template explanations, ADR 0017)
   * provenance completeness (uses clickless.data.validate output) -- TODO
   * ontology adequacy: in evaluation.metrics.ontology_adequacy (#158), which counts the KG's
     competency-question inventory
@@ -202,6 +205,80 @@ def claim_support(results: Sequence[PlanResult]) -> dict[str, Any]:
             for k, c in sorted(by_kind.items())
         },
         "unsupported": unsupported,
+    }
+
+
+# --------------------------------------------------------------------------- KG evidence coverage
+
+_PORT_FACT = re.compile(r"ports\[(\d+)\]\.(connector|power_kw)")
+
+
+def _value(x: Any) -> Any:
+    return getattr(x, "value", x)
+
+
+def _same(a: Any, b: Any) -> bool:
+    a, b = _value(a), _value(b)
+    if isinstance(a, int | float) and isinstance(b, int | float) and not isinstance(a, bool):
+        return abs(float(a) - float(b)) <= 1e-6
+    return a is not None and a == b
+
+
+def kg_evidence_coverage_item(result: PlanResult) -> float | None:
+    """Share of the recommended itinerary's displayed charging-stop facts that THIS result's own
+    KG evidence (`kg:` ids in `result.evidence`) supports. None when there is nothing to cover:
+    no recommended plan, or a direct trip with no charging stop.
+
+    Displayed facts per stop (docs/TRADEOFFS.md, evidence coverage): the station name; the chosen
+    connector (some KG port of the station has it); the chosen power (one KG port has both that
+    connector and that power, so two ports are never combined); and each selected amenity (a KG
+    `name` or `category` fact about it). This is the evaluation's own count from the saved
+    PlanResult, independent of the ranker's coverage (which also sees the candidates).
+    """
+    if result.status != "ok" or not result.alternatives:
+        return None
+    stops = result.alternatives[0].itinerary.stops
+    if not stops:
+        return None
+    kg = [e for e in result.evidence if e.evidence_id.startswith(KG_PREFIX)]
+    shown = supported = 0
+    for stop in stops:
+        facts = [e for e in kg if e.subject_id == stop.station_id]
+        shown += 1
+        supported += any(e.field == "name" and _same(e.value, stop.station_name) for e in facts)
+        ports: dict[str, dict[str, Any]] = {}
+        for e in facts:
+            if m := _PORT_FACT.fullmatch(e.field):
+                ports.setdefault(m.group(1), {})[m.group(2)] = e.value
+        same_connector = [p for p in ports.values() if _same(p.get("connector"), stop.connector)]
+        shown += 2
+        supported += bool(same_connector)
+        supported += any(_same(p.get("power_kw"), stop.port_power_kw) for p in same_connector)
+        for amenity_id in stop.amenity_ids:
+            shown += 1
+            supported += any(e.subject_id == amenity_id and e.field in ("name", "category") for e in kg)
+    return supported / shown
+
+
+def kg_claim_counts_item(result: PlanResult) -> tuple[int, int]:
+    """(claims, claims citing at least one `kg:` id) for one result."""
+    kinds = [_kind(c) for c in result.claims]
+    return len(kinds), sum(k in ("kg", "mixed") for k in kinds)
+
+
+def kg_evidence(results: Sequence[PlanResult]) -> dict[str, Any]:
+    """KG evidence coverage (mean over results with a recommended charging plan) and the share of
+    claims that cite the KG, pooled over all claims."""
+    cov = [c for c in (kg_evidence_coverage_item(r) for r in results) if c is not None]
+    counts = [kg_claim_counts_item(r) for r in results]
+    n_claims, n_kg = sum(n for n, _ in counts), sum(k for _, k in counts)
+    return {
+        "n_results_with_stops": len(cov),
+        "kg_evidence_coverage": sum(cov) / len(cov) if cov else None,
+        "n_full_coverage": sum(1 for c in cov if c >= 1 - 1e-9),
+        "n_claims": n_claims,
+        "n_kg_claims": n_kg,
+        "kg_claim_share": _rate(n_kg, n_claims),
     }
 
 

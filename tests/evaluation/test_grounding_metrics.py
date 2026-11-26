@@ -393,3 +393,58 @@ def test_grounding_metric_does_not_import_the_system_under_test():
     imported = {n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     imported |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     assert not [m for m in imported if m.startswith(forbidden)]
+
+
+# --------------------------------------------------------------------------- KG evidence coverage
+
+
+def _stop_facts(sid="ST-1", connector="CCS1", kw=150.0):
+    return [
+        fact(sid, "name", sid),
+        fact(sid, "ports[0].connector", connector),
+        fact(sid, "ports[0].power_kw", kw),
+    ]
+
+
+def test_kg_coverage_full_when_name_connector_and_power_match_one_port():
+    from evaluation.metrics.grounding import kg_evidence_coverage_item
+
+    assert kg_evidence_coverage_item(result(evidence=_stop_facts())) == 1.0
+
+
+def test_kg_coverage_never_combines_two_ports():
+    from evaluation.metrics.grounding import kg_evidence_coverage_item
+
+    # port 0 has the connector at 50 kW, port 1 has 150 kW on another connector: power unsupported
+    facts = [
+        fact("ST-1", "name", "ST-1"),
+        fact("ST-1", "ports[0].connector", "CCS1"),
+        fact("ST-1", "ports[0].power_kw", 50.0),
+        fact("ST-1", "ports[1].connector", "CHADEMO"),
+        fact("ST-1", "ports[1].power_kw", 150.0),
+    ]
+    assert kg_evidence_coverage_item(result(evidence=facts)) == pytest.approx(2 / 3)
+
+
+def test_kg_coverage_counts_amenities_and_ignores_non_kg_evidence():
+    from evaluation.metrics.grounding import kg_evidence_coverage_item
+
+    s = stop().model_copy(update={"amenity_ids": ["osm:1", "osm:2"]})
+    facts = [*_stop_facts(), fact("osm:1", "category", "coffee")]
+    verified = Evidence(evidence_id="verified:r1:stop:0", subject_id="osm:2", field="name", value="Cafe",
+                        provenance=CACHED)
+    assert kg_evidence_coverage_item(result(alternatives=[alternative(s)], evidence=[*facts, verified])) == 0.8
+
+
+def test_kg_coverage_is_none_without_a_charging_plan_and_zero_without_kg():
+    from evaluation.metrics.grounding import kg_evidence, kg_evidence_coverage_item
+
+    assert kg_evidence_coverage_item(result(alternatives=[alternative()])) is None  # direct trip
+    assert kg_evidence_coverage_item(result(status="infeasible", alternatives=[])) is None
+    no_kg = result(claim("verified:r1:arrival"))
+    assert kg_evidence_coverage_item(no_kg) == 0.0  # C-noKG / A / B: stops shown, no KG facts
+    with_kg = result(claim("kg:ST-1:name"), claim("kg:ST-1:name", "verified:r1:arrival"), claim("verified:r1:cost"),
+                     evidence=_stop_facts())
+    m = kg_evidence([with_kg, no_kg])
+    assert (m["n_results_with_stops"], m["kg_evidence_coverage"], m["n_full_coverage"]) == (2, 0.5, 1)
+    assert (m["n_claims"], m["n_kg_claims"], m["kg_claim_share"]) == (4, 2, 0.5)  # kg and mixed count

@@ -74,6 +74,7 @@ from clickless.config import repo_path
 from clickless.contracts import PlanResult
 
 from .config_names import SnapshotRequired, load_named_config, require_snapshot
+from .metrics.grounding import kg_claim_counts_item, kg_evidence_coverage_item
 from .metrics.request_understanding import (
     asked,
     clarification_prf,
@@ -99,15 +100,21 @@ PAIRS = (
 )
 BREAKDOWNS = ("author", "category", "route_type")
 INPUTS_FILE = "report_inputs.json"
+# Per-item planning outcomes backfilled for a run saved before the harness wrote them
+# (python -m evaluation.planning_items results/<ts>): {"configs": {config: {"items": [...]}}}.
+PLANNING_ITEMS_FILE = "planning_items.json"
 NA = "n/a"
 _ERROR_STATUSES = ("error", "not_implemented")
 LLM_PARSED = ("llm", "rules_fallback")
 ERROR_STAGES = ("parse", "planning")
-_REPORT_FILES = {INPUTS_FILE}
+_REPORT_FILES = {INPUTS_FILE, PLANNING_ITEMS_FILE}
+HARD_VIOLATION_NOTE = "measured against the gold request (includes parser errors)"
 
 # (column, label, where the value comes from). "understanding" metrics are recomputed from rows;
 # ("error_rate", stage) from the rows' error stages; ("block", path, key) metrics are read from
-# the result JSON's metric blocks.
+# the result JSON's metric blocks; ("planning", path, key) from the per-item planning outcomes
+# (bootstrap CI over items), falling back to the block when a run has none; ("kg", key) from
+# each result's own KG evidence and claims (metrics.grounding).
 HEADLINE: tuple[tuple[str, str, tuple], ...] = (
     ("field_f1", "Field F1 (micro)", ("understanding", "micro_f1")),
     ("field_f1_strict", "Field F1 (strict)", ("understanding", "micro_f1_strict")),
@@ -118,9 +125,15 @@ HEADLINE: tuple[tuple[str, str, tuple], ...] = (
     ("invented_constraint_rate", "Invented-constraint rate", ("understanding", "invented_constraint_rate")),
     ("parse_error_rate", "Parse error rate", ("error_rate", "parse")),
     ("planning_error_rate", "Planning error rate", ("error_rate", "planning")),
-    ("plan_feasibility_rate", "Plan feasibility", ("block", ("planning", "feasibility"), "plan_feasibility_rate")),
-    ("hard_violation_rate", "Hard-violation rate", ("block", ("planning", "feasibility"), "hard_violation_rate")),
+    ("plan_feasibility_rate", "Plan feasibility", ("planning", ("planning", "feasibility"), "plan_feasibility_rate")),
+    (
+        "hard_violation_rate",
+        "Hard-violation rate (vs gold)",
+        ("planning", ("planning", "feasibility"), "hard_violation_rate"),
+    ),
     ("claim_support_rate", "Grounding (claim support)", ("block", ("grounding",), "claim_support_rate")),
+    ("kg_evidence_coverage", "KG evidence coverage", ("kg", "coverage")),
+    ("kg_claim_share", "KG-cited claim share", ("kg", "claim_share")),
     ("freshness_mislabel_rate", "Freshness mislabel rate", ("block", ("freshness",), "freshness_mislabel_rate")),
 )
 
@@ -239,6 +252,13 @@ class ConfigRun:
         self.status: dict[str, str] = {}
         self.latency: dict[str, float] = {}
         self.error: dict[str, tuple[str, str]] = {}  # item id -> (stage, type) for errored items
+        # Per-item planning outcomes (metrics.planning.per_item_outcomes), keyed by item id: from
+        # the feasibility block, or set by load_runs from planning_items.json for older runs.
+        self.planning: dict[str, Mapping[str, Any]] = {}
+        self.planning_source: str | None = None
+        block = _block(self.metrics, ("planning", "feasibility"))
+        if block is not None and isinstance(block.get("items"), list):
+            self.set_planning(block["items"], "result JSON")
         for row in self.rows:
             item = items_by_id.get(row["id"])
             if item is None:
@@ -251,6 +271,13 @@ class ConfigRun:
                 self.results[item.id] = PlanResult.model_validate(row["result"])
             if self.errored(item.id):
                 self.error[item.id] = error_stage_and_type(row, self.results.get(item.id))
+
+    def set_planning(self, outcomes: Sequence[Mapping[str, Any]], source: str) -> None:
+        self.planning = {str(o["item_id"]): o for o in outcomes}
+        self.planning_source = source
+
+    def verifier_disagreements(self) -> int:
+        return sum(1 for f in self.findings if f.get("kind") == "verifier_disagreement")
 
     def pairs(self, ids: Sequence[str] | None = None) -> tuple[list[BenchmarkItem], list[PlanResult]]:
         """(items, results) for item ids that produced a PlanResult, in id order."""
@@ -302,6 +329,13 @@ def load_runs(run_dir: str | Path) -> tuple[dict[str, ConfigRun], dict[str, Any]
         if "config" not in payload or "rows" not in payload:
             continue
         runs[payload["config"]] = ConfigRun(payload, _items_for(payload))
+    backfill_path = run_dir / PLANNING_ITEMS_FILE
+    if backfill_path.is_file():
+        backfill = json.loads(backfill_path.read_text(encoding="utf-8"))
+        for config, entry in (backfill.get("configs") or {}).items():
+            run = runs.get(config)
+            if run is not None and not run.planning:  # the result JSON's own outcomes win
+                run.set_planning(entry.get("items") or [], f"{PLANNING_ITEMS_FILE} (backfilled)")
     return runs, inputs
 
 
@@ -369,6 +403,10 @@ def headline(run: ConfigRun, n_boot: int = 10_000) -> dict[str, tuple[float | No
         elif source[0] == "error_rate":
             errors = [float(run.errored_at(i, source[1])) for i in sorted(run.items)]
             out[column] = (sum(errors) / len(errors), _ci(bootstrap_ci(errors, n=n_boot))) if errors else (None, None)
+        elif source[0] == "planning" and run.planning:
+            out[column] = planning_metric(run, source[2], n_boot)
+        elif source[0] == "kg":
+            out[column] = kg_metric(run, source[1], n_boot)
         else:
             block = _block(run.metrics, source[1])
             if block is None:
@@ -379,18 +417,69 @@ def headline(run: ConfigRun, n_boot: int = 10_000) -> dict[str, tuple[float | No
     return out
 
 
+def _ratio(records: Sequence[tuple[float, float]]) -> float:
+    """sum(numerators) / sum(denominators) over (num, den) records; NaN when the denominator is 0."""
+    den = sum(d for _n, d in records)
+    return sum(n for n, _d in records) / den if den else float("nan")
+
+
+def _mean_ci(values: list[float], n_boot: int) -> tuple[float | None, tuple[float, float] | None]:
+    if not values:
+        return None, None
+    return sum(values) / len(values), _ci(bootstrap_ci(values, n=n_boot))
+
+
+def _ratio_ci(records: list[tuple[float, float]], n_boot: int) -> tuple[float | None, tuple[float, float] | None]:
+    """Pooled ratio with a CI that resamples ITEMS (an item's records stay together)."""
+    if not records or not sum(d for _n, d in records):
+        return None, None
+    return _ratio(records), _ci(bootstrap_ci(records, n=n_boot, statistic=_ratio))
+
+
+def planning_metric(run: ConfigRun, key: str, n_boot: int) -> tuple[float | None, tuple[float, float] | None]:
+    """Plan feasibility (oracle-feasible items with a valid plan) or hard-violation rate (violating
+    itineraries / itineraries, pooled) from the per-item outcomes, with a bootstrap CI over items."""
+    outcomes = [run.planning[i] for i in sorted(run.planning)]
+    if key == "plan_feasibility_rate":
+        return _mean_ci([float(bool(o["got_valid_plan"])) for o in outcomes if o["oracle_feasible"]], n_boot)
+    if key == "hard_violation_rate":
+        records = [(float(o["n_violating_itineraries"]), float(o["n_itineraries"])) for o in outcomes]
+        return _ratio_ci([r for r in records if r[1]], n_boot)
+    raise ValueError(f"no per-item planning metric {key!r}")
+
+
+def kg_metric(run: ConfigRun, key: str, n_boot: int) -> tuple[float | None, tuple[float, float] | None]:
+    """KG evidence coverage (mean over items with a recommended charging plan) or the KG-cited
+    claim share (pooled over claims), with a bootstrap CI over items."""
+    results = [run.results[i] for i in sorted(run.results)]
+    if key == "coverage":
+        return _mean_ci([c for c in (kg_evidence_coverage_item(r) for r in results) if c is not None], n_boot)
+    if key == "claim_share":
+        records = [(float(k), float(n)) for n, k in (kg_claim_counts_item(r) for r in results) if n]
+        return _ratio_ci(records, n_boot)
+    raise ValueError(f"no KG metric {key!r}")
+
+
 def per_item(run: ConfigRun, item_id: str) -> dict[str, Any]:
     """Per-item outcomes for paired tests: successes (bool) and scores (float or None)."""
     item, result = run.items.get(item_id), run.results.get(item_id)
+    # Only oracle-feasible items can "get a valid plan"; None (left out) otherwise or when this
+    # run has no per-item planning outcomes.
+    outcome = run.planning.get(item_id)
+    got_valid = bool(outcome["got_valid_plan"]) if outcome and outcome["oracle_feasible"] else None
     if item is None or result is None:
         return {
             "exact_match": False,
             "clarification_correct": False,
             "no_error": False,
             "no_invented_constraint": None,
+            "got_valid_plan": got_valid,
             "field_f1": None,
             "latency_ms": run.latency.get(item_id),
+            "kg_evidence_coverage": None,
+            "kg_claim_share": None,
         }
+    n_claims, n_kg = kg_claim_counts_item(result)
     counts = item_field_counts(item, result, level="city")  # primary, as in the headline
     f1 = prf(
         sum(c[0] for c in counts.values()), sum(c[1] for c in counts.values()), sum(c[2] for c in counts.values())
@@ -401,13 +490,20 @@ def per_item(run: ConfigRun, item_id: str) -> dict[str, Any]:
         "no_error": not run.errored(item_id),
         # None (left out of the paired test) when there is no parsed request to judge
         "no_invented_constraint": None if (inv := invented_constraints(item, result)) is None else not inv,
+        "got_valid_plan": got_valid,
         "field_f1": _num(f1),
         "latency_ms": run.latency.get(item_id),
+        "kg_evidence_coverage": kg_evidence_coverage_item(result),
+        "kg_claim_share": n_kg / n_claims if n_claims else None,
     }
 
 
-SUCCESS_OUTCOMES = ("exact_match", "clarification_correct", "no_error", "no_invented_constraint")
+SUCCESS_OUTCOMES = ("exact_match", "clarification_correct", "no_error", "no_invented_constraint", "got_valid_plan")
 SCORE_OUTCOMES = ("field_f1", "latency_ms")
+# Score outcomes tested only for some pairs: the KG ablation is where KG evidence can differ.
+PAIR_SCORE_OUTCOMES: dict[tuple[str, str], tuple[str, ...]] = {
+    ("C", "C-noKG"): ("kg_evidence_coverage", "kg_claim_share"),
+}
 
 
 GPU_SHARE_TOLERANCE = 0.01  # shares further apart than this are a different CPU/GPU split
@@ -454,6 +550,13 @@ def paired(a: ConfigRun, b: ConfigRun) -> list[dict[str, Any]]:
         both = [i for i in common if pa[i][outcome] is not None and pb[i][outcome] is not None]
         xa = [bool(pa[i][outcome]) for i in both]
         xb = [bool(pb[i][outcome]) for i in both]
+        if not both:  # mcnemar() would report p = 1 for no data, which reads as "no difference"
+            rows.append(
+                {"pair": f"{a.config} vs {b.config}", "outcome": outcome, "test": "McNemar", "n": 0,
+                 "rate_a": None, "rate_b": None, "b": None, "c": None, "statistic": None, "p_value": None,
+                 "note": "no paired values"}
+            )
+            continue
         test = mcnemar(xa, xb)
         rows.append(
             {
@@ -470,7 +573,7 @@ def paired(a: ConfigRun, b: ConfigRun) -> list[dict[str, Any]]:
                 "note": "exact binomial" if test["exact"] else "chi-square, continuity-corrected",
             }
         )
-    for outcome in SCORE_OUTCOMES:
+    for outcome in SCORE_OUTCOMES + PAIR_SCORE_OUTCOMES.get((a.config, b.config), ()):
         keep = [i for i in common if pa[i][outcome] is not None and pb[i][outcome] is not None]
         xa = [pa[i][outcome] for i in keep]
         xb = [pb[i][outcome] for i in keep]
@@ -901,6 +1004,18 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "Value [95 % CI]. n/a = metric block missing or not implemented; [CI n/a] = the metric block reports no CI.",
         "Field F1 and exact match compare places at city level; (strict) also requires the gold's state, "
         "which annotators add for geocoding. Parse / planning error rates are over all items.",
+        f"Hard-violation rate (vs gold): {HARD_VIOLATION_NOTE}; verifier disagreements: "
+        + (", ".join(f"{c} {runs[c].verifier_disagreements()}" for c in configs if c in runs) or NA)
+        + " (findings where the planner's verifier and the oracle, on the request the verifier saw, disagree).",
+        "Plan feasibility and hard-violation CIs resample items: "
+        + (
+            "; ".join(f"{c} from {runs[c].planning_source}" for c in configs if c in runs and runs[c].planning)
+            or "no per-item planning outcomes in this run, so no CI"
+        )
+        + ".",
+        "KG evidence coverage: share of the recommended plan's displayed stop facts (station name, connector, "
+        "power, amenities) supported by the result's own KG evidence, mean over items with a charging stop. "
+        "KG-cited claim share: claims citing at least one KG fact, over all claims.",
         "",
     ]
     lines += _md_table(["Config", "n"] + [label for _c, label, _s in HEADLINE], md_head)
