@@ -11,7 +11,10 @@
         test run is in results/
       - git: on main, working tree clean (untracked files count); prints the commit. With -Limit
         (a smoke run) another branch or a dirty tree only gives a warning: not reproducible.
-      - CLICKLESS_DATA_SOURCE=snapshot
+      - python imports clickless and evaluation from this repo's src (PYTHONPATH is set to it, ahead
+        of any editable install pointing at another checkout)
+      - CLICKLESS_DATA_SOURCE=snapshot (VOYAGER_BASE_URL and CLICKLESS_DATA_SOURCE are read from the
+        repo's .env when not set; their values are not printed)
       - snapshot: verify_manifest() -> [] and every config's snapshot id is snapshot:96dfbabb4837 (frozen)
       - Ollama: reachable at VOYAGER_BASE_URL, qwen3:8b digest starts 500a1f067a9f, a warm-up call succeeds
 
@@ -146,6 +149,50 @@ if ($GitProblems.Count -eq 0) {
         "(commit, remove or stash changes first; -Limit allows a smoke run).$detail")
 }
 
+# --- python imports this repo's code ------------------------------------------------------------
+# An editable install (a .pth entry) can point python at another checkout, e.g. the main checkout
+# when this script runs from a worktree: the run would then use that checkout's code and write its
+# results there. PYTHONPATH comes before .pth entries on sys.path, so put this repo's src first
+# (for this script and the processes it starts) and check where the packages really come from.
+$Src = Join-Path $Repo 'src'
+$env:PYTHONPATH = if ($env:PYTHONPATH) { "$Src;$($env:PYTHONPATH)" } else { $Src }
+$where = @(& $Python -c "import sys, clickless, evaluation; print(clickless.__file__); print(evaluation.__file__); print(sys.version.split()[0])")
+if ($LASTEXITCODE -ne 0 -or $where.Count -lt 3) {
+    Stop-Preflight "$Python could not import clickless and evaluation from $Src (see the error above). Install the dependencies: pip install -e `".[dev,nlp,kg]`""
+}
+foreach ($file in $where[0..1]) {
+    $full = [System.IO.Path]::GetFullPath($file.Trim())
+    if (-not $full.StartsWith($Src + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Stop-Preflight ("python imports $full, not this repo's code under $Src. " +
+            "Something ahead of PYTHONPATH on sys.path wins; check '$Python -c `"import sys; print(sys.path)`"'.")
+    }
+}
+Write-Ok "python $($where[2].Trim()) imports clickless and evaluation from $Src"
+
+# --- settings from .env -------------------------------------------------------------------------
+# Only VOYAGER_BASE_URL and CLICKLESS_DATA_SOURCE, only when not already set, values never printed.
+$EnvFile = Join-Path $Repo '.env'
+$FromDotEnv = @()
+if (Test-Path $EnvFile) {
+    foreach ($raw in Get-Content $EnvFile -Encoding UTF8) {
+        $line = $raw.Trim()
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        if ($line -notmatch '^(?:export\s+)?(VOYAGER_BASE_URL|CLICKLESS_DATA_SOURCE)\s*=\s*(.*)$') { continue }
+        $name = $Matches[1]
+        $value = $Matches[2].Trim()
+        if ($value.Length -ge 2 -and (($value[0] -eq '"' -and $value[-1] -eq '"') -or ($value[0] -eq "'" -and $value[-1] -eq "'"))) {
+            $value = $value.Substring(1, $value.Length - 2)
+        } elseif ($value -match '^(.*?)\s+#') {
+            $value = $Matches[1]
+        }
+        if ($value -and -not [Environment]::GetEnvironmentVariable($name)) {
+            Set-Item -Path "env:$name" -Value $value
+            $FromDotEnv += $name
+        }
+    }
+}
+if ($FromDotEnv.Count -gt 0) { Write-Ok "read from .env (values not shown): $($FromDotEnv -join ', ')" }
+
 # --- data source --------------------------------------------------------------------------------
 if ($env:CLICKLESS_DATA_SOURCE -ne 'snapshot') {
     Stop-Preflight "CLICKLESS_DATA_SOURCE is '$($env:CLICKLESS_DATA_SOURCE)', expected 'snapshot'. Run: `$env:CLICKLESS_DATA_SOURCE = `"snapshot`""
@@ -179,17 +226,20 @@ if (-not $env:VOYAGER_BASE_URL) {
     Stop-Preflight "VOYAGER_BASE_URL is not set. Run: `$env:VOYAGER_BASE_URL = `"http://localhost:11434/v1`""
 }
 $OllamaRoot = ($env:VOYAGER_BASE_URL.TrimEnd('/')) -replace '/v1$', ''
+try { $u = [Uri]$OllamaRoot; $OllamaHost = "$($u.Scheme)://$($u.Authority)" } catch {
+    Stop-Preflight "VOYAGER_BASE_URL is not a valid URL."
+}  # scheme://host:port only: never print a path or credentials from the URL
 try {
     $tags = Invoke-RestMethod -Uri "$OllamaRoot/api/tags" -TimeoutSec 15
 } catch {
-    Stop-Preflight "Ollama not reachable at $OllamaRoot ($($_.Exception.Message)). Is 'ollama serve' running?"
+    Stop-Preflight "Ollama not reachable at $OllamaHost ($($_.Exception.Message)). Is 'ollama serve' running?"
 }
 $entry = @($tags.models | Where-Object { $_.name -eq $Model -or $_.model -eq $Model }) | Select-Object -First 1
-if (-not $entry) { Stop-Preflight "$Model is not pulled on $OllamaRoot. Run: ollama pull $Model" }
+if (-not $entry) { Stop-Preflight "$Model is not pulled on $OllamaHost. Run: ollama pull $Model" }
 if (-not $entry.digest.StartsWith($ExpectedDigest)) {
     Stop-Preflight "$Model digest is $($entry.digest.Substring(0, 12)), expected $ExpectedDigest (docs/VOYAGER_LOCAL.md)."
 }
-Write-Ok "Ollama at $OllamaRoot, $Model digest $($entry.digest.Substring(0, 12))"
+Write-Ok "Ollama at $OllamaHost, $Model digest $($entry.digest.Substring(0, 12))"
 
 $warmBody = @{
     model      = $Model
@@ -210,13 +260,14 @@ Write-Ok "warm-up call succeeded (model loaded, keep_alive 2h)"
 
 # --- run the configs ----------------------------------------------------------------------------
 $Stamp  = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
-$OutRel = "results/$Stamp"
+# Absolute paths throughout: the harness resolves a relative --out against the root of the
+# clickless package it imports, which need not be this directory.
 $OutDir = Join-Path $Repo "results\$Stamp"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $env:PYTHONUNBUFFERED = '1'
 
 Write-Host ""
-Write-Host "Running $($Configs -join ', ') on the $Scope -> $OutRel" -ForegroundColor Cyan
+Write-Host "Running $($Configs -join ', ') on the $Scope -> $OutDir" -ForegroundColor Cyan
 if ($Final) { Write-Host "FINAL run on the held-out test split." -ForegroundColor Yellow }
 
 $Failed    = [ordered]@{}
@@ -226,17 +277,19 @@ $LimitArg = if ($Limit -gt 0) { " --limit $Limit" } else { "" }
 $i = 0
 foreach ($c in $Configs) {
     $i++
-    $log = "results\$Stamp\$c.log"
+    $log = Join-Path $OutDir "$c.log"
     Write-Host ""
     Write-Host "[$i/$($Configs.Count)] Config $c  (log: $log; follow it with: Get-Content $log -Wait)"
     $t0 = Get-Date
     # Each config is its own process. cmd.exe merges stdout and stderr into the one log file.
-    $cmdLine = "/d /s /c `"`"$Python`" -m evaluation.harness --config $c --split $Split$LimitArg --out $OutRel > `"$log`" 2>&1`""
+    $cmdLine = "/d /s /c `"`"$Python`" -m evaluation.harness --config $c --split $Split$LimitArg --out `"$OutDir`" > `"$log`" 2>&1`""
     $proc = Start-Process -FilePath $env:ComSpec -ArgumentList $cmdLine -NoNewWindow -Wait -PassThru
     $Durations[$c] = (Get-Date) - $t0
     $json = @(Get-ChildItem -Path $OutDir -Filter "$($c)_$($Split)_*.json" -ErrorAction SilentlyContinue)
     if ($proc.ExitCode -ne 0 -or $json.Count -eq 0) {
-        $why = if ($proc.ExitCode -ne 0) { "exit code $($proc.ExitCode)" } else { "no result JSON written" }
+        $why = if ($proc.ExitCode -ne 0) { "exit code $($proc.ExitCode)" } else { "no result JSON in $OutDir" }
+        $elsewhere = @(Get-Content $log -ErrorAction SilentlyContinue | Where-Object { $_ -match '\.json\s*$' -and $_.IndexOf($OutDir, [System.StringComparison]::OrdinalIgnoreCase) -lt 0 })
+        if ($json.Count -eq 0 -and $elsewhere.Count -gt 0) { $why += "; the harness reports writing $($elsewhere[-1].Trim())" }
         $last = @(Get-Content $log -Tail 1 -ErrorAction SilentlyContinue) -join ''
         $Failed[$c] = "process failed ($why): $last"
         Write-Host "  FAILED: Config $c ($why) after $(Format-Duration $Durations[$c]). Last lines of the log:" -ForegroundColor Red
@@ -268,7 +321,7 @@ Write-Utf8NoBom (Join-Path $OutDir 'report_inputs.json') ($inputs | ConvertTo-Js
 # --- combined report ----------------------------------------------------------------------------
 Write-Host ""
 Write-Host "Building the combined report" -ForegroundColor Cyan
-& $Python -m evaluation.report --from $OutRel
+& $Python -m evaluation.report --from $OutDir
 $reportOk = ($LASTEXITCODE -eq 0)
 $reportMd = Join-Path $OutDir 'report.md'
 
@@ -286,7 +339,7 @@ if ($reportOk -and (Test-Path $reportMd)) {
         if ($inHeadline) { Write-Host $line }
     }
 } else {
-    Write-Host "Report build FAILED (see the error above). Rebuild with: $Python -m evaluation.report --from $OutRel" -ForegroundColor Red
+    Write-Host "Report build FAILED (see the error above). Rebuild with: $Python -m evaluation.report --from $OutDir" -ForegroundColor Red
 }
 
 Write-Host ""
@@ -296,7 +349,7 @@ foreach ($c in $Configs) {
     Write-Host ("  {0,-7} {1,-6} {2}" -f $c, $status, (Format-Duration $Durations[$c])) -ForegroundColor $colour
 }
 if ($Failed.Count -gt 0) {
-    Write-Host "Failed configs: $($Failed.Keys -join ', ') (logs in results\$Stamp\)" -ForegroundColor Red
+    Write-Host "Failed configs: $($Failed.Keys -join ', ') (logs in $OutDir)" -ForegroundColor Red
 }
 Write-Host "Commit $Commit, $Scope$(if ($Final) { ' (FINAL)' })"
 if ($GitProblems.Count -gt 0) {
