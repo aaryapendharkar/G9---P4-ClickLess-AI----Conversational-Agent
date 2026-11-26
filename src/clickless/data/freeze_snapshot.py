@@ -12,8 +12,9 @@ changes; it refuses unless every check passes:
 - the validator finds no blocking problem (snapshot_report.collect, the same check as the report);
 - every file in routes/ is a valid Route listed in the manifest (add_routes.check_route_files);
 - no stored place is a county/state match or a district mismatch (geocode, #120 and #122);
-- every benchmark item resolves both places and finds its cached route, unless the item marks a
-  place as missing on purpose (`missing_safety_fields`, the clarification items).
+- every place a benchmark item gives resolves, except a place the item marks as missing on purpose
+  (`missing_safety_fields`, the clarification items); the exemption is per place, so the other
+  place is still checked. Every item with both places given finds its cached route.
 
 Then MANIFEST.json gets `"frozen": true`, `frozen_at` and `frozen_from` (the release and the
 SHA-256 of the draft's MANIFEST.json, so the frozen snapshot can be traced to the draft everyone
@@ -91,15 +92,17 @@ def _unrouted_benchmark_items(root, raw_dir: str) -> list[str]:
     router = CachedRouter(store, load_config("A")["energy"])
     unresolved, missing = [], []
     for item in load_items(repo_path(raw_dir)):
-        if {"origin", "destination"} & set(item.missing_safety_fields):
-            continue  # a place left out or ambiguous on purpose (clarification items such as "Springfield")
-        gold = item.gold_request
+        gold, marked = item.gold_request, set(item.missing_safety_fields)
         ends = {f: gold.get(f) for f in ("origin", "destination")}
+        # The exemption is per place: a place marked missing on purpose (clarification items such as
+        # "Springfield") may stay unresolved, but the item's other place must still resolve.
         bad = [f"{f} {text!r}" if text else f"no {f}" for f, text in ends.items()
-               if not text or not store.geocode(text).resolved]
-        if bad:  # a complete request whose place the snapshot can't resolve: never skipped silently
+               if f not in marked and (not text or not store.geocode(text).resolved)]
+        if bad:  # a place the request gives as complete, yet the snapshot can't resolve: never skipped
             unresolved.append(f"{item.id}: {', '.join(bad)}")
             continue
+        if marked & set(ends):
+            continue  # one place is missing on purpose: there is no route to check
         try:
             router.route(store.geocode(ends["origin"]), store.geocode(ends["destination"]))
         except Exception as e:  # noqa: BLE001 - every missing route is a reason not to freeze

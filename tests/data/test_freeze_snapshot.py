@@ -139,3 +139,23 @@ def test_refuses_a_complete_item_without_a_place(draft, raw):
     del item["gold_request"]["destination"]
     (raw / "more.jsonl").write_text(json.dumps(item) + "\n", encoding="utf-8")
     assert any("ian-007: no destination" in p for p in fs.freeze_problems(draft, str(raw)))
+
+
+@pytest.mark.parametrize(
+    "origin, destination, missing, blocked",
+    [
+        ("Springfield", "Nowhere, AZ", ["origin"], "destination 'Nowhere, AZ'"),  # other place still checked
+        ("Nowhere, AZ", "Springfield", ["destination"], "origin 'Nowhere, AZ'"),
+        ("Springfield", "Flagstaff", ["origin"], None),  # marked place unresolved, other resolves: fine
+        ("Springfield", "Nowhere, AZ", ["origin", "destination"], None),  # both marked
+    ],
+)
+def test_the_missing_exemption_is_per_place(draft, raw, origin, destination, missing, blocked):
+    """Hriday's second review on #170: marking one place missing must not hide the other."""
+    (raw / "more.jsonl").write_text(json.dumps(_item("ian-008", origin, destination, missing=missing)) + "\n",
+                                    encoding="utf-8")
+    problems = [p for p in fs.freeze_problems(draft, str(raw)) if "ian-008" in p]
+    if blocked:
+        assert len(problems) == 1 and f"ian-008: {blocked}" in problems[0]
+    else:
+        assert problems == []
