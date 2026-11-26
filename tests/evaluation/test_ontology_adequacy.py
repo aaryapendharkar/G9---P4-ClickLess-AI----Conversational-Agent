@@ -1,5 +1,6 @@
 """Ontology adequacy (#158): counting rules on synthetic inventories, the harness wiring, the report."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -128,16 +129,18 @@ def test_configs_without_the_kg_are_not_applicable(config):
 def test_config_c_on_the_real_inventory():
     pytest.importorskip("rdflib")
     from clickless.config import load_config
+    from clickless.retrieval.kg.competency import INVENTORY
     from evaluation.config_names import config_path
     from evaluation.harness import kg_ontology_adequacy
 
     block = kg_ontology_adequacy(load_config(str(config_path("C"))))
-    assert block["total"] == 20 and block["inventory_version"] == 1
+    version = json.loads(INVENTORY.read_text(encoding="utf-8"))["version"]
+    assert block["total"] == 20 and block["inventory_version"] == version
     assert block["kg"].startswith("fixtures")
-    # CQ9's prerequisite (an explanation in the graph) is free text in the inventory; everything else
-    # answers on the fixture KG (CQ6 and CQ19 are marked empty_on_fixtures).
-    assert set(failing(block)) == {"CQ9"}
-    assert block["answerable"] == 19
+    # Every question answers on the fixture KG: CQ9's explanation comes from its machine-readable
+    # example_explanation (#171), and CQ6 and CQ19 are marked empty_on_fixtures.
+    assert failing(block) == {}
+    assert (block["answerable"], block["ontology_adequacy"]) == (20, 1.0)
 
 
 # --------------------------------------------------------------------------- report

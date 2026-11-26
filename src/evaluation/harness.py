@@ -286,19 +286,14 @@ def kg_ontology_adequacy(cfg: Mapping[str, Any]) -> dict[str, Any]:
         return {"not_applicable": f"config {cfg.get('name')} does not build the KG"}
     from clickless.data.loaders import DataStore
     from clickless.retrieval.kg.build import DEFAULT_ONTOLOGY, build_graph
-    from clickless.retrieval.kg.competency import (
-        INVENTORY,
-        example_bindings,
-        load_inventory,
-        run_competency_query,
-    )
+    from clickless.retrieval.kg.competency import INVENTORY, load_inventory, run_inventory_example
 
     fixtures_dir = cfg["data"]["fixtures_dir"]
     graph = build_graph(DataStore.from_dir(fixtures_dir), cfg.get("kg", {}).get("ontology", DEFAULT_ONTOLOGY))
     version = json.loads(INVENTORY.read_text(encoding="utf-8")).get("version")
     block = ontology_adequacy(
         load_inventory(),
-        lambda entry: run_competency_query(graph, entry["query"], **example_bindings(entry)),
+        lambda entry: run_inventory_example(graph, entry),
         inventory_version=version,
     )
     return {**block, "kg": f"fixtures ({fixtures_dir})"}

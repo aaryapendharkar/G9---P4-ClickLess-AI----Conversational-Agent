@@ -8,9 +8,9 @@ the counting rules below stay independent of the system they score.
 A question counts as answerable only if ALL of these hold:
   1. its inventory status is "tested" ("unsupported" entries fail with their documented reason);
   2. it names a query file;
-  3. it has no prerequisite the metric cannot set up: an `example_note` is free text (e.g. CQ9 needs
-     an explanation added to the graph first), so the question fails with
-     "prerequisite not machine-readable";
+  3. it has no prerequisite the metric cannot set up: an `example_note` is free text (a
+     machine-readable `example_explanation`, as CQ9 has, is set up by the caller's runner), so the
+     question fails with "prerequisite not machine-readable";
   4. its query runs without raising;
   5. it returns at least one row, unless the inventory marks it `empty_on_fixtures` (the fixtures
      lack the case and the question's own tests build it), in which case an empty answer is accepted.

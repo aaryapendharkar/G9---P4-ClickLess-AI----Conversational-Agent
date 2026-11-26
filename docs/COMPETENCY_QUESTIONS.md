@@ -17,10 +17,11 @@ bindings on the fixture KG, once per evaluation run and only for Config C. It re
 `answerable / 20`, the failing ids with reasons, and the inventory version, in the report's
 "Ontology adequacy (competency questions on the fixture KG)" section (next to the snapshot id) and
 in `ontology_adequacy.csv`. It measures whether the ontology and queries can answer the CQs, not
-whether the snapshot data covers them. A question with an `example_note` (a free-text
-prerequisite, currently CQ9's "add an explanation first") can't be set up by the metric, so it
-counts as not answerable with reason "prerequisite not machine-readable". It would count if the
-prerequisite became machine-readable.
+whether the snapshot data covers them. Each example runs through
+`competency.run_inventory_example`, which also adds an entry's `example_explanation` (CQ9) to a
+copy of the graph first. A question with an `example_note` (a free-text prerequisite) can't be set
+up by the metric, so it counts as not answerable with reason "prerequisite not machine-readable".
+On the fixture KG the score is currently 20/20.
 
 | # | Question | Query file | Status |
 |---|---|---|---|
