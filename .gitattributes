@@ -1,0 +1,3 @@
+# The frozen snapshot manifest is hashed byte-for-byte (snapshot id = sha256 of the file).
+# Never convert its line endings, or Windows checkouts would get a different snapshot id.
+data/snapshot/MANIFEST.json -text

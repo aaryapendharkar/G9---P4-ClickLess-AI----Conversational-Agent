@@ -90,6 +90,39 @@ vehicles don't exist. So a `--split` run without `CLICKLESS_DATA_SOURCE=snapshot
 "Evaluation needs the snapshot: set CLICKLESS_DATA_SOURCE=snapshot (see README)" (#119). Explicit `--items` runs are
 not checked; the fixture smoke file (`--items benchmark/requests/dev/fixture_smoke.jsonl`) is meant for the fixtures.
 
+### Full run: `scripts/final_run.ps1`
+
+The full dev run and the final test run use `scripts/final_run.ps1`. Run it yourself from a plain PowerShell
+window at the repo root, not from inside an agent session:
+
+```powershell
+$env:CLICKLESS_DATA_SOURCE = "snapshot"
+$env:VOYAGER_BASE_URL = "http://localhost:11434/v1"
+powershell -ExecutionPolicy Bypass -File scripts\final_run.ps1 -Split dev           # dev: as often as needed
+powershell -ExecutionPolicy Bypass -File scripts\final_run.ps1 -Split dev -Limit 5  # smoke run: first 5 dev items
+powershell -ExecutionPolicy Bypass -File scripts\final_run.ps1 -Split test -Final   # test: once
+```
+
+`-Limit N` runs only the first N items of the split, as a quick check before a full run. It is refused with `-Final`.
+A `-Limit` smoke run may also run from another branch or a dirty tree, with a yellow "smoke run, not reproducible"
+warning. A full run, and every `-Final` run, needs a clean `main`.
+
+It aborts before running anything unless all of these hold:
+- you are on `main` with a clean tree, untracked files included (it prints the commit);
+- `CLICKLESS_DATA_SOURCE=snapshot`;
+- the snapshot verifies (`[]`) and its id is `snapshot:96dfbabb4837` (frozen v1);
+- Ollama answers at `VOYAGER_BASE_URL`, `qwen3:8b` has digest `500a1f067a9f…`, and a warm-up call succeeds.
+
+It then runs A, B, C and C-noKG one at a time, each in its own process, logging to `results/<timestamp>/<config>.log`.
+If a config crashes, the script says which one and runs the rest. At the end it builds the combined report
+(`evaluation.report --from`) and prints its path, the headline table and the total time. It exits with 1 if any
+config or the report failed.
+
+**The test split runs once.** All tuning, debugging and reruns happen on dev. The script refuses `-Split test`
+without `-Final`. It also refuses to start if `results/` already holds a final test run. If a test run is aborted
+(crash, power loss), agree with the team before rerunning it, and record the reason in `final/` next to the report.
+The cited test report is copied into `final/` unchanged.
+
 Each run writes `report.md`, `headline.csv`, `paired.csv`, `breakdown.csv` (by author, category, route type),
 `errors.csv`, `findings.csv` and `metadata.csv` under `results/<timestamp>/`. `results/` is git-ignored; copy a
 report here when it is cited.
