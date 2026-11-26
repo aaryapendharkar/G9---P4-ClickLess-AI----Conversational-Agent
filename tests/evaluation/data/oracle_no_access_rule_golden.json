@@ -1,0 +1,2689 @@
+{
+ "stop/arrival_30": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     150.87500000000003,
+     2.0000000000000275,
+     28.875
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     152.50000000000017,
+     4.0000000000001386,
+     28.50000000000002
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 30.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with 24.0% < required 30.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 165,
+   "plans": [
+    {
+     "arrival_soc_pct": 29.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 28.875,
+       "connector": "CCS1",
+       "depart_soc_pct": 86.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 28.875,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 150.87500000000003,
+     "unknown_status_station_ids": []
+    },
+    {
+     "arrival_soc_pct": 30.000000000000004,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 10.5,
+       "connector": "CCS1",
+       "depart_soc_pct": 46.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      },
+      {
+       "along_km": 149.99999999999994,
+       "arrive_soc_pct": 9.999999999999993,
+       "charge_min": 18.00000000000002,
+       "connector": "CCS1",
+       "depart_soc_pct": 50.00000000000004,
+       "detour_min": 2.000000000000111,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s150"
+      }
+     ],
+     "total_charge_min": 28.50000000000002,
+     "total_detour_min": 4.0000000000001386,
+     "total_time_min": 152.50000000000017,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "stop/detour_limit": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {
+    "detour": 2
+   },
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 34,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "stop/direct_drive": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     126.87500000000003,
+     2.0000000000000275,
+     4.875
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with 15.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed arrival 26.0%, oracle 71.0%"
+    ],
+    "objectives": [
+     128.37500000000003,
+     2.0000000000000275,
+     6.375
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min",
+     "stop 0: claimed arrival 10.0%, oracle 54.7%"
+    ],
+    "objectives": [
+     145.7975,
+     3.95,
+     21.847500000000004
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed arrival 26.0%, oracle 71.0%",
+     "stop 1: claimed arrival 24.0%, oracle 35.0%"
+    ],
+    "objectives": [
+     136.37500000000014,
+     4.0000000000001386,
+     12.375000000000004
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 21,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 71.0,
+       "charge_min": 4.875,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 4.875,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 126.87500000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "stop/energy_gap": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -68.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -68.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed arrival 26.0%, oracle -12.0%"
+    ],
+    "objectives": [
+     159.50000000000003,
+     2.0000000000000275,
+     37.5
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "reserve",
+      "detail": "arrives at s60 with -12.0% < reserve 10.0%",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min",
+     "stop 0: claimed arrival 10.0%, oracle -28.3%"
+    ],
+    "objectives": [
+     176.9225,
+     3.95,
+     52.972500000000004
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "reserve",
+      "detail": "arrives at s100 with -28.3% < reserve 10.0%",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed arrival 26.0%, oracle -12.0%"
+    ],
+    "objectives": [
+     170.50000000000014,
+     4.0000000000001386,
+     46.5
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "reserve",
+      "detail": "arrives at s60 with -12.0% < reserve 10.0%",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "furthest reachable point 0.0 km of 200.0 km",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": false,
+   "reason": "energy_gap",
+   "unknown_status_station_ids": [],
+   "witness": []
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 1,
+   "plans": []
+  }
+ },
+ "stop/food_important_wheelchair": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "stop/mixed_soft": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "stop/no_amenities": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "stop/restroom_important_no_wheelchair": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "stop/restroom_nice_wheelchair": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "total/arrival_30": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     150.87500000000003,
+     2.0000000000000275,
+     28.875
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     152.50000000000017,
+     4.0000000000001386,
+     28.50000000000002
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 30.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with 24.0% < required 30.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 165,
+   "plans": [
+    {
+     "arrival_soc_pct": 29.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 28.875,
+       "connector": "CCS1",
+       "depart_soc_pct": 86.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 28.875,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 150.87500000000003,
+     "unknown_status_station_ids": []
+    },
+    {
+     "arrival_soc_pct": 30.000000000000004,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 10.5,
+       "connector": "CCS1",
+       "depart_soc_pct": 46.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      },
+      {
+       "along_km": 149.99999999999994,
+       "arrive_soc_pct": 9.999999999999993,
+       "charge_min": 18.00000000000002,
+       "connector": "CCS1",
+       "depart_soc_pct": 50.00000000000004,
+       "detour_min": 2.000000000000111,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s150"
+      }
+     ],
+     "total_charge_min": 28.50000000000002,
+     "total_detour_min": 4.0000000000001386,
+     "total_time_min": 152.50000000000017,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "total/detour_limit": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     },
+     {
+      "code": "detour",
+      "detail": "total detour 4.0 min > limit 3.0 min",
+      "stop_index": null
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {
+    "detour": 2
+   },
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 3,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "total/direct_drive": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     126.87500000000003,
+     2.0000000000000275,
+     4.875
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with 15.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed arrival 26.0%, oracle 71.0%"
+    ],
+    "objectives": [
+     128.37500000000003,
+     2.0000000000000275,
+     6.375
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min",
+     "stop 0: claimed arrival 10.0%, oracle 54.7%"
+    ],
+    "objectives": [
+     145.7975,
+     3.95,
+     21.847500000000004
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed arrival 26.0%, oracle 71.0%",
+     "stop 1: claimed arrival 24.0%, oracle 35.0%"
+    ],
+    "objectives": [
+     136.37500000000014,
+     4.0000000000001386,
+     12.375000000000004
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 21,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 71.0,
+       "charge_min": 4.875,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 4.875,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 126.87500000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "total/energy_gap": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -68.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -68.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed arrival 26.0%, oracle -12.0%"
+    ],
+    "objectives": [
+     159.50000000000003,
+     2.0000000000000275,
+     37.5
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "reserve",
+      "detail": "arrives at s60 with -12.0% < reserve 10.0%",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min",
+     "stop 0: claimed arrival 10.0%, oracle -28.3%"
+    ],
+    "objectives": [
+     176.9225,
+     3.95,
+     52.972500000000004
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "reserve",
+      "detail": "arrives at s100 with -28.3% < reserve 10.0%",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed arrival 26.0%, oracle -12.0%"
+    ],
+    "objectives": [
+     170.50000000000014,
+     4.0000000000001386,
+     46.5
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "reserve",
+      "detail": "arrives at s60 with -12.0% < reserve 10.0%",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "furthest reachable point 0.0 km of 200.0 km",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": false,
+   "reason": "energy_gap",
+   "unknown_status_station_ids": [],
+   "witness": []
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 1,
+   "plans": []
+  }
+ },
+ "total/food_important_wheelchair": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "total/mixed_soft": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "total/no_amenities": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "total/restroom_important_no_wheelchair": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ },
+ "total/restroom_nice_wheelchair": {
+  "check_itinerary": [
+   {
+    "notes": [],
+    "objectives": [
+     143.75000000000003,
+     2.0000000000000275,
+     21.75
+    ],
+    "ok": true,
+    "strict_ok": true,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": []
+   },
+   {
+    "notes": [],
+    "objectives": [
+     120.0,
+     0.0,
+     0.0
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "reserve",
+      "detail": "arrives at the destination with -30.0% < reserve 10.0%",
+      "stop_index": null
+     },
+     {
+      "code": "arrival_soc",
+      "detail": "arrives with -30.0% < required 20.0%",
+      "stop_index": null
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     145.25000000000003,
+     2.0000000000000275,
+     23.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [
+     "stop 0: claimed detour 2.0 min, oracle 4.0 min"
+    ],
+    "objectives": [
+     162.6725,
+     3.95,
+     38.7225
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s100 ([150.0])",
+      "stop_index": 0
+     }
+    ]
+   },
+   {
+    "notes": [],
+    "objectives": [
+     156.25000000000014,
+     4.0000000000001386,
+     32.25
+    ],
+    "ok": false,
+    "strict_ok": false,
+    "strict_violations": [],
+    "uses_unknown_power": false,
+    "violations": [
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s60 ([150.0])",
+      "stop_index": 0
+     },
+     {
+      "code": "power",
+      "detail": "claimed 50.0 kW is not a CCS1 port power at s150 ([150.0])",
+      "stop_index": 1
+     }
+    ]
+   }
+  ],
+  "is_feasible": {
+   "charge_time_excluded": false,
+   "detail": "",
+   "evaluable": true,
+   "excluded": {},
+   "feasible": true,
+   "reason": null,
+   "unknown_status_station_ids": [],
+   "witness": [
+    "s60"
+   ]
+  },
+  "pareto_plans": {
+   "complete": true,
+   "feasibility": null,
+   "incomplete_reason": null,
+   "n_labels": 129,
+   "plans": [
+    {
+     "arrival_soc_pct": 19.999999999999993,
+     "stops": [
+      {
+       "along_km": 59.999999999999986,
+       "arrive_soc_pct": 26.0,
+       "charge_min": 21.75,
+       "connector": "CCS1",
+       "depart_soc_pct": 76.0,
+       "detour_min": 2.0000000000000275,
+       "port_power_kw": 150.0,
+       "power_estimated": false,
+       "station_id": "s60"
+      }
+     ],
+     "total_charge_min": 21.75,
+     "total_detour_min": 2.0000000000000275,
+     "total_time_min": 143.75000000000003,
+     "unknown_status_station_ids": []
+    }
+   ]
+  }
+ }
+}

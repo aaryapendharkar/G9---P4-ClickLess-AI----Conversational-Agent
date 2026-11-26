@@ -17,12 +17,13 @@ itinerary break any hard constraint.
 - Enforced by `tests/evaluation/test_oracle_independence.py`. One check reads the source (every import form, including relative ones). The other
   imports the oracle in a fresh interpreter and inspects `sys.modules`, which catches transitive imports. `tests/test_architecture.py` also checks it.
 - `clickless.common.geo` is not reused either (retrieval likely uses it). The oracle has its own `_geometry.py`.
-- Sources the rules come from: the oracle docstrings, `docs/TRADEOFFS.md` §3, `configs/energy.yaml`, ADRs 0009, 0010, 0012.
+- Sources the rules come from: the oracle docstrings, `docs/TRADEOFFS.md` §3, `configs/energy.yaml`, ADRs 0003 (question 3), 0009, 0010, 0012, issue #162.
 
 ## Inputs: where stations, routes and distances come from
 | Input | Source |
 |---|---|
 | stations, vehicles, places | `DataStore` (`stations`, `vehicles`, `geocode`) |
+| amenities (required accessible restroom only) | `DataStore.amenities`, read directly; radius `retrieval.amenity_radius_m` (400 m) via `OracleConfig.amenity_radius_m` |
 | request | the item's **gold** request (`request_from_item`), places geocoded through `DataStore.geocode` |
 | route | cache mode: `FileRouteSource` reads `Route` JSON in `DataStore.routes_dir`, matched on origin/destination coordinates. OSRM mode: the harness passes the pipeline's router (`contracts.interfaces.Router`) and the oracle calls **only `.route()`** |
 | candidate stations | every station in the store that is not `TEMPORARILY_UNAVAILABLE`/`PLANNED`, is `public`, has a usable port and lies within `retrieval.corridor_buffer_km` of the route. `max_candidates` is ignored (an efficiency cap, not a constraint) |
@@ -40,20 +41,34 @@ itinerary break any hard constraint.
   satisfies `min_power_kw`. A port with power ≤ 0 is unusable.
 - **Compatibility (ADR 0012).** A native connector works at any level. A documented adapter works at DC fast only.
   `connectors_override` only narrows; an override with no overlap is infeasible.
+- **Required accessible restroom (ADR 0003 question 3, #162).** *Required when* the request has a `restroom`
+  preference with `priority == "important"` **and** `wheelchair_required == true`. *Satisfied when* at least one
+  charging stop has an amenity in the store with category `restroom` and an explicit `wheelchair == "yes"` within
+  `amenity_radius_m` (`configs/retrieval.yaml`, 400 m) straight-line (great circle). `unknown`, `limited` and `no` never
+  count, and neither does a wheelchair-accessible amenity of another category. A trip with no stop never satisfies it.
+  Nothing else is hard: `nice_to_have` + wheelchair, and every other important amenity, stay soft and never change an
+  oracle answer (guarded by a golden test recorded before the rule, `tests/evaluation/test_oracle_accessibility.py`).
 - **LEAF (ADR 0009).** `nissan-leaf-sv-plus-2024` stays in feasibility metrics. Results carry `charge_time_excluded`, and the
   charge-time sensitivity excludes it.
 
 ## Outputs
 - `is_feasible(request)` is **exact** and independent of the Pareto search. Departing every stop at the cap maximises reach.
   Labels (SoC, cumulative detour) are Pareto-pruned, so under `detour_scope="total"` a lower-reach, lower-detour path survives.
-  Reason codes: `unknown_vehicle`, `connector_no_overlap`, `start_below_reserve`, `no_usable_station` (with excluded counts by
+  With a required accessible restroom, a label also records whether a stop so far satisfies it, and the destination
+  accepts only labels that do. Reason codes: `unknown_vehicle`, `no_accessible_restroom` (energy-feasible, but no
+  feasible stop sequence includes a qualifying stop; checked first), `connector_no_overlap`, `start_below_reserve`, `no_usable_station` (with excluded counts by
   reason), `energy_gap`, `arrival_soc_unreachable`, `detour_total_exceeded`. `connector_no_overlap` applies only when a stop is
   needed: a trip drivable without charging is feasible whatever the override. Requests with missing fields, an unresolved
   place, no route (`no_route`), a route source that raised (`route_error`, with the exception) or a degenerate route
   (`degenerate_route`: fewer than 2 points, zero length, e.g. origin and destination geocode to the same place) are
   `evaluable=False`. `FeasibilityResult` is truthy exactly when feasible.
 - `pareto_plans(request)`: label-setting over stations in route order, with dominance pruning on (time, SoC, detour, charge).
-  Departure targets are the exact need of every later node plus a `soc_grid_step_pct` grid. Returns the non-dominated plans over
+  Departure targets are the exact need of every later node plus a `soc_grid_step_pct` grid. With a required
+  accessible restroom each node has two label layers (with / without a qualifying stop so far); a label without one
+  is dropped when a label with one beats it, and only the "with" layer reaches the destination. Without the
+  requirement there is one layer and the search is exactly the one without the rule. A qualifying station may also be
+  left with the SoC it arrived with (0 min charge): otherwise a trip drivable without charging (deepti-022) could never
+  satisfy the requirement and the front would be empty while `is_feasible` is true. Returns the non-dominated plans over
   **(total time, detour, charge time)**. `complete=False` (with `incomplete_reason`) if the search inserts `max_labels`
   labels (`configs/evaluation.yaml`, 40,000 per search); never silently truncated. The label limit is deterministic:
   the same input and settings give the same `complete` flag, label count (`n_labels`) and front on any machine, so
@@ -68,7 +83,10 @@ itinerary break any hard constraint.
   Tested invariant: `is_feasible ⇔ front non-empty`, under both detour scopes, and every front plan passes `check_itinerary`.
 - `check_itinerary(request, itinerary)` replays the plan with the oracle's own distances and lists **every** violation, using
   the contract codes `connector`, `power`, `detour`, `arrival_soc`, `reserve`, `status`, `access`, `departure_soc`, `continuity`,
-  `unknown_station`, `route_distance`. Claim mismatches (claimed detour or arrival vs the oracle's) are notes, not violations.
+  `unknown_station`, `route_distance`. A plan without the required accessible restroom gets an `access` violation (no
+  `stop_index`) whose detail starts `required wheelchair-accessible restroom missing`: the same code as the planner's
+  verifier (#150), because a code of its own would be a contract change (ADR 0004). In the planning metrics' `violations_by_code` it is
+  counted with non-public stations under `access`; the detail tells them apart. Claim mismatches (claimed detour or arrival vs the oracle's) are notes, not violations.
   Power rules (`min_power_kw`, non-positive power) apply to the port the stop uses, identified by its claimed power.
   `ok` allows `soc_tol_pct` / `detour_tol_min`; `strict_ok` repeats the checks with the search's own EPS, so a plan that
   passes only within tolerance is known (`strict_violations`).
@@ -133,6 +151,7 @@ whichever implementation is wrong, and add the case as a hand-built test.
 | 14 | "Robust feasibility" undefined | Both are reported: (a) valid recommended plans that still meet reserve and arrival when replayed at +15 %, (b) oracle-feasible items still feasible at +15 % | `robust_feasibility` |
 | 15 | No data flag identifies the LEAF | Listed by vehicle id; a test checks the id exists in `data/curated/vehicles.csv` | `CHARGE_TIME_EXCLUDED_VEHICLES` |
 | 16 | Naming of files in `routes/` undocumented | Routes matched on origin/destination coordinates (0.01°) | `FileRouteSource` |
+| 17 | Required accessible restroom: which amenities are hard (#136, ADR 0003 question 3) | Only `restroom` + `important` + `wheelchair_required`; explicit `wheelchair=yes` within `amenity_radius_m` of a stop; violation code `access` (no contract change) | `requires_accessible_restroom`, `has_accessible_restroom` |
 
 ### Observation for the planning owner
 Under the placeholder model, total time = route duration + detour + charge time. On a single route the three Pareto
