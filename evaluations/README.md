@@ -99,8 +99,11 @@ window at the repo root, not from inside an agent session:
 $env:CLICKLESS_DATA_SOURCE = "snapshot"
 $env:VOYAGER_BASE_URL = "http://localhost:11434/v1"
 powershell -ExecutionPolicy Bypass -File scripts\final_run.ps1 -Split dev           # dev: as often as needed
+powershell -ExecutionPolicy Bypass -File scripts\final_run.ps1 -Split dev -Limit 5  # smoke run: first 5 dev items
 powershell -ExecutionPolicy Bypass -File scripts\final_run.ps1 -Split test -Final   # test: once
 ```
+
+`-Limit N` runs only the first N items of the split, as a quick check before a full run. It is refused with `-Final`.
 
 It aborts before running anything unless all of these hold:
 - you are on `main` with a clean tree, untracked files included (it prints the commit);

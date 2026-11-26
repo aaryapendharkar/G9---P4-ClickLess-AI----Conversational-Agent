@@ -24,6 +24,10 @@
 .PARAMETER Final
     Required with -Split test. The test split is held out and runs once (evaluations/README.md).
 
+.PARAMETER Limit
+    Run only the first N items of the split (a quick smoke run; passed to the harness as --limit).
+    Not allowed with -Final: the final test run always covers the whole split.
+
 .PARAMETER Python
     Python executable to use (default: python on PATH).
 
@@ -31,6 +35,9 @@
     $env:CLICKLESS_DATA_SOURCE = "snapshot"
     $env:VOYAGER_BASE_URL = "http://localhost:11434/v1"
     .\scripts\final_run.ps1 -Split dev
+
+.EXAMPLE
+    .\scripts\final_run.ps1 -Split dev -Limit 5
 
 .EXAMPLE
     .\scripts\final_run.ps1 -Split test -Final
@@ -42,6 +49,9 @@ param(
     [string]$Split,
 
     [switch]$Final,
+
+    [ValidateRange(1, [int]::MaxValue)]
+    [int]$Limit = 0,
 
     [string]$Python = 'python'
 )
@@ -78,7 +88,8 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) {
     [System.IO.File]::WriteAllText($Path, $Text, (New-Object System.Text.UTF8Encoding $false))
 }
 
-Write-Host "Preflight ($Split split)" -ForegroundColor Cyan
+$Scope = if ($Limit -gt 0) { "first $Limit items of the $Split split" } else { "$Split split" }
+Write-Host "Preflight ($Scope)" -ForegroundColor Cyan
 
 # --- split / -Final -----------------------------------------------------------------------------
 if ($Split -eq 'test' -and -not $Final) {
@@ -86,6 +97,9 @@ if ($Split -eq 'test' -and -not $Final) {
 }
 if ($Final -and $Split -ne 'test') {
     Stop-Preflight "-Final is only for -Split test."
+}
+if ($Final -and $Limit -gt 0) {
+    Stop-Preflight "-Limit cannot be used with -Final: the final test run covers the whole split."
 }
 if ($Split -eq 'test') {
     if (-not (Test-Path (Join-Path $Repo 'benchmark\FROZEN.json'))) {
@@ -188,12 +202,13 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $env:PYTHONUNBUFFERED = '1'
 
 Write-Host ""
-Write-Host "Running $($Configs -join ', ') on $Split -> $OutRel" -ForegroundColor Cyan
+Write-Host "Running $($Configs -join ', ') on the $Scope -> $OutRel" -ForegroundColor Cyan
 if ($Final) { Write-Host "FINAL run on the held-out test split." -ForegroundColor Yellow }
 
 $Failed    = [ordered]@{}
 $Outputs   = [ordered]@{}
 $Durations = [ordered]@{}
+$LimitArg = if ($Limit -gt 0) { " --limit $Limit" } else { "" }
 $i = 0
 foreach ($c in $Configs) {
     $i++
@@ -202,7 +217,7 @@ foreach ($c in $Configs) {
     Write-Host "[$i/$($Configs.Count)] Config $c  (log: $log; follow it with: Get-Content $log -Wait)"
     $t0 = Get-Date
     # Each config is its own process. cmd.exe merges stdout and stderr into the one log file.
-    $cmdLine = "/d /s /c `"`"$Python`" -m evaluation.harness --config $c --split $Split --out $OutRel > `"$log`" 2>&1`""
+    $cmdLine = "/d /s /c `"`"$Python`" -m evaluation.harness --config $c --split $Split$LimitArg --out $OutRel > `"$log`" 2>&1`""
     $proc = Start-Process -FilePath $env:ComSpec -ArgumentList $cmdLine -NoNewWindow -Wait -PassThru
     $Durations[$c] = (Get-Date) - $t0
     $json = @(Get-ChildItem -Path $OutDir -Filter "$($c)_$($Split)_*.json" -ErrorAction SilentlyContinue)
@@ -225,6 +240,7 @@ $inputs = [ordered]@{
     split       = $Split
     items       = $null
     final       = [bool]$Final
+    limit       = $(if ($Limit -gt 0) { $Limit } else { $null })
     configs     = $Configs
     snapshot_id = $SnapshotIds
     failed      = $Failed
@@ -266,7 +282,7 @@ foreach ($c in $Configs) {
 if ($Failed.Count -gt 0) {
     Write-Host "Failed configs: $($Failed.Keys -join ', ') (logs in results\$Stamp\)" -ForegroundColor Red
 }
-Write-Host "Commit $Commit, split $Split$(if ($Final) { ' (FINAL)' })"
+Write-Host "Commit $Commit, $Scope$(if ($Final) { ' (FINAL)' })"
 Write-Host "Total time: $(Format-Duration ((Get-Date) - $Started))"
 
 if ($Failed.Count -gt 0 -or -not $reportOk) { exit 1 }
