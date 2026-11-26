@@ -1,0 +1,1412 @@
+{
+  "created_at": "2026-11-26T00:55:26.616109+00:00",
+  "files": {
+    "amenities.json": "2214a2dde6fec8bc7684a8d67bc86731c7e42a8b1c1bd24cd8bc4f7ba8c7e74b",
+    "places.json": "09d2f32109e17974d5ebf956797deb02d19f0d60a717b3566a8e3a6607ea4a49",
+    "route_cache_report.json": "b72e06a49e0236bf35487f475bad5f4485bd58280c8021289e48f60c6bf319f3",
+    "routes/albuquerque-nm__dallas-tx.json": "33b8aa3897f9c86be2934fdaefb5c9ce9514c3abbc9e24a038381f1999af5139",
+    "routes/albuquerque-nm__dallas.json": "33b8aa3897f9c86be2934fdaefb5c9ce9514c3abbc9e24a038381f1999af5139",
+    "routes/albuquerque-nm__oklahoma-city-ok.json": "175b6c93ddb0c36b77b91a1ba4a4134515be13ac632d154fbe5d222d61d4ce6e",
+    "routes/albuquerque-nm__oklahoma-city.json": "175b6c93ddb0c36b77b91a1ba4a4134515be13ac632d154fbe5d222d61d4ce6e",
+    "routes/albuquerque-nm__santa-fe-nm.json": "c60e89ff071cb546a095db7f0c735108b7dbe8b500cd2ae2c3192718742ea6ab",
+    "routes/albuquerque-nm__santa-fe.json": "c60e89ff071cb546a095db7f0c735108b7dbe8b500cd2ae2c3192718742ea6ab",
+    "routes/albuquerque__dallas-tx.json": "33b8aa3897f9c86be2934fdaefb5c9ce9514c3abbc9e24a038381f1999af5139",
+    "routes/albuquerque__dallas.json": "33b8aa3897f9c86be2934fdaefb5c9ce9514c3abbc9e24a038381f1999af5139",
+    "routes/albuquerque__oklahoma-city-ok.json": "175b6c93ddb0c36b77b91a1ba4a4134515be13ac632d154fbe5d222d61d4ce6e",
+    "routes/albuquerque__oklahoma-city.json": "175b6c93ddb0c36b77b91a1ba4a4134515be13ac632d154fbe5d222d61d4ce6e",
+    "routes/albuquerque__santa-fe-nm.json": "c60e89ff071cb546a095db7f0c735108b7dbe8b500cd2ae2c3192718742ea6ab",
+    "routes/albuquerque__santa-fe.json": "c60e89ff071cb546a095db7f0c735108b7dbe8b500cd2ae2c3192718742ea6ab",
+    "routes/alpine-tx__presidio-tx.json": "12bf1a05298fbf1b3b4c3d83853822b3f0fea1479e0e7f026a1d98c5dead90be",
+    "routes/alpine-tx__presidio.json": "12bf1a05298fbf1b3b4c3d83853822b3f0fea1479e0e7f026a1d98c5dead90be",
+    "routes/alpine__presidio-tx.json": "12bf1a05298fbf1b3b4c3d83853822b3f0fea1479e0e7f026a1d98c5dead90be",
+    "routes/alpine__presidio.json": "12bf1a05298fbf1b3b4c3d83853822b3f0fea1479e0e7f026a1d98c5dead90be",
+    "routes/asheville-nc__boone-nc.json": "448c42511581a073c9539b199873176d97d6986d8cf1d4b976a06e9bc2c7e13d",
+    "routes/asheville-nc__boone.json": "448c42511581a073c9539b199873176d97d6986d8cf1d4b976a06e9bc2c7e13d",
+    "routes/asheville__boone-nc.json": "448c42511581a073c9539b199873176d97d6986d8cf1d4b976a06e9bc2c7e13d",
+    "routes/asheville__boone.json": "448c42511581a073c9539b199873176d97d6986d8cf1d4b976a06e9bc2c7e13d",
+    "routes/atlanta-ga__chattanooga-tn.json": "6065e218a9ed9601b2e4014d4fb34b3476ceda65763d7db0de567247ef15bc17",
+    "routes/atlanta-ga__chattanooga.json": "6065e218a9ed9601b2e4014d4fb34b3476ceda65763d7db0de567247ef15bc17",
+    "routes/atlanta__chattanooga-tn.json": "6065e218a9ed9601b2e4014d4fb34b3476ceda65763d7db0de567247ef15bc17",
+    "routes/atlanta__chattanooga.json": "6065e218a9ed9601b2e4014d4fb34b3476ceda65763d7db0de567247ef15bc17",
+    "routes/back-bay-boston-ma__cambridge-ma.json": "61b612b49cbbc9ea278155a8050dbaf8583db679847a475535a8d5cc4691867a",
+    "routes/back-bay-boston-ma__cambridge.json": "61b612b49cbbc9ea278155a8050dbaf8583db679847a475535a8d5cc4691867a",
+    "routes/baltimore-md__washington-dc.json": "d75a2e05a2fe34cda0fc5170b358979d4a34edea2736042f81d4e741061d3a8e",
+    "routes/baltimore-md__washington.json": "d75a2e05a2fe34cda0fc5170b358979d4a34edea2736042f81d4e741061d3a8e",
+    "routes/baltimore__washington-dc.json": "d75a2e05a2fe34cda0fc5170b358979d4a34edea2736042f81d4e741061d3a8e",
+    "routes/baltimore__washington.json": "d75a2e05a2fe34cda0fc5170b358979d4a34edea2736042f81d4e741061d3a8e",
+    "routes/bangor-me__bar-harbor-me.json": "ed18d69c553ea56659167c5bf8002116bca66a70416eafcc919101c7596d2974",
+    "routes/bangor-me__bar-harbor.json": "ed18d69c553ea56659167c5bf8002116bca66a70416eafcc919101c7596d2974",
+    "routes/bangor__bar-harbor-me.json": "ed18d69c553ea56659167c5bf8002116bca66a70416eafcc919101c7596d2974",
+    "routes/bangor__bar-harbor.json": "ed18d69c553ea56659167c5bf8002116bca66a70416eafcc919101c7596d2974",
+    "routes/bend-or__burns-or.json": "f344057e0d64ed83c50f45d4ae91e72bbd012d64a4875f286dbe00dde22c6c45",
+    "routes/bend-or__burns.json": "f344057e0d64ed83c50f45d4ae91e72bbd012d64a4875f286dbe00dde22c6c45",
+    "routes/bend-or__eugene-or.json": "aeeab907723014f0b932aa9b79b99fa06f1beeac99a4f2cde0421290d000043c",
+    "routes/bend-or__eugene.json": "aeeab907723014f0b932aa9b79b99fa06f1beeac99a4f2cde0421290d000043c",
+    "routes/bend-or__klamath-falls-or.json": "89ca25738f17522937b3fb2bd4c9bccac653a48a7668cdb79896cc14f6edbc5c",
+    "routes/bend-or__klamath-falls.json": "89ca25738f17522937b3fb2bd4c9bccac653a48a7668cdb79896cc14f6edbc5c",
+    "routes/bend__burns-or.json": "f344057e0d64ed83c50f45d4ae91e72bbd012d64a4875f286dbe00dde22c6c45",
+    "routes/bend__burns.json": "f344057e0d64ed83c50f45d4ae91e72bbd012d64a4875f286dbe00dde22c6c45",
+    "routes/bend__eugene-or.json": "aeeab907723014f0b932aa9b79b99fa06f1beeac99a4f2cde0421290d000043c",
+    "routes/bend__eugene.json": "aeeab907723014f0b932aa9b79b99fa06f1beeac99a4f2cde0421290d000043c",
+    "routes/bend__klamath-falls-or.json": "89ca25738f17522937b3fb2bd4c9bccac653a48a7668cdb79896cc14f6edbc5c",
+    "routes/bend__klamath-falls.json": "89ca25738f17522937b3fb2bd4c9bccac653a48a7668cdb79896cc14f6edbc5c",
+    "routes/bishop-ca__mammoth-lakes-ca.json": "8d20fab5b783448a82a4b972dcbb821fcec9cf8ffe20719bcbc14610d509fe22",
+    "routes/bishop-ca__mammoth-lakes.json": "8d20fab5b783448a82a4b972dcbb821fcec9cf8ffe20719bcbc14610d509fe22",
+    "routes/bishop__mammoth-lakes-ca.json": "8d20fab5b783448a82a4b972dcbb821fcec9cf8ffe20719bcbc14610d509fe22",
+    "routes/bishop__mammoth-lakes.json": "8d20fab5b783448a82a4b972dcbb821fcec9cf8ffe20719bcbc14610d509fe22",
+    "routes/boise-id__bend-or.json": "3be4ef19372cc83546cb5ccf96d4472a7d15b2a7455d70c00226ac09d5cbd86e",
+    "routes/boise-id__bend.json": "3be4ef19372cc83546cb5ccf96d4472a7d15b2a7455d70c00226ac09d5cbd86e",
+    "routes/boise__bend-or.json": "3be4ef19372cc83546cb5ccf96d4472a7d15b2a7455d70c00226ac09d5cbd86e",
+    "routes/boise__bend.json": "3be4ef19372cc83546cb5ccf96d4472a7d15b2a7455d70c00226ac09d5cbd86e",
+    "routes/boston-ma__washington-dc.json": "a669dd2ecea3a02a1bc8b4bbd9bd57ec87f73bbea1d76cad4d750dab179f9678",
+    "routes/boston-ma__washington.json": "a669dd2ecea3a02a1bc8b4bbd9bd57ec87f73bbea1d76cad4d750dab179f9678",
+    "routes/boston__washington-dc.json": "a669dd2ecea3a02a1bc8b4bbd9bd57ec87f73bbea1d76cad4d750dab179f9678",
+    "routes/boston__washington.json": "a669dd2ecea3a02a1bc8b4bbd9bd57ec87f73bbea1d76cad4d750dab179f9678",
+    "routes/bozeman-mt__west-yellowstone-mt.json": "b3f1a25c630f023475848f83abc825a6c560d6770a1cdf220c84cc89c14faa16",
+    "routes/bozeman-mt__west-yellowstone.json": "b3f1a25c630f023475848f83abc825a6c560d6770a1cdf220c84cc89c14faa16",
+    "routes/bozeman__west-yellowstone-mt.json": "b3f1a25c630f023475848f83abc825a6c560d6770a1cdf220c84cc89c14faa16",
+    "routes/bozeman__west-yellowstone.json": "b3f1a25c630f023475848f83abc825a6c560d6770a1cdf220c84cc89c14faa16",
+    "routes/brooklyn-ny__newark-liberty-international-airport-nj.json": "3c167cbd330fa67bd032ae2b806c850fd446142711a7421eb3f3553c84791804",
+    "routes/brooklyn-ny__newark-liberty-international-airport.json": "3c167cbd330fa67bd032ae2b806c850fd446142711a7421eb3f3553c84791804",
+    "routes/brooklyn-ny__queens-ny.json": "1c72f3c2c116b193fbfbc56dd3c51ac30ef4c99b5db82f5c040d989e0bc26e2c",
+    "routes/brooklyn-ny__queens.json": "1c72f3c2c116b193fbfbc56dd3c51ac30ef4c99b5db82f5c040d989e0bc26e2c",
+    "routes/brooklyn__newark-liberty-international-airport-nj.json": "3c167cbd330fa67bd032ae2b806c850fd446142711a7421eb3f3553c84791804",
+    "routes/brooklyn__newark-liberty-international-airport.json": "3c167cbd330fa67bd032ae2b806c850fd446142711a7421eb3f3553c84791804",
+    "routes/brooklyn__queens-ny.json": "1c72f3c2c116b193fbfbc56dd3c51ac30ef4c99b5db82f5c040d989e0bc26e2c",
+    "routes/brooklyn__queens.json": "1c72f3c2c116b193fbfbc56dd3c51ac30ef4c99b5db82f5c040d989e0bc26e2c",
+    "routes/burlington-vt__montpelier-vt.json": "1105788514bfac3311816bebe4567231c6ae1b7a59647c07200b16ff6d344179",
+    "routes/burlington-vt__montpelier.json": "1105788514bfac3311816bebe4567231c6ae1b7a59647c07200b16ff6d344179",
+    "routes/burlington__montpelier-vt.json": "1105788514bfac3311816bebe4567231c6ae1b7a59647c07200b16ff6d344179",
+    "routes/burlington__montpelier.json": "1105788514bfac3311816bebe4567231c6ae1b7a59647c07200b16ff6d344179",
+    "routes/capitol-hill-seattle-wa__bellevue-wa.json": "201f02bd2e02d101035828d6f872624d24868552790bb63300a7dcc7ff6e6e7b",
+    "routes/capitol-hill-seattle-wa__bellevue.json": "201f02bd2e02d101035828d6f872624d24868552790bb63300a7dcc7ff6e6e7b",
+    "routes/casper-wy__rapid-city-sd.json": "7c21601137aefaed233a2d2ee8bcdafe9e4fd8f2707d5257134d60cac89d5a81",
+    "routes/casper-wy__rapid-city.json": "7c21601137aefaed233a2d2ee8bcdafe9e4fd8f2707d5257134d60cac89d5a81",
+    "routes/casper__rapid-city-sd.json": "7c21601137aefaed233a2d2ee8bcdafe9e4fd8f2707d5257134d60cac89d5a81",
+    "routes/casper__rapid-city.json": "7c21601137aefaed233a2d2ee8bcdafe9e4fd8f2707d5257134d60cac89d5a81",
+    "routes/charleston-sc__savannah-ga.json": "41350cdb436ee865648c6d97d47b4d33f869a513aca74dee22fbec34d491d5a3",
+    "routes/charleston-sc__savannah.json": "41350cdb436ee865648c6d97d47b4d33f869a513aca74dee22fbec34d491d5a3",
+    "routes/charleston__savannah-ga.json": "41350cdb436ee865648c6d97d47b4d33f869a513aca74dee22fbec34d491d5a3",
+    "routes/charleston__savannah.json": "41350cdb436ee865648c6d97d47b4d33f869a513aca74dee22fbec34d491d5a3",
+    "routes/charlotte-nc__asheville-nc.json": "56081a5b60f734c338e355a47898bdf8aecb56feaff4ace9be9b8446688a8cdd",
+    "routes/charlotte-nc__asheville.json": "56081a5b60f734c338e355a47898bdf8aecb56feaff4ace9be9b8446688a8cdd",
+    "routes/charlotte__asheville-nc.json": "56081a5b60f734c338e355a47898bdf8aecb56feaff4ace9be9b8446688a8cdd",
+    "routes/charlotte__asheville.json": "56081a5b60f734c338e355a47898bdf8aecb56feaff4ace9be9b8446688a8cdd",
+    "routes/chicago-il__minneapolis-mn.json": "e7c3d221267a7f80651cecdde6a0da2289c3c1199d87e793eba3a26c3a672095",
+    "routes/chicago-il__minneapolis.json": "e7c3d221267a7f80651cecdde6a0da2289c3c1199d87e793eba3a26c3a672095",
+    "routes/chicago__minneapolis-mn.json": "e7c3d221267a7f80651cecdde6a0da2289c3c1199d87e793eba3a26c3a672095",
+    "routes/chicago__minneapolis.json": "e7c3d221267a7f80651cecdde6a0da2289c3c1199d87e793eba3a26c3a672095",
+    "routes/cody-wy__sheridan-wy.json": "7331e83e8b5fbae2351737f917a3a7221144843588a2a02fb788301dd3315b70",
+    "routes/cody-wy__sheridan.json": "7331e83e8b5fbae2351737f917a3a7221144843588a2a02fb788301dd3315b70",
+    "routes/cody__sheridan-wy.json": "7331e83e8b5fbae2351737f917a3a7221144843588a2a02fb788301dd3315b70",
+    "routes/cody__sheridan.json": "7331e83e8b5fbae2351737f917a3a7221144843588a2a02fb788301dd3315b70",
+    "routes/columbus-oh__cincinnati-oh.json": "999e1c281bb14f0e87fdb280c326f180599866f8b64eb8a01f7f9f69d527575b",
+    "routes/columbus-oh__cincinnati.json": "999e1c281bb14f0e87fdb280c326f180599866f8b64eb8a01f7f9f69d527575b",
+    "routes/columbus-oh__philadelphia-pa.json": "ff06f2db04f884e70fb74c113d05e295ea190d7b53935faac23afc606985cfac",
+    "routes/columbus-oh__philadelphia.json": "ff06f2db04f884e70fb74c113d05e295ea190d7b53935faac23afc606985cfac",
+    "routes/columbus__cincinnati-oh.json": "999e1c281bb14f0e87fdb280c326f180599866f8b64eb8a01f7f9f69d527575b",
+    "routes/columbus__cincinnati.json": "999e1c281bb14f0e87fdb280c326f180599866f8b64eb8a01f7f9f69d527575b",
+    "routes/columbus__philadelphia-pa.json": "ff06f2db04f884e70fb74c113d05e295ea190d7b53935faac23afc606985cfac",
+    "routes/columbus__philadelphia.json": "ff06f2db04f884e70fb74c113d05e295ea190d7b53935faac23afc606985cfac",
+    "routes/dallas-tx__oklahoma-city-ok.json": "ea22c2393bf5f68a10fa5d72ffedb49bdc8bf8472cc1c550b4b2e28967af293c",
+    "routes/dallas-tx__oklahoma-city.json": "ea22c2393bf5f68a10fa5d72ffedb49bdc8bf8472cc1c550b4b2e28967af293c",
+    "routes/dallas__oklahoma-city-ok.json": "ea22c2393bf5f68a10fa5d72ffedb49bdc8bf8472cc1c550b4b2e28967af293c",
+    "routes/dallas__oklahoma-city.json": "ea22c2393bf5f68a10fa5d72ffedb49bdc8bf8472cc1c550b4b2e28967af293c",
+    "routes/denver-co__las-vegas-nv.json": "448d13f42b1e4e38be2197243e65c2fe077b4fa2a3f2b7d2a7e56a66ad96499d",
+    "routes/denver-co__las-vegas.json": "448d13f42b1e4e38be2197243e65c2fe077b4fa2a3f2b7d2a7e56a66ad96499d",
+    "routes/denver-co__salt-lake-city-ut.json": "1e50ec678673d8ab9f1827adc428fb422dd4f5da8b54f67df7da643fb66d8581",
+    "routes/denver-co__salt-lake-city.json": "1e50ec678673d8ab9f1827adc428fb422dd4f5da8b54f67df7da643fb66d8581",
+    "routes/denver__las-vegas-nv.json": "448d13f42b1e4e38be2197243e65c2fe077b4fa2a3f2b7d2a7e56a66ad96499d",
+    "routes/denver__las-vegas.json": "448d13f42b1e4e38be2197243e65c2fe077b4fa2a3f2b7d2a7e56a66ad96499d",
+    "routes/denver__salt-lake-city-ut.json": "1e50ec678673d8ab9f1827adc428fb422dd4f5da8b54f67df7da643fb66d8581",
+    "routes/denver__salt-lake-city.json": "1e50ec678673d8ab9f1827adc428fb422dd4f5da8b54f67df7da643fb66d8581",
+    "routes/downtown-austin-tx__round-rock-tx.json": "83713ab1be6ad3b8f574136637de8fc31c1aecaece92c2fa3504050608e6becf",
+    "routes/downtown-austin-tx__round-rock.json": "83713ab1be6ad3b8f574136637de8fc31c1aecaece92c2fa3504050608e6becf",
+    "routes/downtown-austin__round-rock-tx.json": "83713ab1be6ad3b8f574136637de8fc31c1aecaece92c2fa3504050608e6becf",
+    "routes/downtown-austin__round-rock.json": "83713ab1be6ad3b8f574136637de8fc31c1aecaece92c2fa3504050608e6becf",
+    "routes/downtown-denver-co__aurora-co.json": "4785870f14ab45eeace8484629f2009e6ce21b3e0b706a85708bee8f21e89b5d",
+    "routes/downtown-denver-co__aurora.json": "4785870f14ab45eeace8484629f2009e6ce21b3e0b706a85708bee8f21e89b5d",
+    "routes/downtown-denver-co__boulder-co.json": "492fa48f18197828f97155f7c925af1a2aa75e7a3e514c20b5b2d310d23aa466",
+    "routes/downtown-denver-co__boulder.json": "492fa48f18197828f97155f7c925af1a2aa75e7a3e514c20b5b2d310d23aa466",
+    "routes/downtown-denver__aurora-co.json": "4785870f14ab45eeace8484629f2009e6ce21b3e0b706a85708bee8f21e89b5d",
+    "routes/downtown-denver__aurora.json": "4785870f14ab45eeace8484629f2009e6ce21b3e0b706a85708bee8f21e89b5d",
+    "routes/downtown-denver__boulder-co.json": "492fa48f18197828f97155f7c925af1a2aa75e7a3e514c20b5b2d310d23aa466",
+    "routes/downtown-denver__boulder.json": "492fa48f18197828f97155f7c925af1a2aa75e7a3e514c20b5b2d310d23aa466",
+    "routes/downtown-detroit-mi__ann-arbor-mi.json": "540c410fd25ccfd501d90de98853ac146627df82a29e90b8b178a12ff60c07f0",
+    "routes/downtown-detroit-mi__ann-arbor.json": "540c410fd25ccfd501d90de98853ac146627df82a29e90b8b178a12ff60c07f0",
+    "routes/downtown-detroit__ann-arbor-mi.json": "540c410fd25ccfd501d90de98853ac146627df82a29e90b8b178a12ff60c07f0",
+    "routes/downtown-detroit__ann-arbor.json": "540c410fd25ccfd501d90de98853ac146627df82a29e90b8b178a12ff60c07f0",
+    "routes/downtown-los-angeles-ca__burbank-ca.json": "592f50fb71691736c610d9062f0224e7507a6676089d23db5dc5b5f0fb80e34b",
+    "routes/downtown-los-angeles-ca__burbank.json": "592f50fb71691736c610d9062f0224e7507a6676089d23db5dc5b5f0fb80e34b",
+    "routes/downtown-los-angeles-ca__santa-monica-ca.json": "4c4f82ce1f86e8e3059a024de9d7f593ee6e1bc7909c5bc3e6099d2cd46be651",
+    "routes/downtown-los-angeles-ca__santa-monica.json": "4c4f82ce1f86e8e3059a024de9d7f593ee6e1bc7909c5bc3e6099d2cd46be651",
+    "routes/downtown-los-angeles__burbank-ca.json": "592f50fb71691736c610d9062f0224e7507a6676089d23db5dc5b5f0fb80e34b",
+    "routes/downtown-los-angeles__burbank.json": "592f50fb71691736c610d9062f0224e7507a6676089d23db5dc5b5f0fb80e34b",
+    "routes/downtown-los-angeles__santa-monica-ca.json": "4c4f82ce1f86e8e3059a024de9d7f593ee6e1bc7909c5bc3e6099d2cd46be651",
+    "routes/downtown-los-angeles__santa-monica.json": "4c4f82ce1f86e8e3059a024de9d7f593ee6e1bc7909c5bc3e6099d2cd46be651",
+    "routes/downtown-minneapolis-mn__st-paul-mn.json": "1359aa6e287e2c9685fd8cba3fbf9a81ae5bf8647edfe95521a31aec316017e5",
+    "routes/downtown-minneapolis-mn__st-paul.json": "1359aa6e287e2c9685fd8cba3fbf9a81ae5bf8647edfe95521a31aec316017e5",
+    "routes/downtown-minneapolis__st-paul-mn.json": "1359aa6e287e2c9685fd8cba3fbf9a81ae5bf8647edfe95521a31aec316017e5",
+    "routes/downtown-minneapolis__st-paul.json": "1359aa6e287e2c9685fd8cba3fbf9a81ae5bf8647edfe95521a31aec316017e5",
+    "routes/downtown-nashville-tn__franklin-tn.json": "5090c5f3479ffe0a7eb453987e1d9d6735d9bce8c861a78d72fd059e75c5bc7a",
+    "routes/downtown-nashville-tn__franklin.json": "5090c5f3479ffe0a7eb453987e1d9d6735d9bce8c861a78d72fd059e75c5bc7a",
+    "routes/downtown-nashville__franklin-tn.json": "5090c5f3479ffe0a7eb453987e1d9d6735d9bce8c861a78d72fd059e75c5bc7a",
+    "routes/downtown-nashville__franklin.json": "5090c5f3479ffe0a7eb453987e1d9d6735d9bce8c861a78d72fd059e75c5bc7a",
+    "routes/downtown-phoenix-az__arizona-state-university-tempe-az.json": "9d38b2ddbc8073a363b5307bb2bc6094490225a35938db935ad938c332c9217f",
+    "routes/downtown-phoenix-az__phoenix-sky-harbor-international-airport-phoenix-az.json": "2f3c3211db3efb0221636509eb4d7a39090f836901a02c3826f0e74aec722d2c",
+    "routes/downtown-phoenix-az__tempe-town-lake-tempe-az.json": "62bac2f553ea983e305c5a67f579907efda930ce10542b636c2141a7816944bf",
+    "routes/downtown-phoenix__arizona-state-university-tempe-az.json": "9d38b2ddbc8073a363b5307bb2bc6094490225a35938db935ad938c332c9217f",
+    "routes/downtown-phoenix__phoenix-sky-harbor-international-airport-phoenix-az.json": "2f3c3211db3efb0221636509eb4d7a39090f836901a02c3826f0e74aec722d2c",
+    "routes/downtown-phoenix__tempe-town-lake-tempe-az.json": "62bac2f553ea983e305c5a67f579907efda930ce10542b636c2141a7816944bf",
+    "routes/downtown-pittsburgh-pa__pittsburgh-international-airport-pittsburgh-pa.json": "da2f7120deb35476a5ba9d551cb127f55306c35a4dd714cadfb6737ec1e5689d",
+    "routes/downtown-pittsburgh__pittsburgh-international-airport-pittsburgh-pa.json": "da2f7120deb35476a5ba9d551cb127f55306c35a4dd714cadfb6737ec1e5689d",
+    "routes/downtown-san-diego-ca__la-jolla-ca.json": "43a99553a270111d1c4e1f84a56f4dfd599f94523c0d95110507398f71ac87cf",
+    "routes/downtown-san-diego-ca__la-jolla.json": "43a99553a270111d1c4e1f84a56f4dfd599f94523c0d95110507398f71ac87cf",
+    "routes/downtown-san-diego__la-jolla-ca.json": "43a99553a270111d1c4e1f84a56f4dfd599f94523c0d95110507398f71ac87cf",
+    "routes/downtown-san-diego__la-jolla.json": "43a99553a270111d1c4e1f84a56f4dfd599f94523c0d95110507398f71ac87cf",
+    "routes/downtown-seattle-wa__portland-or.json": "abb8f7d23fa10ff0ce00dd93f3e8763fb9946f878570abcd75602daaa6c0e406",
+    "routes/downtown-seattle-wa__portland.json": "abb8f7d23fa10ff0ce00dd93f3e8763fb9946f878570abcd75602daaa6c0e406",
+    "routes/downtown-seattle-wa__sacramento-ca.json": "9496835dca7f6e4b442cb5d34554e80277ef5eaae4166ee91b5b7e2d5067749e",
+    "routes/downtown-seattle-wa__sacramento.json": "9496835dca7f6e4b442cb5d34554e80277ef5eaae4166ee91b5b7e2d5067749e",
+    "routes/downtown-seattle__portland-or.json": "abb8f7d23fa10ff0ce00dd93f3e8763fb9946f878570abcd75602daaa6c0e406",
+    "routes/downtown-seattle__portland.json": "abb8f7d23fa10ff0ce00dd93f3e8763fb9946f878570abcd75602daaa6c0e406",
+    "routes/downtown-seattle__sacramento-ca.json": "9496835dca7f6e4b442cb5d34554e80277ef5eaae4166ee91b5b7e2d5067749e",
+    "routes/downtown-seattle__sacramento.json": "9496835dca7f6e4b442cb5d34554e80277ef5eaae4166ee91b5b7e2d5067749e",
+    "routes/duluth-mn__grand-marais-mn.json": "dbe144011aef4f93a2e5ed14e111ee34dc894ccd76de9b30caf65be9bddca9bd",
+    "routes/duluth-mn__grand-marais.json": "dbe144011aef4f93a2e5ed14e111ee34dc894ccd76de9b30caf65be9bddca9bd",
+    "routes/duluth__grand-marais-mn.json": "dbe144011aef4f93a2e5ed14e111ee34dc894ccd76de9b30caf65be9bddca9bd",
+    "routes/duluth__grand-marais.json": "dbe144011aef4f93a2e5ed14e111ee34dc894ccd76de9b30caf65be9bddca9bd",
+    "routes/durango-co__silverton-co.json": "f1ecd0abcfad00b8759644ea18706357988f74e9dcaadb50396833bdd7b85291",
+    "routes/durango-co__silverton.json": "f1ecd0abcfad00b8759644ea18706357988f74e9dcaadb50396833bdd7b85291",
+    "routes/durango-co__telluride-co.json": "b280d6100856295ce4aca806b8977eb6cad8745efaba89f58812186926057185",
+    "routes/durango-co__telluride.json": "b280d6100856295ce4aca806b8977eb6cad8745efaba89f58812186926057185",
+    "routes/durango__silverton-co.json": "f1ecd0abcfad00b8759644ea18706357988f74e9dcaadb50396833bdd7b85291",
+    "routes/durango__silverton.json": "f1ecd0abcfad00b8759644ea18706357988f74e9dcaadb50396833bdd7b85291",
+    "routes/durango__telluride-co.json": "b280d6100856295ce4aca806b8977eb6cad8745efaba89f58812186926057185",
+    "routes/durango__telluride.json": "b280d6100856295ce4aca806b8977eb6cad8745efaba89f58812186926057185",
+    "routes/elko-nv__twin-falls-id.json": "50f39a57f7f36fd4aaec46be41c2c196a5cde5841e9cc267fbe48bde8a29a59c",
+    "routes/elko-nv__twin-falls.json": "50f39a57f7f36fd4aaec46be41c2c196a5cde5841e9cc267fbe48bde8a29a59c",
+    "routes/elko__twin-falls-id.json": "50f39a57f7f36fd4aaec46be41c2c196a5cde5841e9cc267fbe48bde8a29a59c",
+    "routes/elko__twin-falls.json": "50f39a57f7f36fd4aaec46be41c2c196a5cde5841e9cc267fbe48bde8a29a59c",
+    "routes/ely-nv__fallon-nv.json": "27231c0d09d5a3e84a4e896803fc8d5db52c0b94f54fe1caedaa6d90b364430c",
+    "routes/ely-nv__fallon.json": "27231c0d09d5a3e84a4e896803fc8d5db52c0b94f54fe1caedaa6d90b364430c",
+    "routes/ely-nv__great-basin-national-park-visitor-center-nv.json": "cfc8ec12203f3f8f96e137672948bf55ec37380f8238ac9aa9c71a3d37b9d42f",
+    "routes/ely-nv__great-basin-national-park-visitor-center.json": "cfc8ec12203f3f8f96e137672948bf55ec37380f8238ac9aa9c71a3d37b9d42f",
+    "routes/ely-nv__tonopah-nv.json": "96a5a13372ecdf6538a97bb45381051c72913e4c534ab1431600cef7dbd15bfc",
+    "routes/ely-nv__tonopah.json": "96a5a13372ecdf6538a97bb45381051c72913e4c534ab1431600cef7dbd15bfc",
+    "routes/ely__fallon-nv.json": "27231c0d09d5a3e84a4e896803fc8d5db52c0b94f54fe1caedaa6d90b364430c",
+    "routes/ely__fallon.json": "27231c0d09d5a3e84a4e896803fc8d5db52c0b94f54fe1caedaa6d90b364430c",
+    "routes/ely__great-basin-national-park-visitor-center-nv.json": "cfc8ec12203f3f8f96e137672948bf55ec37380f8238ac9aa9c71a3d37b9d42f",
+    "routes/ely__great-basin-national-park-visitor-center.json": "cfc8ec12203f3f8f96e137672948bf55ec37380f8238ac9aa9c71a3d37b9d42f",
+    "routes/ely__tonopah-nv.json": "96a5a13372ecdf6538a97bb45381051c72913e4c534ab1431600cef7dbd15bfc",
+    "routes/ely__tonopah.json": "96a5a13372ecdf6538a97bb45381051c72913e4c534ab1431600cef7dbd15bfc",
+    "routes/farmington-nm__page-az.json": "e6048a21d96d1b1accb800d6731a27494bc08376c08a34145168e82f3503bc84",
+    "routes/farmington-nm__page.json": "e6048a21d96d1b1accb800d6731a27494bc08376c08a34145168e82f3503bc84",
+    "routes/farmington__page-az.json": "e6048a21d96d1b1accb800d6731a27494bc08376c08a34145168e82f3503bc84",
+    "routes/farmington__page.json": "e6048a21d96d1b1accb800d6731a27494bc08376c08a34145168e82f3503bc84",
+    "routes/flagstaff-az__monument-valley-az.json": "0e593632c3ab61b86d530634cb480eade84721619a34124ce48b20e0004a7194",
+    "routes/flagstaff-az__monument-valley.json": "0e593632c3ab61b86d530634cb480eade84721619a34124ce48b20e0004a7194",
+    "routes/flagstaff-az__page-az.json": "9c6d84d4fda236ce0d20d183bcf2ab3a119258e6afea5d6b2d88aabd52c2d7a4",
+    "routes/flagstaff-az__page.json": "9c6d84d4fda236ce0d20d183bcf2ab3a119258e6afea5d6b2d88aabd52c2d7a4",
+    "routes/flagstaff-az__sedona-az.json": "8ac7966ea639caf9efe85cf1864e04da4692a317473f2f24c49ac103be1fa23b",
+    "routes/flagstaff-az__sedona.json": "8ac7966ea639caf9efe85cf1864e04da4692a317473f2f24c49ac103be1fa23b",
+    "routes/flagstaff__monument-valley-az.json": "0e593632c3ab61b86d530634cb480eade84721619a34124ce48b20e0004a7194",
+    "routes/flagstaff__monument-valley.json": "0e593632c3ab61b86d530634cb480eade84721619a34124ce48b20e0004a7194",
+    "routes/flagstaff__page-az.json": "9c6d84d4fda236ce0d20d183bcf2ab3a119258e6afea5d6b2d88aabd52c2d7a4",
+    "routes/flagstaff__page.json": "9c6d84d4fda236ce0d20d183bcf2ab3a119258e6afea5d6b2d88aabd52c2d7a4",
+    "routes/flagstaff__sedona-az.json": "8ac7966ea639caf9efe85cf1864e04da4692a317473f2f24c49ac103be1fa23b",
+    "routes/flagstaff__sedona.json": "8ac7966ea639caf9efe85cf1864e04da4692a317473f2f24c49ac103be1fa23b",
+    "routes/fort-collins-co__denver-international-airport-denver-co.json": "f75661e0c379b92c579928db0026b984af7efb080f133ff65cb37a92f66ae7a2",
+    "routes/fort-collins__denver-international-airport-denver-co.json": "f75661e0c379b92c579928db0026b984af7efb080f133ff65cb37a92f66ae7a2",
+    "routes/fort-stockton-tx__terlingua-tx.json": "d0c48d8ffe6c96c13b51dd1166541ec27ef70cb77ff27e6ac5123605541ad6d1",
+    "routes/fort-stockton-tx__terlingua.json": "d0c48d8ffe6c96c13b51dd1166541ec27ef70cb77ff27e6ac5123605541ad6d1",
+    "routes/fort-stockton__terlingua-tx.json": "d0c48d8ffe6c96c13b51dd1166541ec27ef70cb77ff27e6ac5123605541ad6d1",
+    "routes/fort-stockton__terlingua.json": "d0c48d8ffe6c96c13b51dd1166541ec27ef70cb77ff27e6ac5123605541ad6d1",
+    "routes/gatlinburg-tn__cherokee-nc.json": "0015b7b3a4ef2779be49b40cbca100bea6d19c32661fa5d302dd6992adb140b1",
+    "routes/gatlinburg-tn__cherokee.json": "0015b7b3a4ef2779be49b40cbca100bea6d19c32661fa5d302dd6992adb140b1",
+    "routes/gatlinburg__cherokee-nc.json": "0015b7b3a4ef2779be49b40cbca100bea6d19c32661fa5d302dd6992adb140b1",
+    "routes/gatlinburg__cherokee.json": "0015b7b3a4ef2779be49b40cbca100bea6d19c32661fa5d302dd6992adb140b1",
+    "routes/grand-junction-co__moab-ut.json": "deadf231e0c6febe31be396d552f1f38877f8d94ac8f3654732a673bf00cdb85",
+    "routes/grand-junction-co__moab.json": "deadf231e0c6febe31be396d552f1f38877f8d94ac8f3654732a673bf00cdb85",
+    "routes/grand-junction__moab-ut.json": "deadf231e0c6febe31be396d552f1f38877f8d94ac8f3654732a673bf00cdb85",
+    "routes/grand-junction__moab.json": "deadf231e0c6febe31be396d552f1f38877f8d94ac8f3654732a673bf00cdb85",
+    "routes/great-falls-mt__havre-mt.json": "f981b2fe496ce8f8981bf7ab06bdde61b04fc83f95b856facbbcfb08e6f6e053",
+    "routes/great-falls-mt__havre.json": "f981b2fe496ce8f8981bf7ab06bdde61b04fc83f95b856facbbcfb08e6f6e053",
+    "routes/great-falls__havre-mt.json": "f981b2fe496ce8f8981bf7ab06bdde61b04fc83f95b856facbbcfb08e6f6e053",
+    "routes/great-falls__havre.json": "f981b2fe496ce8f8981bf7ab06bdde61b04fc83f95b856facbbcfb08e6f6e053",
+    "routes/green-river-ut__grand-junction-co.json": "c2668f0a3e3b6d9f95bda49a1cd20ee5e328fca802b0ec43995e426bd54e63a1",
+    "routes/green-river-ut__grand-junction.json": "c2668f0a3e3b6d9f95bda49a1cd20ee5e328fca802b0ec43995e426bd54e63a1",
+    "routes/green-river__grand-junction-co.json": "c2668f0a3e3b6d9f95bda49a1cd20ee5e328fca802b0ec43995e426bd54e63a1",
+    "routes/green-river__grand-junction.json": "c2668f0a3e3b6d9f95bda49a1cd20ee5e328fca802b0ec43995e426bd54e63a1",
+    "routes/indianapolis-in__nashville-tn.json": "bbbf4bc2a1693b8085e72c52ee07787d7013529d1a5ad01b84512a6592586db4",
+    "routes/indianapolis-in__nashville.json": "bbbf4bc2a1693b8085e72c52ee07787d7013529d1a5ad01b84512a6592586db4",
+    "routes/indianapolis__nashville-tn.json": "bbbf4bc2a1693b8085e72c52ee07787d7013529d1a5ad01b84512a6592586db4",
+    "routes/indianapolis__nashville.json": "bbbf4bc2a1693b8085e72c52ee07787d7013529d1a5ad01b84512a6592586db4",
+    "routes/jackson-wy__idaho-falls-id.json": "bcf7fa7f1c736099323b06a3ec8ee4c1ff2cd834ee63a7f0807483bbc2399f89",
+    "routes/jackson-wy__idaho-falls.json": "bcf7fa7f1c736099323b06a3ec8ee4c1ff2cd834ee63a7f0807483bbc2399f89",
+    "routes/jackson-wy__west-yellowstone-mt.json": "0422cf4c2bf1ab11ed03985a81e0a8068c9b05fe9454ac166529354c87ea93dd",
+    "routes/jackson-wy__west-yellowstone.json": "0422cf4c2bf1ab11ed03985a81e0a8068c9b05fe9454ac166529354c87ea93dd",
+    "routes/jackson__idaho-falls-id.json": "bcf7fa7f1c736099323b06a3ec8ee4c1ff2cd834ee63a7f0807483bbc2399f89",
+    "routes/jackson__idaho-falls.json": "bcf7fa7f1c736099323b06a3ec8ee4c1ff2cd834ee63a7f0807483bbc2399f89",
+    "routes/jackson__west-yellowstone-mt.json": "0422cf4c2bf1ab11ed03985a81e0a8068c9b05fe9454ac166529354c87ea93dd",
+    "routes/jackson__west-yellowstone.json": "0422cf4c2bf1ab11ed03985a81e0a8068c9b05fe9454ac166529354c87ea93dd",
+    "routes/john-f-kennedy-international-airport-queens-ny__lower-manhattan-new-york-ny.json": "b574df27d2e4a98902d4cc2f8c0d4421f84b996addca5d9440da25b61b3979ff",
+    "routes/kansas-city-mo__chicago-il.json": "22ef2a11baf912f745a41001954573c9ed4c70053791c9d43353e38fd8a68e6e",
+    "routes/kansas-city-mo__chicago.json": "22ef2a11baf912f745a41001954573c9ed4c70053791c9d43353e38fd8a68e6e",
+    "routes/kansas-city-mo__denver-co.json": "d0600d6be31e3eee6b9981906578d5532b1fa1375e80dbfd39e3d346d1a3a777",
+    "routes/kansas-city-mo__denver.json": "d0600d6be31e3eee6b9981906578d5532b1fa1375e80dbfd39e3d346d1a3a777",
+    "routes/kansas-city-mo__omaha-ne.json": "496b702df9fc8c082229a554fd43281320e31c412977ca28e388daa3709cc1c4",
+    "routes/kansas-city-mo__omaha.json": "496b702df9fc8c082229a554fd43281320e31c412977ca28e388daa3709cc1c4",
+    "routes/kansas-city__chicago-il.json": "22ef2a11baf912f745a41001954573c9ed4c70053791c9d43353e38fd8a68e6e",
+    "routes/kansas-city__chicago.json": "22ef2a11baf912f745a41001954573c9ed4c70053791c9d43353e38fd8a68e6e",
+    "routes/kansas-city__denver-co.json": "d0600d6be31e3eee6b9981906578d5532b1fa1375e80dbfd39e3d346d1a3a777",
+    "routes/kansas-city__denver.json": "d0600d6be31e3eee6b9981906578d5532b1fa1375e80dbfd39e3d346d1a3a777",
+    "routes/kansas-city__omaha-ne.json": "496b702df9fc8c082229a554fd43281320e31c412977ca28e388daa3709cc1c4",
+    "routes/kansas-city__omaha.json": "496b702df9fc8c082229a554fd43281320e31c412977ca28e388daa3709cc1c4",
+    "routes/ketchum-id__stanley-id.json": "418eeeb3b9bb2388158f1812f5b7e36eaeaf4b1c5625759a5eb114108d0fc82c",
+    "routes/ketchum-id__stanley.json": "418eeeb3b9bb2388158f1812f5b7e36eaeaf4b1c5625759a5eb114108d0fc82c",
+    "routes/ketchum__stanley-id.json": "418eeeb3b9bb2388158f1812f5b7e36eaeaf4b1c5625759a5eb114108d0fc82c",
+    "routes/ketchum__stanley.json": "418eeeb3b9bb2388158f1812f5b7e36eaeaf4b1c5625759a5eb114108d0fc82c",
+    "routes/kingman-az__needles-ca.json": "1382ec3283aa521bb5f252b7962604cc512f92d86aac65a599713330f94d9a64",
+    "routes/kingman-az__needles.json": "1382ec3283aa521bb5f252b7962604cc512f92d86aac65a599713330f94d9a64",
+    "routes/kingman__needles-ca.json": "1382ec3283aa521bb5f252b7962604cc512f92d86aac65a599713330f94d9a64",
+    "routes/kingman__needles.json": "1382ec3283aa521bb5f252b7962604cc512f92d86aac65a599713330f94d9a64",
+    "routes/laramie-wy__rawlins-wy.json": "fdc0b6268b4fd6ee8e0addcd3fedad68198a48bc8e9b40836e2fe35c079926b3",
+    "routes/laramie-wy__rawlins.json": "fdc0b6268b4fd6ee8e0addcd3fedad68198a48bc8e9b40836e2fe35c079926b3",
+    "routes/laramie__rawlins-wy.json": "fdc0b6268b4fd6ee8e0addcd3fedad68198a48bc8e9b40836e2fe35c079926b3",
+    "routes/laramie__rawlins.json": "fdc0b6268b4fd6ee8e0addcd3fedad68198a48bc8e9b40836e2fe35c079926b3",
+    "routes/las-vegas-nv__los-angeles-ca.json": "2cf06739e67f6af8af4feeb9016d754d6ad7451f97e400fa9a3070038c3df556",
+    "routes/las-vegas-nv__los-angeles.json": "2cf06739e67f6af8af4feeb9016d754d6ad7451f97e400fa9a3070038c3df556",
+    "routes/las-vegas-nv__salt-lake-city-ut.json": "54b046d7bad04804e8cc2a56d78ff36c55453531831e6db983cc37624392e7c3",
+    "routes/las-vegas-nv__salt-lake-city.json": "54b046d7bad04804e8cc2a56d78ff36c55453531831e6db983cc37624392e7c3",
+    "routes/las-vegas__los-angeles-ca.json": "2cf06739e67f6af8af4feeb9016d754d6ad7451f97e400fa9a3070038c3df556",
+    "routes/las-vegas__los-angeles.json": "2cf06739e67f6af8af4feeb9016d754d6ad7451f97e400fa9a3070038c3df556",
+    "routes/las-vegas__salt-lake-city-ut.json": "54b046d7bad04804e8cc2a56d78ff36c55453531831e6db983cc37624392e7c3",
+    "routes/las-vegas__salt-lake-city.json": "54b046d7bad04804e8cc2a56d78ff36c55453531831e6db983cc37624392e7c3",
+    "routes/lone-pine-ca__tonopah-nv.json": "807167257ec0d449516541c267067ee61e1fb60ec7eb19fcca2be271968406ca",
+    "routes/lone-pine-ca__tonopah.json": "807167257ec0d449516541c267067ee61e1fb60ec7eb19fcca2be271968406ca",
+    "routes/lone-pine__tonopah-nv.json": "807167257ec0d449516541c267067ee61e1fb60ec7eb19fcca2be271968406ca",
+    "routes/lone-pine__tonopah.json": "807167257ec0d449516541c267067ee61e1fb60ec7eb19fcca2be271968406ca",
+    "routes/long-beach-ca__irvine-ca.json": "2b7845ee9f542eeddd0358f2416ef90aedb4c066d4e970297a4e620523cda4dc",
+    "routes/long-beach-ca__irvine.json": "2b7845ee9f542eeddd0358f2416ef90aedb4c066d4e970297a4e620523cda4dc",
+    "routes/long-beach__irvine-ca.json": "2b7845ee9f542eeddd0358f2416ef90aedb4c066d4e970297a4e620523cda4dc",
+    "routes/long-beach__irvine.json": "2b7845ee9f542eeddd0358f2416ef90aedb4c066d4e970297a4e620523cda4dc",
+    "routes/los-angeles-ca__san-diego-ca.json": "f69ee1e24ae173043b053a9599a439af603e30009b3fbde92b3eea118457f64e",
+    "routes/los-angeles-ca__san-diego.json": "f69ee1e24ae173043b053a9599a439af603e30009b3fbde92b3eea118457f64e",
+    "routes/los-angeles-ca__san-francisco-ca.json": "b8fdf67a87258a6b7cd23ee2551d6991ab31096e2e1859b62a6c1293e6aa01c4",
+    "routes/los-angeles-ca__san-francisco.json": "b8fdf67a87258a6b7cd23ee2551d6991ab31096e2e1859b62a6c1293e6aa01c4",
+    "routes/los-angeles__san-diego-ca.json": "f69ee1e24ae173043b053a9599a439af603e30009b3fbde92b3eea118457f64e",
+    "routes/los-angeles__san-diego.json": "f69ee1e24ae173043b053a9599a439af603e30009b3fbde92b3eea118457f64e",
+    "routes/los-angeles__san-francisco-ca.json": "b8fdf67a87258a6b7cd23ee2551d6991ab31096e2e1859b62a6c1293e6aa01c4",
+    "routes/los-angeles__san-francisco.json": "b8fdf67a87258a6b7cd23ee2551d6991ab31096e2e1859b62a6c1293e6aa01c4",
+    "routes/marfa-tx__van-horn-tx.json": "b9181a74b6fac4d603ac79097d77a2914dc5564e49fb8db697c96e6f9a6bdb02",
+    "routes/marfa-tx__van-horn.json": "b9181a74b6fac4d603ac79097d77a2914dc5564e49fb8db697c96e6f9a6bdb02",
+    "routes/marfa__van-horn-tx.json": "b9181a74b6fac4d603ac79097d77a2914dc5564e49fb8db697c96e6f9a6bdb02",
+    "routes/marfa__van-horn.json": "b9181a74b6fac4d603ac79097d77a2914dc5564e49fb8db697c96e6f9a6bdb02",
+    "routes/memphis-tn__little-rock-ar.json": "7e633c56356c3889d370c021e573ee4e57844cfac396498f519481ffa134d5db",
+    "routes/memphis-tn__little-rock.json": "7e633c56356c3889d370c021e573ee4e57844cfac396498f519481ffa134d5db",
+    "routes/memphis__little-rock-ar.json": "7e633c56356c3889d370c021e573ee4e57844cfac396498f519481ffa134d5db",
+    "routes/memphis__little-rock.json": "7e633c56356c3889d370c021e573ee4e57844cfac396498f519481ffa134d5db",
+    "routes/mesa-az__glendale-az.json": "da40474be85bbc8b851da3c56872c587ea4c704095f886428a9dfe449acca418",
+    "routes/mesa-az__glendale.json": "da40474be85bbc8b851da3c56872c587ea4c704095f886428a9dfe449acca418",
+    "routes/mesa__glendale-az.json": "da40474be85bbc8b851da3c56872c587ea4c704095f886428a9dfe449acca418",
+    "routes/mesa__glendale.json": "da40474be85bbc8b851da3c56872c587ea4c704095f886428a9dfe449acca418",
+    "routes/miami-beach-fl__coral-gables-fl.json": "fcdcb025c71eb1c92890a05ba1464b472438ee7b1ebbb1de1b0e753e9c4c31ac",
+    "routes/miami-beach-fl__coral-gables.json": "fcdcb025c71eb1c92890a05ba1464b472438ee7b1ebbb1de1b0e753e9c4c31ac",
+    "routes/miami-beach__coral-gables-fl.json": "fcdcb025c71eb1c92890a05ba1464b472438ee7b1ebbb1de1b0e753e9c4c31ac",
+    "routes/miami-beach__coral-gables.json": "fcdcb025c71eb1c92890a05ba1464b472438ee7b1ebbb1de1b0e753e9c4c31ac",
+    "routes/miami-international-airport-miami-fl__fort-lauderdale-fl.json": "3229449b350214a53cb8510304176f01acafcb9bb24a956e0474a50312a99a8c",
+    "routes/miami-international-airport-miami-fl__fort-lauderdale.json": "3229449b350214a53cb8510304176f01acafcb9bb24a956e0474a50312a99a8c",
+    "routes/midtown-atlanta-ga__hartsfield-jackson-atlanta-international-airport-atlanta-ga.json": "c80ac259b9972ada035a6653aa2976bc177ac41b55e99b4ba2c9b5b24b4bb68d",
+    "routes/midtown-atlanta__hartsfield-jackson-atlanta-international-airport-atlanta-ga.json": "c80ac259b9972ada035a6653aa2976bc177ac41b55e99b4ba2c9b5b24b4bb68d",
+    "routes/midtown-manhattan-ny__hoboken-nj.json": "990e115e5333aff9f41f021156c7eb1c2e772ee9bf03242a71312e61484b0d14",
+    "routes/midtown-manhattan-ny__hoboken.json": "990e115e5333aff9f41f021156c7eb1c2e772ee9bf03242a71312e61484b0d14",
+    "routes/midtown-manhattan__hoboken-nj.json": "990e115e5333aff9f41f021156c7eb1c2e772ee9bf03242a71312e61484b0d14",
+    "routes/midtown-manhattan__hoboken.json": "990e115e5333aff9f41f021156c7eb1c2e772ee9bf03242a71312e61484b0d14",
+    "routes/missoula-mt__kalispell-mt.json": "f60bcb2f417dea4d901d8c301ac9a5af54890e3597dbccff0a9e8ba86a01aff6",
+    "routes/missoula-mt__kalispell.json": "f60bcb2f417dea4d901d8c301ac9a5af54890e3597dbccff0a9e8ba86a01aff6",
+    "routes/missoula-mt__spokane-wa.json": "e44d9b04daeef9f57c687ee29431b28aceaae62e20de34860cb1740644a0c5d4",
+    "routes/missoula-mt__spokane.json": "e44d9b04daeef9f57c687ee29431b28aceaae62e20de34860cb1740644a0c5d4",
+    "routes/missoula__kalispell-mt.json": "f60bcb2f417dea4d901d8c301ac9a5af54890e3597dbccff0a9e8ba86a01aff6",
+    "routes/missoula__kalispell.json": "f60bcb2f417dea4d901d8c301ac9a5af54890e3597dbccff0a9e8ba86a01aff6",
+    "routes/missoula__spokane-wa.json": "e44d9b04daeef9f57c687ee29431b28aceaae62e20de34860cb1740644a0c5d4",
+    "routes/missoula__spokane.json": "e44d9b04daeef9f57c687ee29431b28aceaae62e20de34860cb1740644a0c5d4",
+    "routes/moab-ut__capitol-reef-national-park-ut.json": "4a6b7c118220afe8f58da5a6956503239f8c635fb29b31df43706397203be09e",
+    "routes/moab-ut__capitol-reef-national-park.json": "4a6b7c118220afe8f58da5a6956503239f8c635fb29b31df43706397203be09e",
+    "routes/moab-ut__grand-junction-co.json": "b9605713bbdcc3da919715caec57e6cd2a3529271b2dab273ba822b092b39c91",
+    "routes/moab-ut__grand-junction.json": "b9605713bbdcc3da919715caec57e6cd2a3529271b2dab273ba822b092b39c91",
+    "routes/moab-ut__green-river-ut.json": "23fa4f362e2240ba1982a44bd851c827edeafb1c3d936873ada55065d3c30e15",
+    "routes/moab-ut__green-river.json": "23fa4f362e2240ba1982a44bd851c827edeafb1c3d936873ada55065d3c30e15",
+    "routes/moab__capitol-reef-national-park-ut.json": "4a6b7c118220afe8f58da5a6956503239f8c635fb29b31df43706397203be09e",
+    "routes/moab__capitol-reef-national-park.json": "4a6b7c118220afe8f58da5a6956503239f8c635fb29b31df43706397203be09e",
+    "routes/moab__grand-junction-co.json": "b9605713bbdcc3da919715caec57e6cd2a3529271b2dab273ba822b092b39c91",
+    "routes/moab__grand-junction.json": "b9605713bbdcc3da919715caec57e6cd2a3529271b2dab273ba822b092b39c91",
+    "routes/moab__green-river-ut.json": "23fa4f362e2240ba1982a44bd851c827edeafb1c3d936873ada55065d3c30e15",
+    "routes/moab__green-river.json": "23fa4f362e2240ba1982a44bd851c827edeafb1c3d936873ada55065d3c30e15",
+    "routes/oakland-ca__downtown-san-jose-ca.json": "2bfa5b748dcf7fa2f7d83bdbfa7b67b2de6fa81d6c79cde73e18d25ceefdcfe9",
+    "routes/oakland-ca__downtown-san-jose.json": "2bfa5b748dcf7fa2f7d83bdbfa7b67b2de6fa81d6c79cde73e18d25ceefdcfe9",
+    "routes/oakland__downtown-san-jose-ca.json": "2bfa5b748dcf7fa2f7d83bdbfa7b67b2de6fa81d6c79cde73e18d25ceefdcfe9",
+    "routes/oakland__downtown-san-jose.json": "2bfa5b748dcf7fa2f7d83bdbfa7b67b2de6fa81d6c79cde73e18d25ceefdcfe9",
+    "routes/old-town-scottsdale-az__chandler-az.json": "445e839ee8c26d7de0e8cfd03013d1bbd5427d4598c0fc9a8215a9609e68f43c",
+    "routes/old-town-scottsdale-az__chandler.json": "445e839ee8c26d7de0e8cfd03013d1bbd5427d4598c0fc9a8215a9609e68f43c",
+    "routes/old-town-scottsdale__chandler-az.json": "445e839ee8c26d7de0e8cfd03013d1bbd5427d4598c0fc9a8215a9609e68f43c",
+    "routes/old-town-scottsdale__chandler.json": "445e839ee8c26d7de0e8cfd03013d1bbd5427d4598c0fc9a8215a9609e68f43c",
+    "routes/orlando-fl__tampa-fl.json": "9a11e60f0665a163a78032707776781ce230bfbebc7045d93c48979a4b4ba20e",
+    "routes/orlando-fl__tampa.json": "9a11e60f0665a163a78032707776781ce230bfbebc7045d93c48979a4b4ba20e",
+    "routes/orlando__tampa-fl.json": "9a11e60f0665a163a78032707776781ce230bfbebc7045d93c48979a4b4ba20e",
+    "routes/orlando__tampa.json": "9a11e60f0665a163a78032707776781ce230bfbebc7045d93c48979a4b4ba20e",
+    "routes/phoenix-az__albuquerque-nm.json": "d3d8060ffab0c32e5d2556c78ad02fd75bced3fcceb9175e7f35083c6d8a41a1",
+    "routes/phoenix-az__albuquerque.json": "d3d8060ffab0c32e5d2556c78ad02fd75bced3fcceb9175e7f35083c6d8a41a1",
+    "routes/phoenix-az__flagstaff-az.json": "aa63ce69eac58595e544d9c7d6639421e9e3ba9a19b152a5fc05522ce03f646a",
+    "routes/phoenix-az__flagstaff.json": "aa63ce69eac58595e544d9c7d6639421e9e3ba9a19b152a5fc05522ce03f646a",
+    "routes/phoenix-az__las-vegas-nv.json": "e92757896330d7b5e77904ce4e1e275e32e31a9cc70d519d6f69621eaa0852d9",
+    "routes/phoenix-az__las-vegas.json": "e92757896330d7b5e77904ce4e1e275e32e31a9cc70d519d6f69621eaa0852d9",
+    "routes/phoenix-az__san-francisco-ca.json": "54c06294afeaacbd67feaa869f70ba3115733fd7cb6c72c70fea21e4935fca0b",
+    "routes/phoenix-az__san-francisco.json": "54c06294afeaacbd67feaa869f70ba3115733fd7cb6c72c70fea21e4935fca0b",
+    "routes/phoenix-az__tucson-az.json": "b0113149cf3bb019fdbaf3b2ab9e415a562c4a91469c8dd432fbf21aa5c31b43",
+    "routes/phoenix-az__tucson.json": "b0113149cf3bb019fdbaf3b2ab9e415a562c4a91469c8dd432fbf21aa5c31b43",
+    "routes/phoenix__albuquerque-nm.json": "d3d8060ffab0c32e5d2556c78ad02fd75bced3fcceb9175e7f35083c6d8a41a1",
+    "routes/phoenix__albuquerque.json": "d3d8060ffab0c32e5d2556c78ad02fd75bced3fcceb9175e7f35083c6d8a41a1",
+    "routes/phoenix__flagstaff-az.json": "aa63ce69eac58595e544d9c7d6639421e9e3ba9a19b152a5fc05522ce03f646a",
+    "routes/phoenix__flagstaff.json": "aa63ce69eac58595e544d9c7d6639421e9e3ba9a19b152a5fc05522ce03f646a",
+    "routes/phoenix__las-vegas-nv.json": "e92757896330d7b5e77904ce4e1e275e32e31a9cc70d519d6f69621eaa0852d9",
+    "routes/phoenix__las-vegas.json": "e92757896330d7b5e77904ce4e1e275e32e31a9cc70d519d6f69621eaa0852d9",
+    "routes/phoenix__san-francisco-ca.json": "54c06294afeaacbd67feaa869f70ba3115733fd7cb6c72c70fea21e4935fca0b",
+    "routes/phoenix__san-francisco.json": "54c06294afeaacbd67feaa869f70ba3115733fd7cb6c72c70fea21e4935fca0b",
+    "routes/phoenix__tucson-az.json": "b0113149cf3bb019fdbaf3b2ab9e415a562c4a91469c8dd432fbf21aa5c31b43",
+    "routes/phoenix__tucson.json": "b0113149cf3bb019fdbaf3b2ab9e415a562c4a91469c8dd432fbf21aa5c31b43",
+    "routes/portland-or__boise-id.json": "70393f3d5504325a278da1ee767c66b5a623a4ef9941b71d9e3007d7c451c446",
+    "routes/portland-or__boise.json": "70393f3d5504325a278da1ee767c66b5a623a4ef9941b71d9e3007d7c451c446",
+    "routes/portland-or__downtown-seattle-wa.json": "7f38ad07f1199be89b3f9e42657f69804253f6854ebb5a5e52e58760ebc05f99",
+    "routes/portland-or__downtown-seattle.json": "7f38ad07f1199be89b3f9e42657f69804253f6854ebb5a5e52e58760ebc05f99",
+    "routes/portland-or__seattle-wa.json": "7f38ad07f1199be89b3f9e42657f69804253f6854ebb5a5e52e58760ebc05f99",
+    "routes/portland-or__seattle.json": "7f38ad07f1199be89b3f9e42657f69804253f6854ebb5a5e52e58760ebc05f99",
+    "routes/portland__boise-id.json": "70393f3d5504325a278da1ee767c66b5a623a4ef9941b71d9e3007d7c451c446",
+    "routes/portland__boise.json": "70393f3d5504325a278da1ee767c66b5a623a4ef9941b71d9e3007d7c451c446",
+    "routes/portland__downtown-seattle-wa.json": "7f38ad07f1199be89b3f9e42657f69804253f6854ebb5a5e52e58760ebc05f99",
+    "routes/portland__downtown-seattle.json": "7f38ad07f1199be89b3f9e42657f69804253f6854ebb5a5e52e58760ebc05f99",
+    "routes/portland__seattle-wa.json": "7f38ad07f1199be89b3f9e42657f69804253f6854ebb5a5e52e58760ebc05f99",
+    "routes/portland__seattle.json": "7f38ad07f1199be89b3f9e42657f69804253f6854ebb5a5e52e58760ebc05f99",
+    "routes/raleigh-nc__charlotte-nc.json": "88794b2d1e820b4cf23f0df1f1a40fc783cc4f7093cdef5cb27984d6179c8107",
+    "routes/raleigh-nc__charlotte.json": "88794b2d1e820b4cf23f0df1f1a40fc783cc4f7093cdef5cb27984d6179c8107",
+    "routes/raleigh-nc__wilmington-nc.json": "a5cb52eaf1bd370266991be783490355b28218cf13fcd0d17d365c0fe7de69b6",
+    "routes/raleigh-nc__wilmington.json": "a5cb52eaf1bd370266991be783490355b28218cf13fcd0d17d365c0fe7de69b6",
+    "routes/raleigh__charlotte-nc.json": "88794b2d1e820b4cf23f0df1f1a40fc783cc4f7093cdef5cb27984d6179c8107",
+    "routes/raleigh__charlotte.json": "88794b2d1e820b4cf23f0df1f1a40fc783cc4f7093cdef5cb27984d6179c8107",
+    "routes/raleigh__wilmington-nc.json": "a5cb52eaf1bd370266991be783490355b28218cf13fcd0d17d365c0fe7de69b6",
+    "routes/raleigh__wilmington.json": "a5cb52eaf1bd370266991be783490355b28218cf13fcd0d17d365c0fe7de69b6",
+    "routes/rapid-city-sd__badlands-national-park-sd.json": "a1b35c63eec1228c3199f370b795ca1d1d36c24e75d7e2c7bca044f9cbd73ce1",
+    "routes/rapid-city-sd__badlands-national-park.json": "a1b35c63eec1228c3199f370b795ca1d1d36c24e75d7e2c7bca044f9cbd73ce1",
+    "routes/rapid-city-sd__custer-sd.json": "1b0f0c53ba3f8dd0e1c0eaf7cca42604ed2d597f84ae3a936ce113c5e44861e8",
+    "routes/rapid-city-sd__custer.json": "1b0f0c53ba3f8dd0e1c0eaf7cca42604ed2d597f84ae3a936ce113c5e44861e8",
+    "routes/rapid-city__badlands-national-park-sd.json": "a1b35c63eec1228c3199f370b795ca1d1d36c24e75d7e2c7bca044f9cbd73ce1",
+    "routes/rapid-city__badlands-national-park.json": "a1b35c63eec1228c3199f370b795ca1d1d36c24e75d7e2c7bca044f9cbd73ce1",
+    "routes/rapid-city__custer-sd.json": "1b0f0c53ba3f8dd0e1c0eaf7cca42604ed2d597f84ae3a936ce113c5e44861e8",
+    "routes/rapid-city__custer.json": "1b0f0c53ba3f8dd0e1c0eaf7cca42604ed2d597f84ae3a936ce113c5e44861e8",
+    "routes/sacramento-ca__reno-nv.json": "1971608caf75e79c06533dec57832a3e2ba98daa7b942d67365584bf296ce3cc",
+    "routes/sacramento-ca__reno.json": "1971608caf75e79c06533dec57832a3e2ba98daa7b942d67365584bf296ce3cc",
+    "routes/sacramento__reno-nv.json": "1971608caf75e79c06533dec57832a3e2ba98daa7b942d67365584bf296ce3cc",
+    "routes/sacramento__reno.json": "1971608caf75e79c06533dec57832a3e2ba98daa7b942d67365584bf296ce3cc",
+    "routes/salt-lake-city-ut__boise-id.json": "8cde9fbe2cc1da6f76d022148899938b3146fc3e2005cd42f4c2f93236b6d8f0",
+    "routes/salt-lake-city-ut__boise.json": "8cde9fbe2cc1da6f76d022148899938b3146fc3e2005cd42f4c2f93236b6d8f0",
+    "routes/salt-lake-city-ut__moab-ut.json": "f9f86926c8270cb187cafbd9fe5ebced1dacc9f93155a5d079c5e747e99dfabe",
+    "routes/salt-lake-city-ut__moab.json": "f9f86926c8270cb187cafbd9fe5ebced1dacc9f93155a5d079c5e747e99dfabe",
+    "routes/salt-lake-city-ut__provo-ut.json": "79aad65d884d5f8303b795c9aea0822ffd4c392639f6a584c5e7040af34c0ae8",
+    "routes/salt-lake-city-ut__provo.json": "79aad65d884d5f8303b795c9aea0822ffd4c392639f6a584c5e7040af34c0ae8",
+    "routes/salt-lake-city__boise-id.json": "8cde9fbe2cc1da6f76d022148899938b3146fc3e2005cd42f4c2f93236b6d8f0",
+    "routes/salt-lake-city__boise.json": "8cde9fbe2cc1da6f76d022148899938b3146fc3e2005cd42f4c2f93236b6d8f0",
+    "routes/salt-lake-city__moab-ut.json": "f9f86926c8270cb187cafbd9fe5ebced1dacc9f93155a5d079c5e747e99dfabe",
+    "routes/salt-lake-city__moab.json": "f9f86926c8270cb187cafbd9fe5ebced1dacc9f93155a5d079c5e747e99dfabe",
+    "routes/salt-lake-city__provo-ut.json": "79aad65d884d5f8303b795c9aea0822ffd4c392639f6a584c5e7040af34c0ae8",
+    "routes/salt-lake-city__provo.json": "79aad65d884d5f8303b795c9aea0822ffd4c392639f6a584c5e7040af34c0ae8",
+    "routes/san-antonio-tx__austin-tx.json": "36c32b646d251b0a1b444f9dffe1295699788883c03fabb8f3c2de3523997913",
+    "routes/san-antonio-tx__austin.json": "36c32b646d251b0a1b444f9dffe1295699788883c03fabb8f3c2de3523997913",
+    "routes/san-antonio-tx__el-paso-tx.json": "68a5cb52adcf31cd75ba35b80010c1297dabe6770ce517c86989505a9d5a894c",
+    "routes/san-antonio-tx__el-paso.json": "68a5cb52adcf31cd75ba35b80010c1297dabe6770ce517c86989505a9d5a894c",
+    "routes/san-antonio__austin-tx.json": "36c32b646d251b0a1b444f9dffe1295699788883c03fabb8f3c2de3523997913",
+    "routes/san-antonio__austin.json": "36c32b646d251b0a1b444f9dffe1295699788883c03fabb8f3c2de3523997913",
+    "routes/san-antonio__el-paso-tx.json": "68a5cb52adcf31cd75ba35b80010c1297dabe6770ce517c86989505a9d5a894c",
+    "routes/san-antonio__el-paso.json": "68a5cb52adcf31cd75ba35b80010c1297dabe6770ce517c86989505a9d5a894c",
+    "routes/san-diego-ca__los-angeles-ca.json": "a7e3e34e3a18b4b13baccef67ce6ea6bdbd9c31b64abb6be28d59d302428cf01",
+    "routes/san-diego-ca__los-angeles.json": "a7e3e34e3a18b4b13baccef67ce6ea6bdbd9c31b64abb6be28d59d302428cf01",
+    "routes/san-diego__los-angeles-ca.json": "a7e3e34e3a18b4b13baccef67ce6ea6bdbd9c31b64abb6be28d59d302428cf01",
+    "routes/san-diego__los-angeles.json": "a7e3e34e3a18b4b13baccef67ce6ea6bdbd9c31b64abb6be28d59d302428cf01",
+    "routes/san-jose-ca__palo-alto-ca.json": "6da18cb3509935773bbb97bc1fa8cc079971e64d2bb4d597115e11e9ae1345b7",
+    "routes/san-jose-ca__palo-alto.json": "6da18cb3509935773bbb97bc1fa8cc079971e64d2bb4d597115e11e9ae1345b7",
+    "routes/san-jose__palo-alto-ca.json": "6da18cb3509935773bbb97bc1fa8cc079971e64d2bb4d597115e11e9ae1345b7",
+    "routes/san-jose__palo-alto.json": "6da18cb3509935773bbb97bc1fa8cc079971e64d2bb4d597115e11e9ae1345b7",
+    "routes/santa-barbara-ca__san-luis-obispo-ca.json": "81882ef70314468efdb028cffb66a9e0de939899a6ebb3194c0b7f8b67dd03f0",
+    "routes/santa-barbara-ca__san-luis-obispo.json": "81882ef70314468efdb028cffb66a9e0de939899a6ebb3194c0b7f8b67dd03f0",
+    "routes/santa-barbara__san-luis-obispo-ca.json": "81882ef70314468efdb028cffb66a9e0de939899a6ebb3194c0b7f8b67dd03f0",
+    "routes/santa-barbara__san-luis-obispo.json": "81882ef70314468efdb028cffb66a9e0de939899a6ebb3194c0b7f8b67dd03f0",
+    "routes/santa-fe-nm__durango-co.json": "6d3d6e3bada535cd08e1be338f66ce00d2449c088de723fb6d799d80236cef97",
+    "routes/santa-fe-nm__durango.json": "6d3d6e3bada535cd08e1be338f66ce00d2449c088de723fb6d799d80236cef97",
+    "routes/santa-fe-nm__taos-nm.json": "23c0f3d539c80cdd456b8be805f9a06989b74272581a336412ab5b394785f277",
+    "routes/santa-fe-nm__taos.json": "23c0f3d539c80cdd456b8be805f9a06989b74272581a336412ab5b394785f277",
+    "routes/santa-fe__durango-co.json": "6d3d6e3bada535cd08e1be338f66ce00d2449c088de723fb6d799d80236cef97",
+    "routes/santa-fe__durango.json": "6d3d6e3bada535cd08e1be338f66ce00d2449c088de723fb6d799d80236cef97",
+    "routes/santa-fe__taos-nm.json": "23c0f3d539c80cdd456b8be805f9a06989b74272581a336412ab5b394785f277",
+    "routes/santa-fe__taos.json": "23c0f3d539c80cdd456b8be805f9a06989b74272581a336412ab5b394785f277",
+    "routes/santa-monica-ca__pasadena-ca.json": "2efa445f7c9757d00fb04a82928ce380dd2cfb46604947d2f9a3d776ec6e2315",
+    "routes/santa-monica-ca__pasadena.json": "2efa445f7c9757d00fb04a82928ce380dd2cfb46604947d2f9a3d776ec6e2315",
+    "routes/santa-monica__pasadena-ca.json": "2efa445f7c9757d00fb04a82928ce380dd2cfb46604947d2f9a3d776ec6e2315",
+    "routes/santa-monica__pasadena.json": "2efa445f7c9757d00fb04a82928ce380dd2cfb46604947d2f9a3d776ec6e2315",
+    "routes/seattle-tacoma-international-airport-seatac-wa__downtown-seattle-wa.json": "7423f93e90124d62da8b76c7fa81ff1555b0af3b95dca82b4a8e42d27ed89fd4",
+    "routes/seattle-tacoma-international-airport-seatac-wa__downtown-seattle.json": "7423f93e90124d62da8b76c7fa81ff1555b0af3b95dca82b4a8e42d27ed89fd4",
+    "routes/seattle-tacoma-international-airport-seatac-wa__seattle-wa.json": "7423f93e90124d62da8b76c7fa81ff1555b0af3b95dca82b4a8e42d27ed89fd4",
+    "routes/seattle-tacoma-international-airport-seatac-wa__seattle.json": "7423f93e90124d62da8b76c7fa81ff1555b0af3b95dca82b4a8e42d27ed89fd4",
+    "routes/seattle-wa__portland-or.json": "abb8f7d23fa10ff0ce00dd93f3e8763fb9946f878570abcd75602daaa6c0e406",
+    "routes/seattle-wa__portland.json": "abb8f7d23fa10ff0ce00dd93f3e8763fb9946f878570abcd75602daaa6c0e406",
+    "routes/seattle-wa__sacramento-ca.json": "9496835dca7f6e4b442cb5d34554e80277ef5eaae4166ee91b5b7e2d5067749e",
+    "routes/seattle-wa__sacramento.json": "9496835dca7f6e4b442cb5d34554e80277ef5eaae4166ee91b5b7e2d5067749e",
+    "routes/seattle__portland-or.json": "abb8f7d23fa10ff0ce00dd93f3e8763fb9946f878570abcd75602daaa6c0e406",
+    "routes/seattle__portland.json": "abb8f7d23fa10ff0ce00dd93f3e8763fb9946f878570abcd75602daaa6c0e406",
+    "routes/seattle__sacramento-ca.json": "9496835dca7f6e4b442cb5d34554e80277ef5eaae4166ee91b5b7e2d5067749e",
+    "routes/seattle__sacramento.json": "9496835dca7f6e4b442cb5d34554e80277ef5eaae4166ee91b5b7e2d5067749e",
+    "routes/tempe-az__scottsdale-fashion-square-scottsdale-az.json": "c16035191b0c8925bd3e29ffed7f7ee49d89ef76177f8ab08e11fdf42ba2b97c",
+    "routes/tempe__scottsdale-fashion-square-scottsdale-az.json": "c16035191b0c8925bd3e29ffed7f7ee49d89ef76177f8ab08e11fdf42ba2b97c",
+    "routes/the-galleria-houston-tx__texas-medical-center-houston-tx.json": "70204615e8e639f7a606c7da3212aadb41a9e5901272554ad7e0ca959a4cd198",
+    "routes/the-galleria-houston-tx__william-p-hobby-airport-houston-tx.json": "2e8787da8065d35d3b709748de9ad929652752840d77a32ac17549fe7d5d9e77",
+    "routes/the-loop-chicago-il__milwaukee-wi.json": "b9444e626936ff1d687692ac9ac7266945287b6c1e2dc700cd233429cfe7e567",
+    "routes/the-loop-chicago-il__milwaukee.json": "b9444e626936ff1d687692ac9ac7266945287b6c1e2dc700cd233429cfe7e567",
+    "routes/the-loop-chicago-il__o-hare-international-airport-chicago-il.json": "f8d5ac5a7e666e07bf737a684810776cf3d1c89c6160b844c8e5bc4d4cb51cd5",
+    "routes/tonopah-nv__ely-nv.json": "fb5e15a17f4ee051f428cdaaed8bb4017b327b6a07fe9bdda8d9e0c5f77c7a2e",
+    "routes/tonopah-nv__ely.json": "fb5e15a17f4ee051f428cdaaed8bb4017b327b6a07fe9bdda8d9e0c5f77c7a2e",
+    "routes/tonopah__ely-nv.json": "fb5e15a17f4ee051f428cdaaed8bb4017b327b6a07fe9bdda8d9e0c5f77c7a2e",
+    "routes/tonopah__ely.json": "fb5e15a17f4ee051f428cdaaed8bb4017b327b6a07fe9bdda8d9e0c5f77c7a2e",
+    "routes/tucson-az__phoenix-az.json": "66dee9a45a45f44e926f87ea61b8898e00731b9b8bf2f3a2c251fadaa1655385",
+    "routes/tucson-az__phoenix.json": "66dee9a45a45f44e926f87ea61b8898e00731b9b8bf2f3a2c251fadaa1655385",
+    "routes/tucson-az__san-diego-ca.json": "a00432b2d3168fd6bd4847986e88f4bccae719432952ca45b8ae29a0b5413640",
+    "routes/tucson-az__san-diego.json": "a00432b2d3168fd6bd4847986e88f4bccae719432952ca45b8ae29a0b5413640",
+    "routes/tucson__phoenix-az.json": "66dee9a45a45f44e926f87ea61b8898e00731b9b8bf2f3a2c251fadaa1655385",
+    "routes/tucson__phoenix.json": "66dee9a45a45f44e926f87ea61b8898e00731b9b8bf2f3a2c251fadaa1655385",
+    "routes/tucson__san-diego-ca.json": "a00432b2d3168fd6bd4847986e88f4bccae719432952ca45b8ae29a0b5413640",
+    "routes/tucson__san-diego.json": "a00432b2d3168fd6bd4847986e88f4bccae719432952ca45b8ae29a0b5413640",
+    "routes/tulsa-ok__oklahoma-city-ok.json": "3a8a8d9c1663c40a96ccca1484847f3c757048ec43eec455649968f95a498ad3",
+    "routes/tulsa-ok__oklahoma-city.json": "3a8a8d9c1663c40a96ccca1484847f3c757048ec43eec455649968f95a498ad3",
+    "routes/tulsa__oklahoma-city-ok.json": "3a8a8d9c1663c40a96ccca1484847f3c757048ec43eec455649968f95a498ad3",
+    "routes/tulsa__oklahoma-city.json": "3a8a8d9c1663c40a96ccca1484847f3c757048ec43eec455649968f95a498ad3",
+    "routes/university-of-arizona-tucson-az__tucson-international-airport-tucson-az.json": "8d37632b8fbfd8674134d0e8253a9a79d36f6457b46db0db3429223fc9e8101f",
+    "routes/uptown-dallas-tx__fort-worth-stockyards-fort-worth-tx.json": "798b8dcd9591d2d52e79daa18740fd42e250fc17c74e86e0cde5783b41b03b0c",
+    "routes/uptown-dallas__fort-worth-stockyards-fort-worth-tx.json": "798b8dcd9591d2d52e79daa18740fd42e250fc17c74e86e0cde5783b41b03b0c",
+    "routes/winnemucca-nv__elko-nv.json": "7f3018bdcac070c1debf8daa7a80c061450a7564658a597e5475dc831ba49751",
+    "routes/winnemucca-nv__elko.json": "7f3018bdcac070c1debf8daa7a80c061450a7564658a597e5475dc831ba49751",
+    "routes/winnemucca-nv__lakeview-or.json": "e522a09106546cefbac03acb2cc8c05f5ff1c30dbefe14572f0286c8cbafef01",
+    "routes/winnemucca-nv__lakeview.json": "e522a09106546cefbac03acb2cc8c05f5ff1c30dbefe14572f0286c8cbafef01",
+    "routes/winnemucca__elko-nv.json": "7f3018bdcac070c1debf8daa7a80c061450a7564658a597e5475dc831ba49751",
+    "routes/winnemucca__elko.json": "7f3018bdcac070c1debf8daa7a80c061450a7564658a597e5475dc831ba49751",
+    "routes/winnemucca__lakeview-or.json": "e522a09106546cefbac03acb2cc8c05f5ff1c30dbefe14572f0286c8cbafef01",
+    "routes/winnemucca__lakeview.json": "e522a09106546cefbac03acb2cc8c05f5ff1c30dbefe14572f0286c8cbafef01",
+    "stations.json": "651be1825a5da754fdac0739db5723e88d6a0221ec73dc07acf13112604602e0",
+    "vehicles.json": "9839367e20849b95f6d3dea95f37efe5e8753f1bce7bc729a996c24752720e19"
+  },
+  "record_counts": {
+    "amenities.json": 98440,
+    "places.json": 339,
+    "stations.json": 85912,
+    "vehicles.json": 15
+  },
+  "built_at": "2026-11-17T17:40:41+00:00",
+  "sources": {
+    "afdc": {
+      "raw_file": "afdc_US_20261114T083453Z.json",
+      "retrieved_at": "2026-11-14T08:34:53+00:00",
+      "url": "https://developer.nlr.gov/api/alt-fuel-stations/v1.json",
+      "params": {
+        "fuel_type": "ELEC",
+        "access": "public",
+        "status": "E,T",
+        "country": "US",
+        "limit": "all"
+      },
+      "total_results": 86008,
+      "conversion": {
+        "total_records": 86008,
+        "converted": 85912,
+        "skipped": {
+          "legacy_chargers_only": 2,
+          "no_supported_connector": 93,
+          "outside_us_bounding_boxes": 1
+        },
+        "skipped_examples": {
+          "legacy_chargers_only": [
+            "6509",
+            "27335"
+          ],
+          "no_supported_connector": [
+            "25520",
+            "34849",
+            "36532",
+            "39770",
+            "48371"
+          ]
+        },
+        "dc_ports_with_unknown_power": 75,
+        "legacy_units_ignored": 13
+      }
+    },
+    "osm": {
+      "endpoint": "geofabrik extracts",
+      "servers_tried": [],
+      "extracts": [
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/alabama-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 13696,
+            "not_near_a_station": 12331,
+            "near_a_station": 887,
+            "duplicate_geometry": 478
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/alaska-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 4345,
+            "not_near_a_station": 4129,
+            "near_a_station": 147,
+            "duplicate_geometry": 69
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/arizona-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 26104,
+            "not_near_a_station": 23449,
+            "near_a_station": 1811,
+            "duplicate_geometry": 844
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/arkansas-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 9325,
+            "not_near_a_station": 8901,
+            "near_a_station": 265,
+            "duplicate_geometry": 159
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/california-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 129933,
+            "not_near_a_station": 98291,
+            "near_a_station": 24073,
+            "duplicate_geometry": 7569
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/colorado-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 27723,
+            "not_near_a_station": 22933,
+            "near_a_station": 3448,
+            "duplicate_geometry": 1342
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/connecticut-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 9087,
+            "not_near_a_station": 8097,
+            "near_a_station": 762,
+            "duplicate_geometry": 228
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/delaware-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 3095,
+            "not_near_a_station": 2638,
+            "near_a_station": 292,
+            "duplicate_geometry": 165
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/district-of-columbia-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 3146,
+            "not_near_a_station": 2767,
+            "near_a_station": 341,
+            "duplicate_geometry": 38
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/florida-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 57912,
+            "not_near_a_station": 49746,
+            "near_a_station": 5612,
+            "duplicate_geometry": 2554
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/georgia-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 31282,
+            "not_near_a_station": 26273,
+            "near_a_station": 3337,
+            "duplicate_geometry": 1672
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/hawaii-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 6057,
+            "not_near_a_station": 5082,
+            "near_a_station": 824,
+            "duplicate_geometry": 151
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/idaho-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 8629,
+            "not_near_a_station": 7986,
+            "near_a_station": 417,
+            "duplicate_geometry": 226
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/illinois-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 40084,
+            "not_near_a_station": 34711,
+            "near_a_station": 3560,
+            "duplicate_geometry": 1813
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/indiana-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 20739,
+            "not_near_a_station": 18786,
+            "near_a_station": 1364,
+            "duplicate_geometry": 589
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/iowa-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 11926,
+            "not_near_a_station": 10957,
+            "near_a_station": 609,
+            "duplicate_geometry": 360
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/kansas-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 11009,
+            "not_near_a_station": 10359,
+            "near_a_station": 417,
+            "duplicate_geometry": 233
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/kentucky-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 14405,
+            "not_near_a_station": 13519,
+            "near_a_station": 548,
+            "duplicate_geometry": 338
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/louisiana-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 11098,
+            "not_near_a_station": 10437,
+            "near_a_station": 407,
+            "duplicate_geometry": 254
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/maine-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 6348,
+            "not_near_a_station": 5665,
+            "near_a_station": 444,
+            "duplicate_geometry": 239
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/maryland-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 19306,
+            "not_near_a_station": 15908,
+            "near_a_station": 2451,
+            "duplicate_geometry": 947
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/massachusetts-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 17946,
+            "not_near_a_station": 15163,
+            "near_a_station": 2132,
+            "duplicate_geometry": 651
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/michigan-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 35892,
+            "not_near_a_station": 31909,
+            "near_a_station": 2766,
+            "duplicate_geometry": 1217
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/minnesota-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 20775,
+            "not_near_a_station": 18558,
+            "near_a_station": 1510,
+            "duplicate_geometry": 707
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/mississippi-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 6613,
+            "not_near_a_station": 6083,
+            "near_a_station": 351,
+            "duplicate_geometry": 179
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/missouri-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 20552,
+            "not_near_a_station": 18715,
+            "near_a_station": 1171,
+            "duplicate_geometry": 666
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/montana-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 7030,
+            "not_near_a_station": 6521,
+            "near_a_station": 325,
+            "duplicate_geometry": 184
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/nebraska-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 6551,
+            "not_near_a_station": 5918,
+            "near_a_station": 425,
+            "duplicate_geometry": 208
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/nevada-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 13000,
+            "not_near_a_station": 11011,
+            "near_a_station": 1409,
+            "duplicate_geometry": 580
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/new-hampshire-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 6857,
+            "not_near_a_station": 6038,
+            "near_a_station": 568,
+            "duplicate_geometry": 251
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/new-jersey-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 22794,
+            "not_near_a_station": 20034,
+            "near_a_station": 1908,
+            "duplicate_geometry": 852
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/new-mexico-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 10228,
+            "not_near_a_station": 8932,
+            "near_a_station": 887,
+            "duplicate_geometry": 409
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/new-york-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 55058,
+            "not_near_a_station": 48684,
+            "near_a_station": 5023,
+            "duplicate_geometry": 1351
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/north-carolina-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 34327,
+            "not_near_a_station": 30863,
+            "near_a_station": 2387,
+            "duplicate_geometry": 1077
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/north-dakota-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 2700,
+            "not_near_a_station": 2279,
+            "near_a_station": 268,
+            "duplicate_geometry": 153
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/ohio-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 38761,
+            "not_near_a_station": 35256,
+            "near_a_station": 2307,
+            "duplicate_geometry": 1198
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/oklahoma-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 13374,
+            "not_near_a_station": 11720,
+            "near_a_station": 1014,
+            "duplicate_geometry": 640
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/oregon-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 24641,
+            "not_near_a_station": 20513,
+            "near_a_station": 2700,
+            "duplicate_geometry": 1428
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/pennsylvania-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 38773,
+            "not_near_a_station": 35809,
+            "near_a_station": 2045,
+            "duplicate_geometry": 919
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/puerto-rico-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 6622,
+            "not_near_a_station": 6610,
+            "near_a_station": 6,
+            "duplicate_geometry": 6
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/rhode-island-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 2706,
+            "not_near_a_station": 2549,
+            "near_a_station": 99,
+            "duplicate_geometry": 58
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/south-carolina-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 18497,
+            "not_near_a_station": 16735,
+            "near_a_station": 1202,
+            "duplicate_geometry": 560
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/south-dakota-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 4456,
+            "not_near_a_station": 4147,
+            "near_a_station": 208,
+            "duplicate_geometry": 101
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/tennessee-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 20811,
+            "not_near_a_station": 18864,
+            "near_a_station": 1237,
+            "duplicate_geometry": 710
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 87634,
+            "not_near_a_station": 78753,
+            "near_a_station": 5752,
+            "duplicate_geometry": 3129
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/us-virgin-islands-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 246,
+            "not_near_a_station": 246
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/utah-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 17720,
+            "not_near_a_station": 15604,
+            "near_a_station": 1459,
+            "duplicate_geometry": 657
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 3143,
+            "not_near_a_station": 2440,
+            "near_a_station": 527,
+            "duplicate_geometry": 176
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/virginia-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 33379,
+            "not_near_a_station": 28851,
+            "near_a_station": 3286,
+            "duplicate_geometry": 1242
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/washington-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 40414,
+            "near_a_station": 5321,
+            "not_near_a_station": 33211,
+            "duplicate_geometry": 1882
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/west-virginia-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 6477,
+            "not_near_a_station": 5956,
+            "near_a_station": 309,
+            "duplicate_geometry": 212
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/wisconsin-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 24548,
+            "not_near_a_station": 22453,
+            "near_a_station": 1378,
+            "duplicate_geometry": 717
+          }
+        },
+        {
+          "endpoint": "https://download.geofabrik.de/north-america/us/wyoming-latest.osm.pbf",
+          "retrieved_at": "2026-11-16T21:22:36Z",
+          "match_stats": {
+            "features": 4556,
+            "not_near_a_station": 3855,
+            "near_a_station": 445,
+            "duplicate_geometry": 256
+          }
+        }
+      ],
+      "scope": "dc_fast",
+      "stations_queried": 15993,
+      "radius_m": 400,
+      "retrieved_window": [
+        "2026-11-16T21:22:36Z",
+        "2026-11-16T21:22:36Z"
+      ],
+      "dropped": {
+        "other_category": 5863
+      },
+      "added_to_existing_snapshot_at": "2026-11-17T23:34:18+00:00"
+    },
+    "places": {
+      "source": "OSM Nominatim",
+      "endpoint": "https://nominatim.openstreetmap.org/search",
+      "requested": 181,
+      "resolved": 180,
+      "unresolved": [
+        "Phoenix Sky Harbor International Airport Terminal 4, Phoenix, AZ"
+      ],
+      "retrieved_window": [
+        "2026-11-14T08:14:47+00:00",
+        "2026-11-23T03:32:02+00:00"
+      ],
+      "added": [
+        "Bangor, ME",
+        "Bar Harbor, ME",
+        "Bishop, CA",
+        "Boston, MA",
+        "Buffalo, NY",
+        "Burlington, VT",
+        "Charleston, SC",
+        "Cherokee, NC",
+        "Cincinnati, OH",
+        "Cody, WY",
+        "Denver International Airport, Denver, CO",
+        "Downtown Austin, TX",
+        "Downtown Nashville, TN",
+        "Downtown Pittsburgh, PA",
+        "Downtown Seattle, WA",
+        "Duluth, MN",
+        "Fort Collins, CO",
+        "Fort Lauderdale, FL",
+        "Franklin, TN",
+        "Gatlinburg, TN",
+        "Grand Marais, MN",
+        "Great Falls, MT",
+        "Havre, MT",
+        "Indianapolis, IN",
+        "John F. Kennedy International Airport, Queens, NY",
+        "Ketchum, ID",
+        "Little Rock, AR",
+        "Lone Pine, CA",
+        "Lower Manhattan, New York, NY",
+        "Mammoth Lakes, CA",
+        "Marfa, TX",
+        "Memphis, TN",
+        "Miami International Airport, Miami, FL",
+        "Montpelier, VT",
+        "Nashville, TN",
+        "Phoenix Sky Harbor International Airport, Phoenix, AZ",
+        "Pittsburgh International Airport, Pittsburgh, PA",
+        "Round Rock, TX",
+        "Savannah, GA",
+        "Seattle-Tacoma International Airport, SeaTac, WA",
+        "Sheridan, WY",
+        "Spokane, WA",
+        "Stanley, ID",
+        "Tulsa, OK",
+        "Van Horn, TX",
+        "Wilmington, NC"
+      ],
+      "added_at": "2026-11-21T06:46:05+00:00",
+      "refreshed": [
+        {
+          "place": "Cherokee, NC",
+          "was": "Cherokee County, North Carolina, United States",
+          "was_at": [
+            35.1184149,
+            -84.0886181
+          ],
+          "now": "Cherokee;\u13e3\u13b3\u13a9, Yellowhill Community \u13a1\u13b3\u13ec\u13d7, Swain County, North Carolina, 28719, United States",
+          "now_at": [
+            35.4766377,
+            -83.3189781
+          ],
+          "at": "2026-11-23T00:21:13+00:00"
+        },
+        {
+          "place": "Custer, SD",
+          "was": "Custer County, South Dakota, United States",
+          "was_at": [
+            43.6726477,
+            -103.5101597
+          ],
+          "now": "Custer, Custer County, South Dakota, 57730, United States",
+          "now_at": [
+            43.766651,
+            -103.598806
+          ],
+          "at": "2026-11-23T00:21:13+00:00"
+        },
+        {
+          "place": "Elko, NV",
+          "was": "Elko County, Nevada, United States",
+          "was_at": [
+            41.1958128,
+            -115.3272864
+          ],
+          "now": "Elko, Elko County, Nevada, 89801, United States",
+          "now_at": [
+            40.83269,
+            -115.7630942
+          ],
+          "at": "2026-11-23T00:21:13+00:00"
+        },
+        {
+          "place": "Presidio, TX",
+          "was": "Presidio County, Texas, United States",
+          "was_at": [
+            29.9883766,
+            -104.233655
+          ],
+          "now": "Presidio, Presidio County, Texas, United States",
+          "now_at": [
+            29.5635581,
+            -104.371552
+          ],
+          "at": "2026-11-23T00:21:13+00:00"
+        },
+        {
+          "place": "San Luis Obispo, CA",
+          "was": "San Luis Obispo County, California, United States",
+          "was_at": [
+            35.3540209,
+            -120.375716
+          ],
+          "now": "San Luis Obispo, San Luis Obispo County, California, United States",
+          "now_at": [
+            35.2827525,
+            -120.659615
+          ],
+          "at": "2026-11-23T00:21:13+00:00"
+        },
+        {
+          "place": "Sheridan, WY",
+          "was": "Sheridan County, Wyoming, United States",
+          "was_at": [
+            44.7947537,
+            -106.8222688
+          ],
+          "now": "Sheridan, Sheridan County, Wyoming, 82801, United States",
+          "now_at": [
+            44.797194,
+            -106.956179
+          ],
+          "at": "2026-11-23T00:21:13+00:00"
+        },
+        {
+          "place": "Downtown Denver, CO",
+          "reason": "not the district it names",
+          "was": "SpringHill Suites by Marriott Denver Downtown, 1190, Auraria Parkway, Auraria, Denver, Colorado, 80204, United States",
+          "was_at": [
+            39.7472425,
+            -105.0044238
+          ],
+          "now": "Lower Downtown, Denver, Colorado, 80202, United States",
+          "now_at": [
+            39.7509454,
+            -104.9997022
+          ],
+          "at": "2026-11-23T03:32:06+00:00",
+          "fallback": "district 'Lower Downtown' found as 'Downtown, Denver, CO'"
+        },
+        {
+          "place": "Downtown Detroit, MI",
+          "reason": "not the district it names",
+          "was": "DoubleTree Suites by Hilton Hotel Detroit Downtown - Fort Shelby, 525, West Lafayette Boulevard, Detroit, Wayne County, Michigan, 48226, United States",
+          "was_at": [
+            42.3292478,
+            -83.0527084
+          ],
+          "now": "Detroit, Wayne County, Michigan, United States",
+          "now_at": [
+            42.3315509,
+            -83.0466403
+          ],
+          "at": "2026-11-23T03:32:06+00:00",
+          "fallback": "city centre of 'Detroit, MI', 0.6 km from the best name match"
+        },
+        {
+          "place": "Downtown Minneapolis, MN",
+          "reason": "not the district it names",
+          "was": "I 94;MN 55, Loring Park, Central, Minneapolis, Hennepin County, Minnesota, 55403, United States",
+          "was_at": [
+            44.9670998,
+            -93.2881115
+          ],
+          "now": "Central, Minneapolis, Hennepin County, Minnesota, United States",
+          "now_at": [
+            44.9770343,
+            -93.2668826
+          ],
+          "at": "2026-11-23T03:32:06+00:00",
+          "fallback": "district 'Central' found as 'Downtown, Minneapolis, MN'"
+        },
+        {
+          "place": "Downtown Seattle, WA",
+          "reason": "not the district it names",
+          "was": "Crowne Plaza Seattle Downtown, 1113, 6th Avenue, Central Business District, First Hill, Seattle, King County, Washington, 98101, United States",
+          "was_at": [
+            47.6080972,
+            -122.3321215
+          ],
+          "now": "Seattle, King County, Washington, United States",
+          "now_at": [
+            47.6038321,
+            -122.330062
+          ],
+          "at": "2026-11-23T03:32:06+00:00",
+          "fallback": "city centre of 'Seattle, WA', 0.5 km from the best name match"
+        },
+        {
+          "place": "Old Town Scottsdale, AZ",
+          "reason": "not the district it names",
+          "was": "The Glen at Old Town Apartments, 4343, Scottsdale, Maricopa County, Arizona, 85251, United States",
+          "was_at": [
+            33.4995267,
+            -111.9116911
+          ],
+          "now": "The Glen at Old Town Apartments, 4343, Scottsdale, Maricopa County, Arizona, 85251, United States",
+          "now_at": [
+            33.4995267,
+            -111.9116911
+          ],
+          "at": "2026-11-23T03:32:06+00:00",
+          "fallback": "best name match: no district found, and 'Scottsdale, AZ''s centre is 11 km away"
+        }
+      ],
+      "routes_removed": [
+        "routes/alpine-tx__presidio-tx.json",
+        "routes/alpine-tx__presidio.json",
+        "routes/alpine__presidio-tx.json",
+        "routes/alpine__presidio.json",
+        "routes/cody-wy__sheridan-wy.json",
+        "routes/cody-wy__sheridan.json",
+        "routes/cody__sheridan-wy.json",
+        "routes/cody__sheridan.json",
+        "routes/elko-nv__twin-falls-id.json",
+        "routes/elko-nv__twin-falls.json",
+        "routes/elko__twin-falls-id.json",
+        "routes/elko__twin-falls.json",
+        "routes/gatlinburg-tn__cherokee-nc.json",
+        "routes/gatlinburg-tn__cherokee.json",
+        "routes/gatlinburg__cherokee-nc.json",
+        "routes/gatlinburg__cherokee.json",
+        "routes/rapid-city-sd__custer-sd.json",
+        "routes/rapid-city-sd__custer.json",
+        "routes/rapid-city__custer-sd.json",
+        "routes/rapid-city__custer.json",
+        "routes/santa-barbara-ca__san-luis-obispo-ca.json",
+        "routes/santa-barbara-ca__san-luis-obispo.json",
+        "routes/santa-barbara__san-luis-obispo-ca.json",
+        "routes/santa-barbara__san-luis-obispo.json",
+        "routes/winnemucca-nv__elko-nv.json",
+        "routes/winnemucca-nv__elko.json",
+        "routes/winnemucca__elko-nv.json",
+        "routes/winnemucca__elko.json",
+        "routes/downtown-denver-co__aurora-co.json",
+        "routes/downtown-denver-co__aurora.json",
+        "routes/downtown-denver-co__boulder-co.json",
+        "routes/downtown-denver-co__boulder.json",
+        "routes/downtown-denver__aurora-co.json",
+        "routes/downtown-denver__aurora.json",
+        "routes/downtown-denver__boulder-co.json",
+        "routes/downtown-denver__boulder.json",
+        "routes/downtown-detroit-mi__ann-arbor-mi.json",
+        "routes/downtown-detroit-mi__ann-arbor.json",
+        "routes/downtown-detroit__ann-arbor-mi.json",
+        "routes/downtown-detroit__ann-arbor.json",
+        "routes/downtown-minneapolis-mn__st-paul-mn.json",
+        "routes/downtown-minneapolis-mn__st-paul.json",
+        "routes/downtown-minneapolis__st-paul-mn.json",
+        "routes/downtown-minneapolis__st-paul.json",
+        "routes/old-town-scottsdale-az__chandler-az.json",
+        "routes/old-town-scottsdale-az__chandler.json",
+        "routes/old-town-scottsdale__chandler-az.json",
+        "routes/old-town-scottsdale__chandler.json",
+        "routes/seattle-tacoma-international-airport-seatac-wa__downtown-seattle-wa.json",
+        "routes/seattle-tacoma-international-airport-seatac-wa__downtown-seattle.json"
+      ]
+    },
+    "vehicles": {
+      "curated_csv": "data/curated/vehicles.csv",
+      "count": 15
+    },
+    "routes": {
+      "files": 493,
+      "distinct_routes": 130,
+      "sources": {
+        "OSRM": 493
+      },
+      "osrm_server": "https://router.project-osrm.org",
+      "pairs_total": 130,
+      "pairs_failed": [],
+      "items_skipped": 7,
+      "alias_files": true,
+      "retrieved_window": [
+        "2026-11-19T04:41:48.779168+00:00",
+        "2026-11-23T03:32:17.176114+00:00"
+      ],
+      "added_at": "2026-11-23T03:32:20+00:00",
+      "builder": "scripts/build_route_cache.py"
+    }
+  },
+  "validation": {
+    "warnings": {
+      "dc_power_unknown": 75
+    },
+    "provenance_completeness": {
+      "n_records": 184411,
+      "required_fields_share": 1.0,
+      "source_updated_at_share": 0.4658724262652445
+    }
+  },
+  "frozen": true,
+  "frozen_at": "2026-11-26T00:55:25+00:00",
+  "frozen_from": {
+    "release": "snapshot-v1-draft",
+    "manifest_sha256": "a352ddb69ca7af78753a21a8a0d3679d0d07c95b3ac047f7d4ffb34230fc4cef"
+  }
+}
