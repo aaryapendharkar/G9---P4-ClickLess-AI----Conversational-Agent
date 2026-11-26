@@ -1,8 +1,10 @@
 # data/snapshot/ (not in git, except this README and MANIFEST.json)
 
 ## Use a snapshot someone already built
-1. Download the snapshot zip from the GitHub release (or team drive) and unzip it **into this
-   folder**, so `data/snapshot/MANIFEST.json` and `data/snapshot/stations.json` exist.
+1. Download `snapshot-v1.zip` from the **frozen `snapshot-v1`** GitHub release (use it for all
+   results; `snapshot-v1-draft` is superseded) and unzip it **into this folder**, so
+   `data/snapshot/MANIFEST.json` and `data/snapshot/stations.json` exist. The committed
+   `MANIFEST.json` is the frozen one, so after unzipping `git status` shows no change.
 2. Run `make snapshot-verify`. It must print `verify_manifest() -> [] (intact)`. Anything else
    lists the files to download again; the app also refuses to load a mismatching snapshot.
 
@@ -17,9 +19,11 @@
 4. The build loads the result back through `DataStore`, runs the validator and only writes
    `MANIFEST.json` when nothing blocking is found. Commit only `MANIFEST.json`; share the
    `.json` files and `routes/` through the team drive.
-5. A normal build is a **draft** (`"frozen": false` in the manifest). The final build for the
-   held-out evaluation uses `make snapshot-build ARGS="--freeze"`, which is refused until ADR
-   0009, 0010 and 0011 all say `Status: accepted` (issue #32).
+5. A normal build is a **draft** (`"frozen": false` in the manifest). `snapshot-v1` was frozen
+   from the reviewed draft without a rebuild by the **snapshot freeze** workflow
+   (`python -m clickless.data.freeze_snapshot`, #170): same data files, manifest marked
+   `"frozen": true` with `frozen_from`. A frozen snapshot is never changed; new data means a new
+   snapshot version and an ADR.
 
 ## Use it in a run (how configurations select the snapshot)
 Each config has `data.source: fixtures | snapshot` (`configs/config_{a,b,c}.yaml`; all three
