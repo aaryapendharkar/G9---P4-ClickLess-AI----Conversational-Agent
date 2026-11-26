@@ -3,7 +3,8 @@
   * atomic-claim evidence support, FActScore-style (target >= 95 %) over PlanResult.claims
   * data-status (freshness) mislabeling rate (target 0 %)
   * provenance completeness (uses clickless.data.validate output) -- TODO
-  * ontology adequacy: share of the 20 competency questions answerable (Manas supplies queries) -- TODO
+  * ontology adequacy: in evaluation.metrics.ontology_adequacy (#158), which counts the KG's
+    competency-question inventory
 
 Claim support rules (agreed on PR #66, ADR 0015 section 5)
 ------------------------------------------------------------

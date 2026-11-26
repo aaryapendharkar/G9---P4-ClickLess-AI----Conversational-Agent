@@ -358,12 +358,13 @@ def test_build_report_writes_every_section_and_csv(run_dir):
         "### By category",
         "### By route_type",
         "## Oracle search",
+        "## Ontology adequacy (competency questions on the fixture KG)",
         "## Findings",
         "## Run metadata",
     ):
         assert section in text
     for name in ("headline.csv", "paired.csv", "breakdown.csv", "errors.csv", "findings.csv", "oracle_search.csv",
-                 "metadata.csv"):
+                 "ontology_adequacy.csv", "metadata.csv"):
         assert (run_dir / name).is_file()
     assert "## Errors by stage and type" in text
     assert [(r["config"], r["stage"], r["error_type"], r["n"]) for r in read_csv(run_dir / "errors.csv")] == [
@@ -806,3 +807,28 @@ def test_invented_constraints_in_headline_csv_report_and_paired_tests(run_dir):
     assert rows[("A vs B", "exact_match")]["n"] == "6"  # the other outcomes keep every common item
     br = [r for r in read_csv(run_dir / "breakdown.csv") if r["config"] == "B" and r["dimension"] == "author"]
     assert {r["group"]: float(r["invented_constraint_rate"]) for r in br} == {"aarya": 0.5, "ian": 0.5, "manas": 0.0}
+
+
+# --------------------------------------------------------------------------- ontology adequacy (#158)
+
+
+def test_ontology_adequacy_section_and_csv(tmp_path, run_dir):
+    failing = [{"id": "CQ9", "reason": "prerequisite not machine-readable: n"}]
+    c = json.loads((run_dir / "C_items.json").read_text(encoding="utf-8"))
+    c["metrics"]["ontology_adequacy"] = {"answerable": 19, "total": 20, "ontology_adequacy": 0.95,
+                                         "inventory_version": 1, "kg": "fixtures (data/fixtures)",
+                                         "failing": failing}
+    (run_dir / "C_items.json").write_text(json.dumps(c), encoding="utf-8")
+    a = json.loads((run_dir / "A_items.json").read_text(encoding="utf-8"))
+    a["metrics"]["ontology_adequacy"] = {"not_applicable": "config A does not build the KG"}
+    (run_dir / "A_items.json").write_text(json.dumps(a), encoding="utf-8")
+
+    text = build_report(run_dir, n_boot=50).read_text(encoding="utf-8")
+    assert "| A | n/a: config A does not build the KG | n/a | n/a | fixtures | n/a |" in text
+    assert "| B | n/a: no ontology_adequacy block | n/a | n/a | fixtures | n/a |" in text
+    assert "| C | 19/20 | 0.950 | 1 | fixtures | CQ9: prerequisite not machine-readable: n |" in text
+    rows = {r["config"]: r for r in read_csv(run_dir / "ontology_adequacy.csv")}
+    assert (rows["C"]["answerable"], rows["C"]["total"], rows["C"]["failing_ids"]) == ("19", "20", "CQ9")
+    assert "not whether the snapshot data covers them" in text
+    assert rows["C"]["snapshot_id"] == "fixtures"
+    assert rows["A"]["answerable"] == "" and rows["A"]["status"].startswith("n/a")

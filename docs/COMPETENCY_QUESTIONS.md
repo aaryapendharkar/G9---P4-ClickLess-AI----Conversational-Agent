@@ -12,6 +12,17 @@ query or tests, if a listed test doesn't exist, if an example returns nothing, o
 the inventory disagree, so the adequacy metric can't count a missing or vacuous query. All 20 are
 currently `tested`.
 
+**The metric** (`src/evaluation/metrics/ontology_adequacy.py`, #158) runs each question's example
+bindings on the fixture KG, once per evaluation run and only for Config C. It reports
+`answerable / 20`, the failing ids with reasons, and the inventory version, in the report's
+"Ontology adequacy (competency questions on the fixture KG)" section (next to the snapshot id) and
+in `ontology_adequacy.csv`. It measures whether the ontology and queries can answer the CQs, not
+whether the snapshot data covers them. Each example runs through
+`competency.run_inventory_example`, which also adds an entry's `example_explanation` (CQ9) to a
+copy of the graph first. A question with an `example_note` (a free-text prerequisite) can't be set
+up by the metric, so it counts as not answerable with reason "prerequisite not machine-readable".
+On the fixture KG the score is currently 20/20.
+
 | # | Question | Query file | Status |
 |---|---|---|---|
 | 1 | Which stations have a port vehicle V can use, and at what power? | cq01_compatible_stations.rq | tested (Aarya for Manas, #157; `test_competency_query_answers.py`) |
