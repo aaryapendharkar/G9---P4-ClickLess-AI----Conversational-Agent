@@ -22,6 +22,8 @@ from clickless.ranking.tfidf_credit_analysis import (
 )
 from clickless.ranking.weighted_ranker import WeightedRanker
 from clickless.retrieval.tfidf_matcher import TfidfMatcher
+from evaluation.config_names import SnapshotRequired
+from scripts import analyze_tfidf_credit as analysis_script
 
 
 def _fixture_amenity(store, amenity_id):
@@ -192,6 +194,50 @@ def test_prepare_analysis_request_records_parsed_and_fallback_phrases():
         ("food", "food", "category_fallback"),
         ("coffee", "coffee", "parsed"),
     ]
+
+
+def test_prepare_analysis_request_matches_phrase_by_category():
+    """A missed wheelchair modifier must not discard the user's phrase."""
+
+    gold_request = TripRequest(
+        request_id="wheelchair-phrase",
+        raw_text="I need a wheelchair accessible bathroom",
+        origin=Place(text="Origin"),
+        destination=Place(text="Destination"),
+        vehicle_id="test-vehicle",
+        start_soc_pct=50,
+        amenities=[
+            AmenityPreference(
+                category=AmenityCategory.RESTROOM,
+                wheelchair_required=True,
+            )
+        ],
+    )
+    parsed_request = TripRequest(
+        request_id="wheelchair-phrase",
+        raw_text=gold_request.raw_text,
+        amenities=[
+            AmenityPreference(
+                category=AmenityCategory.RESTROOM,
+                phrase="wheelchair accessible bathroom",
+                wheelchair_required=False,
+            )
+        ],
+    )
+    resolved_places = {
+        "Origin": Place(text="Origin", lat=1.0, lon=2.0),
+        "Destination": Place(text="Destination", lat=3.0, lon=4.0),
+    }
+
+    prepared = prepare_analysis_request(
+        gold_request,
+        parsed_request,
+        resolved_places.__getitem__,
+    )
+
+    assert prepared.amenities[0].key == "restroom_wheelchair"
+    assert prepared.amenities[0].phrase == "wheelchair accessible bathroom"
+    assert prepared.amenities[0].phrase_source == "parsed"
 
 
 def test_raw_policy_preserves_original_scores_without_mutating_input():
@@ -495,6 +541,7 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
     assert summary["items_loaded"] == 3
     assert summary["items_planned"] == 2
     assert summary["items_skipped_or_unplanned"] == 1
+    assert summary["n_errors"] == 0
     assert summary["amenity_phrase_sources"] == {
         "parsed": 0,
         "category_fallback": 1,
@@ -522,3 +569,85 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
         "policy_charge_min": 4.0,
         "policy_detour_min": 2.0,
     }
+
+
+def test_dev_summary_counts_errors_separately():
+    """Analysis failures must not be hidden among expected skipped items."""
+
+    item_results = [
+        {
+            "item_id": "incomplete",
+            "status": "skipped_incomplete",
+        },
+        {
+            "item_id": "failed",
+            "status": "error",
+            "error_type": "RuntimeError",
+            "error": "synthetic failure",
+        },
+    ]
+
+    summary = summarize_policy_results(item_results)
+
+    assert summary["items_loaded"] == 2
+    assert summary["items_planned"] == 0
+    assert summary["items_skipped_or_unplanned"] == 1
+    assert summary["n_errors"] == 1
+
+
+def test_run_analysis_refuses_dev_on_fixture_data(
+    monkeypatch,
+    tmp_path,
+):
+    """The frozen DEV split must never run against fixture data."""
+
+    monkeypatch.delenv(
+        "CLICKLESS_DATA_SOURCE",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        analysis_script,
+        "build_pipeline",
+        lambda _config: pytest.fail(
+            "pipeline construction must happen after the snapshot guard"
+        ),
+    )
+
+    with pytest.raises(
+        SnapshotRequired,
+        match="snapshot",
+    ):
+        analysis_script.run_analysis(
+            output_path=tmp_path / "report.json",
+            limit=1,
+        )
+
+
+def test_main_returns_nonzero_when_analysis_records_errors(
+    monkeypatch,
+    tmp_path,
+):
+    """Automation must be able to detect an incomplete analysis run."""
+
+    output_path = tmp_path / "report.json"
+
+    monkeypatch.setattr(
+        analysis_script,
+        "run_analysis",
+        lambda output_path, limit: {
+            "summary": {
+                "n_errors": 1,
+            }
+        },
+    )
+
+    exit_code = analysis_script.main(
+        [
+            "--out",
+            str(output_path),
+            "--limit",
+            "1",
+        ]
+    )
+
+    assert exit_code == 1

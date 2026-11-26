@@ -111,7 +111,7 @@ def prepare_analysis_request(
             (
                 parsed_preference
                 for parsed_preference in parsed_request.amenities
-                if parsed_preference.key == gold_preference.key
+                if parsed_preference.category == gold_preference.category
                 and parsed_preference.phrase.strip()
             ),
             None,
@@ -470,6 +470,13 @@ def summarize_policy_results(
 
     planned_items = [result for result in item_results if result["status"] == "planned"]
 
+    error_items = [result for result in item_results if result["status"] == "error"]
+    skipped_or_unplanned_items = [
+        result
+        for result in item_results
+        if result["status"] not in {"planned", "error"}
+    ]
+
     amenity_records = [
         amenity for result in item_results for amenity in result.get("amenities", [])
     ]
@@ -488,7 +495,8 @@ def summarize_policy_results(
     summary: dict[str, Any] = {
         "items_loaded": len(item_results),
         "items_planned": len(planned_items),
-        "items_skipped_or_unplanned": len(item_results) - len(planned_items),
+        "items_skipped_or_unplanned": len(skipped_or_unplanned_items),
+        "n_errors": len(error_items),
         "amenity_phrase_sources": {
             "parsed": sum(
                 amenity["phrase_source"] == "parsed" for amenity in amenity_records

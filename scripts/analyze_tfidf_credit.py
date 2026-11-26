@@ -18,11 +18,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from clickless.config import load_config, repo_path
+from clickless.config import load_config
 from clickless.pipeline import build_pipeline
 from clickless.ranking.tfidf_credit_analysis import (
     PreparedAnalysisRequest,
@@ -32,9 +33,9 @@ from clickless.ranking.tfidf_credit_analysis import (
     summarize_policy_results,
     verified_candidate_itineraries,
 )
-from evaluation.harness import git_commit
+from evaluation.harness import git_commit, select_items
 from evaluation.metrics.planning import request_from_item
-from evaluation.schema import BenchmarkItem, load_items
+from evaluation.schema import BenchmarkItem
 from evaluation.snapshot_id import snapshot_info
 
 DEV_ITEMS_PATH = "benchmark/requests/dev"
@@ -125,8 +126,17 @@ def run_analysis(
     """Run Config A policy comparison over frozen DEV only."""
 
     config = load_config("A")
+
+    # Benchmark DEV requests require the frozen real-data snapshot. Using the
+    # shared selector prevents a forgotten environment setting from producing
+    # a meaningless report against the small fixture world.
+    items, _excluded_item_ids = select_items(
+        config,
+        split="dev",
+        items_paths=None,
+    )
+
     pipeline = build_pipeline(config)
-    items = load_items(repo_path(DEV_ITEMS_PATH))
 
     if limit is not None:
         items = items[:limit]
@@ -181,7 +191,7 @@ def run_analysis(
     return report
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Command-line entry point."""
 
     parser = argparse.ArgumentParser(
@@ -199,7 +209,7 @@ def main() -> int:
         default=None,
         help="run only the first N DEV items for a smoke check",
     )
-    arguments = parser.parse_args()
+    arguments = parser.parse_args(argv)
 
     report = run_analysis(
         output_path=arguments.out,
@@ -208,6 +218,16 @@ def main() -> int:
 
     print(json.dumps(report["summary"], indent=2))
     print(f"Report written to {arguments.out}")
+
+    error_count = report["summary"]["n_errors"]
+
+    if error_count:
+        print(
+            f"Analysis completed with {error_count} error(s); see the report.",
+            file=sys.stderr,
+        )
+        return 1
+
     return 0
 
 
