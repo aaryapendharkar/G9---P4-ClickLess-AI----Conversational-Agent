@@ -104,6 +104,8 @@ powershell -ExecutionPolicy Bypass -File scripts\final_run.ps1 -Split test -Fina
 ```
 
 `-Limit N` runs only the first N items of the split, as a quick check before a full run. It is refused with `-Final`.
+A `-Limit` smoke run may also run from another branch or a dirty tree, with a yellow "smoke run, not reproducible"
+warning. A full run, and every `-Final` run, needs a clean `main`.
 
 It aborts before running anything unless all of these hold:
 - you are on `main` with a clean tree, untracked files included (it prints the commit);

@@ -9,7 +9,8 @@
     Preflight (aborts with a message if anything fails):
       - -Split / -Final are consistent; for test, benchmark/FROZEN.json exists and no earlier final
         test run is in results/
-      - git: on main, working tree clean (untracked files count); prints the commit
+      - git: on main, working tree clean (untracked files count); prints the commit. With -Limit
+        (a smoke run) another branch or a dirty tree only gives a warning: not reproducible.
       - CLICKLESS_DATA_SOURCE=snapshot
       - snapshot: verify_manifest() -> [] and every config's snapshot id is snapshot:96dfbabb4837 (frozen)
       - Ollama: reachable at VOYAGER_BASE_URL, qwen3:8b digest starts 500a1f067a9f, a warm-up call succeeds
@@ -122,15 +123,28 @@ if ($Split -eq 'test') {
 }
 
 # --- git ----------------------------------------------------------------------------------------
+# A full run (no -Limit) and every -Final run need main + a clean tree. A -Limit smoke run may run
+# from any branch or a dirty tree, with a warning (-Limit with -Final is already refused above).
+$Smoke = ($Limit -gt 0) -and -not $Final
 $branch = (& git rev-parse --abbrev-ref HEAD)
 if ($LASTEXITCODE -ne 0) { Stop-Preflight "git failed: is $Repo a git checkout?" }
-if ($branch.Trim() -ne 'main') { Stop-Preflight "on branch '$($branch.Trim())', not main." }
+$Branch = $branch.Trim()
 $dirty = @(& git status --porcelain)
-if ($dirty.Count -gt 0) {
-    Stop-Preflight ("working tree not clean (commit, remove or stash these first):`n" + ($dirty -join "`n"))
-}
 $Commit = (& git rev-parse HEAD).Trim()
-Write-Ok "git: main, clean, commit $Commit"
+$GitProblems = @()
+if ($Branch -ne 'main') { $GitProblems += "on branch '$Branch', not main" }
+if ($dirty.Count -gt 0) { $GitProblems += "working tree not clean ($($dirty.Count) changed or untracked paths)" }
+if ($GitProblems.Count -eq 0) {
+    Write-Ok "git: main, clean, commit $Commit"
+} elseif ($Smoke) {
+    Write-Host "  WARN smoke run, not reproducible: $($GitProblems -join '; '), commit $Commit" -ForegroundColor Yellow
+    $dirty | Select-Object -First 20 | ForEach-Object { Write-Host "         $_" -ForegroundColor Yellow }
+    if ($dirty.Count -gt 20) { Write-Host "         ... and $($dirty.Count - 20) more" -ForegroundColor Yellow }
+} else {
+    $detail = if ($dirty.Count -gt 0) { "`n" + ($dirty -join "`n") } else { "" }
+    Stop-Preflight ("$($GitProblems -join '; '). A full or -Final run needs a clean main " +
+        "(commit, remove or stash changes first; -Limit allows a smoke run).$detail")
+}
 
 # --- data source --------------------------------------------------------------------------------
 if ($env:CLICKLESS_DATA_SOURCE -ne 'snapshot') {
@@ -246,6 +260,8 @@ $inputs = [ordered]@{
     failed      = $Failed
     outputs     = $Outputs
     commit      = $Commit
+    git_branch  = $Branch
+    git_dirty   = ($dirty.Count -gt 0)
 }
 Write-Utf8NoBom (Join-Path $OutDir 'report_inputs.json') ($inputs | ConvertTo-Json -Depth 5)
 
@@ -283,6 +299,9 @@ if ($Failed.Count -gt 0) {
     Write-Host "Failed configs: $($Failed.Keys -join ', ') (logs in results\$Stamp\)" -ForegroundColor Red
 }
 Write-Host "Commit $Commit, $Scope$(if ($Final) { ' (FINAL)' })"
+if ($GitProblems.Count -gt 0) {
+    Write-Host "WARNING: smoke run, not reproducible ($($GitProblems -join '; '))." -ForegroundColor Yellow
+}
 Write-Host "Total time: $(Format-Duration ((Get-Date) - $Started))"
 
 if ($Failed.Count -gt 0 -or -not $reportOk) { exit 1 }
