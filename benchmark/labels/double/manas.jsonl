@@ -1,12 +1,302 @@
-// Blind double annotation for manas (11 items). Fill in every field per docs/ANNOTATION_GUIDE.md using only `text`; do not open the original item or its gold before you submit. Keep id and text unchanged.
-{"id": "deepti-010", "text": "From Bend to Eugene in my 2024 Nissan Leaf SV Plus, I have 72%. I need a wheelchair accessible restroom and would like coffee if I need to charge.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "deepti-014", "text": "Drive my 2024 Tesla Model Y Long Range AWD from Phoenix to Las Vegas. I'm starting at 70% and want at least 20% when I arrive.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "deepti-018", "text": "My 2024 F-150 Lightning Extended Range is at 60%. Take me from Farmington, New Mexico to Page, Arizona; charging options are sparse, so use chargers rated at least 150 kW.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "deepti-024", "text": "I'm in a hurry from Los Angeles to San Diego in my 2024 Tesla Model 3 Long Range AWD at 35%, but I also need a sit-down meal and coffee while charging.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "deepti-029", "text": "I'm in a hurry from Phoenix to Tucson in my 2024 BMW i4 eDrive40 with 35% battery.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "hriday-003", "text": "My 2023 Chevrolet Bolt EUV is at 14%. Route me from Brooklyn to Newark Liberty Airport, only using CCS chargers, and I need a restroom at the charging stop.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "hriday-017", "text": "Take my 2023 Chevrolet Bolt EUV from Albuquerque to Dallas. It has 50% charge; use CCS chargers, arrive with 15%, and include a coffee stop if practical.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "hriday-025", "text": "Plan Kansas City to Omaha in my 2024 BMW i4 eDrive40 at 18%. I want to arrive with 70%, use only CHAdeMO chargers, and make this the fastest possible trip.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "hriday-026", "text": "Drive my 2024 Kia EV6 Long Range RWD from Charlotte to Asheville with 35%. My passenger uses a wheelchair, so we need a wheelchair-accessible restroom at any charging stop.", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "ian-021", "text": "2023 bolt euv at 25%, going from columbus to the airport", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
-{"id": "ian-027", "text": "2024 F-150 Lightning Extended Range, 15%, Tucson AZ, University of Arizona to Tucson airport. need an accessible restroom where i charge", "category": null, "gold_request": {}, "clarification_required": null, "missing_safety_fields": [], "hard_constraints": {}, "soft_constraints": {}, "notes": ""}
+[
+  {
+    "id": "deepti-010",
+    "text": "From Bend to Eugene in my 2024 Nissan Leaf SV Plus, I have 72%. I need a wheelchair accessible restroom and would like coffee if I need to charge.",
+    "category": "complete",
+    "gold_request": {
+      "origin": "Bend, OR",
+      "destination": "Eugene, OR",
+      "vehicle_id": "nissan-leaf-sv-plus-2024",
+      "start_soc_pct": 72,
+      "amenities": [
+        {
+          "category": "restroom",
+          "accessibility": "wheelchair"
+        },
+        {
+          "category": "coffee"
+        }
+      ]
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "amenities": [
+        {
+          "category": "restroom",
+          "accessibility": "wheelchair"
+        }
+      ]
+    },
+    "soft_constraints": {
+      "amenities": [
+        {
+          "category": "coffee",
+          "condition": "if_charging"
+        }
+      ]
+    },
+    "notes": "The starting charge, vehicle, origin, and destination are provided. A wheelchair-accessible restroom is required, while coffee is a preference if a charging stop is needed."
+  },
+  {
+    "id": "deepti-014",
+    "text": "Drive my 2024 Tesla Model Y Long Range AWD from Phoenix to Las Vegas. I'm starting at 70% and want at least 20% when I arrive.",
+    "category": "complete",
+    "gold_request": {
+      "origin": "Phoenix, AZ",
+      "destination": "Las Vegas, NV",
+      "vehicle_id": "tesla-model-y-long-range-awd-2024",
+      "start_soc_pct": 70,
+      "min_arrival_soc_pct": 20
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "min_arrival_soc_pct": 20
+    },
+    "soft_constraints": {},
+    "notes": "All essential trip and vehicle details are supplied. The minimum 20% arrival battery level is an explicit requirement."
+  },
+  {
+    "id": "deepti-018",
+    "text": "My 2024 F-150 Lightning Extended Range is at 60%. Take me from Farmington, New Mexico to Page, Arizona; charging options are sparse, so use chargers rated at least 150 kW.",
+    "category": "complete",
+    "gold_request": {
+      "origin": "Farmington, NM",
+      "destination": "Page, AZ",
+      "vehicle_id": "ford-f150-lightning-extended-range-2024",
+      "start_soc_pct": 60,
+      "min_charger_power_kw": 150
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "min_charger_power_kw": 150
+    },
+    "soft_constraints": {},
+    "notes": "The vehicle, starting charge, and route are specified. The 150 kW minimum charger rating is a strict requirement because charging options along the route are limited."
+  },
+  {
+    "id": "deepti-024",
+    "text": "I'm in a hurry from Los Angeles to San Diego in my 2024 Tesla Model 3 Long Range AWD at 35%, but I also need a sit-down meal and coffee while charging.",
+    "category": "complete",
+    "gold_request": {
+      "origin": "Los Angeles, CA",
+      "destination": "San Diego, CA",
+      "vehicle_id": "tesla-model-3-long-range-awd-2024",
+      "start_soc_pct": 35,
+      "amenities": [
+        {
+          "category": "restaurant",
+          "type": "sit_down_meal"
+        },
+        {
+          "category": "coffee"
+        }
+      ],
+      "optimize_for": "fastest_trip"
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "amenities": [
+        {
+          "category": "restaurant",
+          "type": "sit_down_meal"
+        },
+        {
+          "category": "coffee"
+        }
+      ],
+      "charging_stop_required": true
+    },
+    "soft_constraints": {
+      "optimize_for": "fastest_trip"
+    },
+    "notes": "The user provides all essential trip details and requires both a sit-down meal and coffee during charging. Being in a hurry indicates a preference for minimizing overall travel time while accommodating these stops."
+  },
+  {
+    "id": "deepti-029",
+    "text": "I'm in a hurry from Phoenix to Tucson in my 2024 BMW i4 eDrive40 with 35% battery.",
+    "category": "complete",
+    "gold_request": {
+      "origin": "Phoenix, AZ",
+      "destination": "Tucson, AZ",
+      "vehicle_id": "bmw-i4-edrive40-2024",
+      "start_soc_pct": 35,
+      "optimize_for": "fastest_trip"
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {},
+    "soft_constraints": {
+      "optimize_for": "fastest_trip"
+    },
+    "notes": "The origin, destination, vehicle, and starting battery percentage are provided. The request to hurry indicates a preference for the fastest practical route rather than an additional hard constraint."
+  },
+  {
+    "id": "hriday-003",
+    "text": "My 2023 Chevrolet Bolt EUV is at 14%. Route me from Brooklyn to Newark Liberty Airport, only using CCS chargers, and I need a restroom at the charging stop.",
+    "category": "complete",
+    "gold_request": {
+      "origin": "Brooklyn, NY",
+      "destination": "Newark Liberty International Airport, NJ",
+      "vehicle_id": "chevrolet-bolt-euv-2023",
+      "start_soc_pct": 14,
+      "connector_type": "CCS",
+      "amenities": [
+        {
+          "category": "restroom"
+        }
+      ]
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "connector_type": "CCS",
+      "amenities": [
+        {
+          "category": "restroom"
+        }
+      ],
+      "charging_stop_required": true
+    },
+    "soft_constraints": {},
+    "notes": "The airport destination is identifiable from its full name. The user specifies a low starting charge, restricts charging to CCS connectors, and requires restroom access at the charging stop."
+  },
+  {
+    "id": "hriday-017",
+    "text": "Take my 2023 Chevrolet Bolt EUV from Albuquerque to Dallas. It has 50% charge; use CCS chargers, arrive with 15%, and include a coffee stop if practical.",
+    "category": "complete",
+    "gold_request": {
+      "origin": "Albuquerque, NM",
+      "destination": "Dallas, TX",
+      "vehicle_id": "chevrolet-bolt-euv-2023",
+      "start_soc_pct": 50,
+      "connector_type": "CCS",
+      "min_arrival_soc_pct": 15,
+      "amenities": [
+        {
+          "category": "coffee"
+        }
+      ]
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "connector_type": "CCS",
+      "min_arrival_soc_pct": 15
+    },
+    "soft_constraints": {
+      "amenities": [
+        {
+          "category": "coffee",
+          "condition": "if_practical"
+        }
+      ]
+    },
+    "notes": "The route, vehicle, and battery level are provided. CCS charging and the minimum 15% arrival charge are hard requirements. Coffee is optional and should not compromise the route."
+  },
+  {
+    "id": "hriday-025",
+    "text": "Plan Kansas City to Omaha in my 2024 BMW i4 eDrive40 at 18%. I want to arrive with 70%, use only CHAdeMO chargers, and make this the fastest possible trip.",
+    "category": "conflict",
+    "gold_request": {
+      "origin": "Kansas City, MO",
+      "destination": "Omaha, NE",
+      "vehicle_id": "bmw-i4-edrive40-2024",
+      "start_soc_pct": 18,
+      "min_arrival_soc_pct": 70,
+      "connector_type": "CHAdeMO",
+      "optimize_for": "fastest_trip"
+    },
+    "clarification_required": true,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "min_arrival_soc_pct": 70,
+      "connector_type": "CHAdeMO"
+    },
+    "soft_constraints": {
+      "optimize_for": "fastest_trip"
+    },
+    "notes": "There is a compatibility conflict: the 2024 BMW i4 eDrive40 uses CCS DC fast charging and cannot use CHAdeMO chargers. The user must clarify whether to change the connector requirement or vehicle. The 70% arrival target also needs to be considered when planning charging stops."
+  },
+  {
+    "id": "hriday-026",
+    "text": "Drive my 2024 Kia EV6 Long Range RWD from Charlotte to Asheville with 35%. My passenger uses a wheelchair, so we need a wheelchair-accessible restroom at any charging stop.",
+    "category": "complete",
+    "gold_request": {
+      "origin": "Charlotte, NC",
+      "destination": "Asheville, NC",
+      "vehicle_id": "kia-ev6-long-range-rwd-2024",
+      "start_soc_pct": 35,
+      "amenities": [
+        {
+          "category": "restroom",
+          "accessibility": "wheelchair"
+        }
+      ]
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "amenities": [
+        {
+          "category": "restroom",
+          "accessibility": "wheelchair"
+        }
+      ],
+      "charging_stop_required_if_used": true
+    },
+    "soft_constraints": {},
+    "notes": "The vehicle, battery level, and route are specified. Wheelchair-accessible restroom facilities are mandatory at any charging stop selected for the trip."
+  },
+  {
+    "id": "ian-021",
+    "text": "2023 bolt euv at 25%, going from columbus to the airport",
+    "category": "incomplete",
+    "gold_request": {
+      "origin": "Columbus, OH",
+      "destination": "John Glenn Columbus International Airport, Columbus, OH",
+      "vehicle_id": "chevrolet-bolt-euv-2023",
+      "start_soc_pct": 25
+    },
+    "clarification_required": true,
+    "missing_safety_fields": [
+      "destination_airport_confirmation"
+    ],
+    "hard_constraints": {},
+    "soft_constraints": {},
+    "notes": "The vehicle and starting battery level are known. Columbus to the airport likely refers to John Glenn Columbus International Airport, but the exact airport is not explicitly confirmed. Clarification is needed before treating the destination as final."
+  },
+  {
+    "id": "ian-027",
+    "text": "2024 F-150 Lightning Extended Range, 15%, Tucson AZ, University of Arizona to Tucson airport. need an accessible restroom where i charge",
+    "category": "complete",
+    "gold_request": {
+      "origin": "University of Arizona, Tucson, AZ",
+      "destination": "Tucson International Airport, Tucson, AZ",
+      "vehicle_id": "ford-f150-lightning-extended-range-2024",
+      "start_soc_pct": 15,
+      "amenities": [
+        {
+          "category": "restroom",
+          "accessibility": "wheelchair"
+        }
+      ]
+    },
+    "clarification_required": false,
+    "missing_safety_fields": [],
+    "hard_constraints": {
+      "amenities": [
+        {
+          "category": "restroom",
+          "accessibility": "wheelchair"
+        }
+      ],
+      "charging_stop_required_if_used": true
+    },
+    "soft_constraints": {},
+    "notes": "The origin, destination, vehicle, and starting charge are identifiable. An accessible restroom is required at any charging location selected. The short route should be evaluated before assuming that an additional charging stop is necessary."
+  }
+]
