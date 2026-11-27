@@ -99,7 +99,8 @@ still need a duration to trade against amenities and detours:
 4. The driver can pick an option or say "prioritize X"; that changes the profile/weights and
    **re-ranks the already-verified plans** (no re-planning needed, so the answer is instant).
 
-Current Config A output on the synthetic fixtures:
+Current Config A output on the synthetic fixtures for
+`From Phoenix to Flagstaff in my Spark LR, I have 65% battery, lunch stop`:
 
 ```
 Stop at Fixture Plaza Anthem (CCS1, 150 kW): charge 51% -> 68% in about 8 min (estimate).

@@ -44,6 +44,11 @@ distributions identical and does not grant credit to a zero or category-rejected
 Because the rule uses `max(s, 0.52)`, positive scores below `0.52` receive equal ranking credit;
 their raw ordering is preserved for diagnostics but not for cost or driver-facing satisfaction.
 Scores above the floor retain their original ordering.
+Because `0.52` is also above the shared `0.5` presentation threshold, every positive,
+category-gated Config A match is labelled "met" in gained/lost preference text. Configs B/C use
+raw SBERT scores and therefore label only scores of at least `0.5` as met. This driver-facing
+asymmetry reflects Config A's category gate and calibration policy, not a difference in measured
+matching quality.
 
 Both the logistic-regression ranker and its weighted fallback use the same production helper.
 The trade-off selector uses the same transformed scores for its amenity axis and for the
