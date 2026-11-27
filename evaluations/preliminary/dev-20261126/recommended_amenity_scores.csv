@@ -1,0 +1,69 @@
+config,item_id,itinerary_id,preference_key,phrase,n_stops,best_score,amenity_credit_min
+A,aarya-008,aarya-008:afdc:250740,coffee,coffee,1,0.0,0.0
+A,aarya-015,aarya-015:afdc:238674+afdc:102305,food,lunch,2,0.1056,1.584
+A,aarya-026,aarya-026:afdc:457473,restroom_wheelchair,restroom,1,0.4623,9.247
+A,aarya-028,aarya-028:afdc:458947,coffee,coffee,1,0.6958,18.384
+A,aarya-028,aarya-028:afdc:458947,restroom_wheelchair,restroom,1,0.6409,18.384
+A,deepti-005,deepti-005:direct,restroom,restroom,0,0.0,0.0
+A,deepti-006,deepti-006:direct,food,lunch,0,0.0,0.0
+A,deepti-008,deepti-008:afdc:260040,grocery,grocery,1,0.0,0.0
+A,deepti-010,deepti-010:afdc:73409+afdc:375289,coffee,coffee,2,0.0,12.817
+A,deepti-010,deepti-010:afdc:73409+afdc:375289,restroom_wheelchair,restroom,2,0.6409,12.817
+A,deepti-015,deepti-015:afdc:238674+afdc:102305,food,lunch,2,0.1056,1.584
+A,deepti-022,deepti-022:afdc:461144,restroom_wheelchair,restroom,1,0.6409,12.817
+A,deepti-024,deepti-024:afdc:428591,coffee,coffee,1,0.2016,0.403
+A,deepti-025,deepti-025:afdc:127934,restroom_wheelchair,restroom,1,0.0,0.0
+A,deepti-030,deepti-030:afdc:461277,food,food,1,0.2996,8.989
+A,hriday-023,hriday-023:afdc:469850,coffee,coffee,1,0.0,0.0
+B,aarya-006,aarya-006:afdc:127934,food,stop for lunch somewhere,1,0.4248,6.372
+B,aarya-008,aarya-008:afdc:250740,coffee,A coffee stop would be nice,1,0.0,0.0
+B,aarya-015,aarya-015:afdc:238674+afdc:102305,food,lunch stop,2,0.4738,7.107
+B,aarya-017,aarya-017:afdc:439496+afdc:316901,coffee,Coffee stops welcome,2,0.437,3.496
+B,aarya-026,aarya-026:afdc:457473,restroom_wheelchair,wheelchair accessible restroom,1,0.4964,9.928
+B,aarya-028,aarya-028:afdc:458947,restroom_wheelchair,wheelchair accessible restroom,1,0.5996,15.894
+B,aarya-028,aarya-028:afdc:458947,coffee,coffee if possible,1,0.4877,15.894
+B,aarya-030,aarya-030:afdc:461277,food,good food nearby,1,0.5585,16.755
+B,deepti-003,deepti-003:direct,coffee,coffee shop near the charger,0,0.0,0.0
+B,deepti-005,deepti-005:direct,restroom,restroom at the stop,0,0.0,0.0
+B,deepti-006,deepti-006:direct,food,lunch,0,0.0,0.0
+B,deepti-008,deepti-008:afdc:440469,grocery,near a charging stop,1,0.5315,4.252
+B,deepti-010,deepti-010:afdc:73409+afdc:375289,restroom_wheelchair,wheelchair accessible restroom,2,0.5996,11.992
+B,deepti-010,deepti-010:afdc:73409+afdc:375289,coffee,coffee,2,0.0,11.992
+B,deepti-015,deepti-015:afdc:238674+afdc:102305,food,lunch,2,0.7027,10.54
+B,deepti-016,deepti-016:afdc:439496+afdc:358372,coffee,Coffee stops are welcome,2,0.4554,3.643
+B,deepti-022,deepti-022:afdc:461144,restroom_wheelchair,wheelchair accessible restroom,1,0.5996,11.992
+B,deepti-024,deepti-024:afdc:428591,food,sit-down meal,1,0.4152,2.277
+B,deepti-024,deepti-024:afdc:428591,coffee,coffee,1,0.5158,2.277
+B,deepti-025,deepti-025:afdc:127934,restroom_wheelchair,accessible restroom,1,0.0,0.0
+B,deepti-027,deepti-027:afdc:457473,restroom_wheelchair,accessible restroom,1,0.6215,12.43
+B,deepti-028,deepti-028:afdc:458947,restroom_wheelchair,wheelchair accessible restroom,1,0.5996,16.874
+B,deepti-028,deepti-028:afdc:458947,coffee,coffee,1,0.6102,16.874
+B,deepti-030,deepti-030:afdc:461277,food,good food near the charger,1,0.4253,12.759
+B,hriday-023,hriday-023:afdc:469850,food,sit-down meal,1,0.4506,1.352
+B,hriday-023,hriday-023:afdc:469850,coffee,coffee,1,0.0,1.352
+C,aarya-006,aarya-006:afdc:127934,food,stop for lunch somewhere,1,0.4248,6.372
+C,aarya-008,aarya-008:afdc:250740,coffee,A coffee stop would be nice,1,0.0,0.0
+C,aarya-015,aarya-015:afdc:238674+afdc:102305,food,lunch stop,2,0.4738,7.107
+C,aarya-017,aarya-017:afdc:439496+afdc:316901,coffee,Coffee stops welcome,2,0.437,3.496
+C,aarya-026,aarya-026:afdc:457473,restroom_wheelchair,wheelchair accessible restroom,1,0.4964,9.928
+C,aarya-028,aarya-028:afdc:458947,restroom_wheelchair,wheelchair accessible restroom,1,0.5996,15.894
+C,aarya-028,aarya-028:afdc:458947,coffee,coffee if possible,1,0.4877,15.894
+C,aarya-030,aarya-030:afdc:461277,food,good food nearby,1,0.5585,16.755
+C,deepti-003,deepti-003:direct,coffee,coffee shop near the charger,0,0.0,0.0
+C,deepti-005,deepti-005:direct,restroom,restroom at the stop,0,0.0,0.0
+C,deepti-006,deepti-006:direct,food,lunch,0,0.0,0.0
+C,deepti-008,deepti-008:afdc:440469,grocery,near a charging stop,1,0.5315,4.252
+C,deepti-010,deepti-010:afdc:73409+afdc:375289,restroom_wheelchair,wheelchair accessible restroom,2,0.5996,11.992
+C,deepti-010,deepti-010:afdc:73409+afdc:375289,coffee,coffee,2,0.0,11.992
+C,deepti-015,deepti-015:afdc:238674+afdc:102305,food,lunch,2,0.7027,10.54
+C,deepti-016,deepti-016:afdc:439496+afdc:358372,coffee,Coffee stops are welcome,2,0.4554,3.643
+C,deepti-022,deepti-022:afdc:461144,restroom_wheelchair,wheelchair accessible restroom,1,0.5996,11.992
+C,deepti-024,deepti-024:afdc:428591,food,sit-down meal,1,0.4152,2.277
+C,deepti-024,deepti-024:afdc:428591,coffee,coffee,1,0.5158,2.277
+C,deepti-025,deepti-025:afdc:127934,restroom_wheelchair,accessible restroom,1,0.0,0.0
+C,deepti-027,deepti-027:afdc:457473,restroom_wheelchair,accessible restroom,1,0.6215,12.43
+C,deepti-028,deepti-028:afdc:458947,restroom_wheelchair,wheelchair accessible restroom,1,0.5996,16.874
+C,deepti-028,deepti-028:afdc:458947,coffee,coffee,1,0.6102,16.874
+C,deepti-030,deepti-030:afdc:461277,food,good food near the charger,1,0.4253,12.759
+C,hriday-023,hriday-023:afdc:469850,food,sit-down meal,1,0.4506,1.352
+C,hriday-023,hriday-023:afdc:469850,coffee,coffee,1,0.0,1.352
