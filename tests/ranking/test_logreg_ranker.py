@@ -98,16 +98,50 @@ def test_missing_model_uses_weighted_fallback(cfg_a, tmp_path: Path):
     ]
 
 
-def test_pipeline_wires_floor_policy_only_into_config_a(
+def test_pipeline_wires_floor_policy_into_every_config_a_ranker(
     pipe_a,
     cfg_a,
     store,
 ):
-    """Config A receives the floor while Config B keeps raw SBERT scores."""
+    """Every Config A ranking path must use the same TF-IDF credit policy."""
 
+    expected_credit_policy = cfg_a["ranking"]["tfidf_credit"]
+
+    # Config A normally uses logistic-regression ranking.
     assert isinstance(pipe_a.ranker, LogRegRanker)
-    assert pipe_a.ranker.amenity_credit_config == (cfg_a["ranking"]["tfidf_credit"])
+    assert pipe_a.ranker.amenity_credit_config == expected_credit_policy
 
+    # Verify the plain weighted-ranker path separately. This path may be used
+    # directly even though logistic regression is Config A's normal setting.
+    weighted_config_a = load_config("A")
+    weighted_config_a["components"]["ranker"] = "weighted"
+
+    weighted_pipe_a = build_pipeline(
+        weighted_config_a,
+        store,
+    )
+
+    assert isinstance(weighted_pipe_a.ranker, WeightedRanker)
+    assert weighted_pipe_a.ranker.amenity_credit_config == expected_credit_policy
+
+    # The evidence-aware weighted ranker must use the same amenity-credit scale.
+    evidence_weighted_config_a = load_config("A")
+    evidence_weighted_config_a["components"]["ranker"] = "weighted+evidence"
+
+    evidence_weighted_pipe_a = build_pipeline(
+        evidence_weighted_config_a,
+        store,
+    )
+
+    assert isinstance(evidence_weighted_pipe_a.ranker, WeightedRanker)
+    assert (
+        evidence_weighted_pipe_a.ranker.amenity_credit_config
+        == expected_credit_policy
+    )
+    assert evidence_weighted_pipe_a.ranker.use_evidence is True
+
+    # Config B does not define the Config A TF-IDF floor. Passing None keeps
+    # its existing raw Sentence-BERT scoring behavior unchanged.
     config_b = load_config("B")
 
     # Sentence-BERT is unrelated to this wiring check and may not be installed

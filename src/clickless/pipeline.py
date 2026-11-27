@@ -228,10 +228,12 @@ class Pipeline:
             ),
             "weighted": lambda: WeightedRanker(
                 tradeoffs_config,
+                amenity_credit_config=tfidf_credit_config,
             ),
             "weighted+evidence": lambda: WeightedRanker(
                 tradeoffs_config,
                 use_evidence=True,
+                amenity_credit_config=tfidf_credit_config,
             ),
         }[comp["ranker"]]()
 

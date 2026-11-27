@@ -52,6 +52,7 @@ def test_config_a_is_na_and_offline():
 
     meta = run_metadata(load_config("A"), env={}, http_get=no_network, commit=COMMIT)
     assert meta["config"] == "A" and meta["git_commit"] == "abc123"
+    assert meta["tfidf_credit"] == load_config("A")["ranking"]["tfidf_credit"]
     for k in ("prompt_version", "model", "ollama_version", "endpoint_host", "model_digest", "digest_check"):
         assert meta[k] == "n/a"
 
@@ -59,6 +60,7 @@ def test_config_a_is_na_and_offline():
 def test_llm_config_records_digest_from_config_comment():
     calls = []
     meta = run_metadata(_llm_cfg(), CONFIG_TEXT, env=ENV, http_get=_fake_get(calls=calls), commit=COMMIT)
+    assert meta["tfidf_credit"] == {"policy": "raw"}
     assert meta["model"] == "qwen3:8b" and meta["ollama_version"] == "0.12.3"
     assert meta["endpoint_host"] == "localhost:11434"
     assert meta["model_digest"] == FULL and meta["expected_digest"] == "500a1f067a9f"

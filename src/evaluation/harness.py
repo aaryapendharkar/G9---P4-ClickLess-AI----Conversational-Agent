@@ -178,6 +178,16 @@ def run_metadata(
     env = os.environ if env is None else env
     meta: dict[str, Any] = {"config": cfg["name"], **(commit if commit is not None else git_commit())}
     meta["prompt_version"] = _prompt_version(cfg)
+
+    # Record the effective amenity-credit policy alongside every evaluation.
+    # Config A may define a floor; configurations without this setting retain
+    # the original raw matcher-score behavior.
+    configured_credit_policy = cfg.get("ranking", {}).get(
+        "tfidf_credit",
+        {"policy": "raw"},
+    )
+    meta["tfidf_credit"] = dict(configured_credit_policy)
+
     meta.update(snapshot_info(cfg, env))
     if not _uses_llm(cfg):
         meta.update(model=NA, ollama_version=NA, endpoint_host=NA, model_digest=NA,
