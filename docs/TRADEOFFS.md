@@ -96,16 +96,16 @@ still need a duration to trade against amenities and detours:
 4. The driver can pick an option or say "prioritize X"; that changes the profile/weights and
    **re-ranks the already-verified plans** (no re-planning needed, so the answer is instant).
 
-Current walking-skeleton output on the synthetic fixtures:
+Current Config A output on the synthetic fixtures:
 
 ```
-Stop at Fixture Camp Verde Hub (CCS1, 50 kW): charge 26% -> 43% in about 18 min (estimate).
-  Nearby (requested): Verde Fixture Kitchen, Verde Fixture Restroom
-Arrive in Flagstaff with about 22% after ~161 min total (3 min of detour).
-Why this ranks first (balanced priorities, in minutes-equivalent): driving 143 + charging 18
-  + detour penalty 2 + stop overhead 5 - requested amenities 35 = 133.
+Stop at Fixture Plaza Anthem (CCS1, 150 kW): charge 51% -> 68% in about 8 min (estimate).
+Arrive in Flagstaff with about 22% after ~151 min total (3 min of detour).
+Why this ranks first (balanced priorities, in minutes-equivalent): driving 143 + charging 8
+  + detour penalty 2 + stop overhead 5 - requested amenities 0 = 158.
 Other options:
-  Fastest (Fixture Plaza Anthem): -10 min total; +0 min detour; -10 min charging; loses food, restroom_wheelchair.
+  Best amenities: stop at Fixture Camp Verde Hub instead; about 10 min longer; about 10 min
+  more charging (estimate).
 ```
 
 Hriday's learning-swap presenter now translates signed deltas into natural

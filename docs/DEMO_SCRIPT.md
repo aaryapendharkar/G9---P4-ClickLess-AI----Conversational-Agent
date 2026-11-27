@@ -1,27 +1,31 @@
-# Demo script (target: Wed Nov 25)
+# Presentation demo script
 
 Six scenarios, all on the snapshot with Config C (Qwen3 8B parser + KG evidence + source labels).
 Every scenario below uses places that are in the snapshot gazetteer and routes that are in the route
-cache (checked on Nov 21). **The scenarios have not been run yet against the fixes they depend on,
-because those fixes aren't merged.** Do a full dry run once everything in [Dependencies](#dependencies)
-is merged, and update the "What it should show" lines with what you actually see.
+cache. The demo-blocking fixes listed below were merged by Nov 23. Run all six scenarios once from
+the exact presentation commit on the presentation machine: Config C depends on the local Qwen
+model, its pinned version and the frozen snapshot, so documented outputs are expectations rather
+than a substitute for that final dry run.
 
 Weak spots this script avoids on purpose:
 - "cheapest": there is no cheapest profile yet, so it plans as balanced.
-- Any city pair not listed here: if a route isn't cached, the trip can't be planned. With #142 merged you get a friendly message instead of an error.
-- Answering a clarification question with filler words ("about 70%") before #135 is merged.
+- Any city pair not listed here: if a route isn't cached, the trip cannot be planned. The CLI now
+  gives a friendly route-data message instead of exposing an exception (#142).
+- Unscripted model phrasing. Use the requests below so parser and route-cache behavior remain
+  reproducible; clarification answers such as "about 70%" are supported (#135).
 
 ## Setup before the demo
 
 Do this on the demo machine at least 15 minutes before starting. Commands are for PowerShell; Bash equivalents are in comments.
 
-1. **Code:** `git switch main; git pull`. Then check that every PR in [Dependencies](#dependencies) is merged.
-2. **Snapshot unzipped and verified.** Unzip the shared snapshot into `data/snapshot/`, so that
+1. **Code:** `git switch main; git pull`. Record the commit used for the demo.
+2. **Snapshot unzipped and verified.** Unzip the final `snapshot-v1.zip` release into
+   `data/snapshot/`, so that
    `data/snapshot/MANIFEST.json`, `stations.json` and `routes/` exist. Then run:
    ```powershell
    python -m clickless.data.snapshot_report --verify-only     # = make snapshot-verify
    ```
-   It must print `verify_manifest() -> [] (intact)`. Until #123 is merged, it reports `README.md` as changed and the app refuses to load the snapshot.
+   It must print `verify_manifest() -> [] (intact)`.
 3. **Cached routes for all six scenarios.** Run this one check; it must print six `True` lines:
    ```powershell
    python -c "from pathlib import Path; r=Path('data/snapshot/routes'); [print(f, (r/f).is_file()) for f in ['downtown-los-angeles__santa-monica.json','los-angeles__san-francisco.json','phoenix__flagstaff.json','flagstaff__page.json','ely__tonopah.json','phoenix__tucson.json']]"
@@ -54,19 +58,18 @@ Do this on the demo machine at least 15 minutes before starting. Commands are fo
    - After a plan, the CLI asks `Approve handoff? Enter option number (1 = Recommended) or press Enter to skip:`. Type `1` once, in scenario 1, to show the Google Maps link. Press Enter in the others.
 8. **Terminal:** a large font and a wide window. Run `cls` between scenarios.
 
-## Dependencies
+## Implemented demo safeguards
 
-| Scenario | Needs merged | Without it |
+These are already merged; the table explains why each behavior matters during the demo.
+
+| Scenario | Implemented by | Behavior protected |
 |---|---|---|
-| all | #123 (snapshot README out of MANIFEST) | the snapshot doesn't load on a fresh checkout |
-| all | #143 (one "Not used:" line, quiet startup) | about 30 raw `afdc:` IDs printed twice per plan; HF progress bar and warning before every answer |
-| all (safety net) | #142 (friendly message for an uncached route) | "Something went wrong" plus a local file path if a route is missing |
-| 1 urban + amenity | #143 | as above |
-| 2 long multi-stop | #133 (route-distributed candidates) | "I couldn't find a plan…" for LA → SF |
-| 3 clarification | #141 (merged), #135 | without #135, only a bare `70%` is accepted |
-| 4 accessibility | #136, #137 | the recommended stop ignores the restroom; an unnamed restroom isn't shown |
-| 5 infeasible | — | — |
-| 6 trade-off | #133 (better stop on Phoenix → Tucson) | a 50 kW stop and a 45 min charge |
+| all | #123 | final snapshot verifies on a fresh checkout |
+| all | #143 | one concise `Not used:` summary instead of raw station IDs |
+| all (safety net) | #142 | an uncached route produces a friendly explanation |
+| 2 long multi-stop and 6 trade-off | #133 | usable stations are distributed along the route instead of clustering near the origin |
+| 3 clarification | #141, #135 | the CLI continues the clarification session and accepts natural answers such as `about 70%` |
+| 4 accessibility | #150, #147 | a required accessible restroom is enforced and unnamed matching amenities are still explained |
 
 ## Scenarios
 
@@ -78,7 +81,9 @@ python -m clickless plan --config C "From Downtown Los Angeles to Santa Monica i
 - **Follow-up:** at `Approve handoff?` type `1`. This prints the Google Maps link.
 - **What it should show:** one short stop at a fast charger the Model 3 can use, the source label `AFDC, cached snapshot`, and `Nearby (requested):` with named cafés. Then the "Why this ranks first" line and one `Not used: N stations on the route (…)` line.
   - **Nov 21 dry run (main):** a Tesla Supercharger in Los Angeles (NACS, 250 kW), arrival with about 22% after about 33 min, and an "Other options" line ("Least detour … loses coffee").
-  - **With #133:** at most 2 usable chargers per ~25 km reach the planner, so the stop, the count and the "Other options" line may differ. Record what the dry run shows.
+  - The route-distributed candidate policy keeps at most 2 usable chargers per ~25 km stretch, so
+    the exact stop, count and alternative line may differ from the historical Nov 21 output.
+    Record what the final dry run shows.
 - **Route cache:** `downtown-los-angeles__santa-monica.json`.
 - **Talking point:** the coffee shop is matched against OSM amenities near the charger, and every number comes from the verified plan.
 
@@ -97,7 +102,7 @@ python -m clickless plan --config C "Los Angeles to San Francisco in my Chevy Bo
 ```powershell
 python -m clickless plan --config C "Phoenix to Flagstaff in my IONIQ 5"
 ```
-- **Follow-up:** the CLI asks `What percentage battery do you have right now? …`. Type `about 70%` (needs #135). If #135 isn't merged, type `70%`.
+- **Follow-up:** the CLI asks `What percentage battery do you have right now? …`. Type `about 70%`.
 - **What it should show:** the question, then a full plan for Phoenix → Flagstaff using the 70% answer. If Config C asks a second question (e.g. arrival battery), answer `20%`.
 - **Route cache:** `phoenix__flagstaff.json`.
 - **Talking point:** Config C asks for safety-critical values instead of guessing them. Config B would only answer "missing: start_soc_pct".
@@ -110,7 +115,9 @@ python -m clickless plan --config C "Flagstaff to Page in my Kia EV6, 60% batter
 - **Follow-up:** press Enter at `Approve handoff?`.
 - **What it should show:** the recommended stop has a wheelchair-accessible restroom, listed under `Nearby (requested):`, by name or as "an accessible restroom" if it has no name (#137). The "Why this ranks first" line counts it under "requested amenities". Arrival in Page with at least 20%.
 - **Route cache:** `flagstaff__page.json`.
-- **Before the fixes (Nov 21 dry run):** the recommended stop had no accessible restroom ("requested amenities 0"), and only the second option had one. Don't demo this scenario until #136 and #137 are merged and the dry run shows the restroom on the first stop.
+- **Regression to check:** before #150 and #147, the recommended stop could omit the required
+  restroom or fail to name an unnamed matching amenity. The final dry run must show the accessible
+  restroom on the recommended plan before using this scenario on stage.
 
 ### 5. Infeasible request with a grounded reason (Config C)
 
