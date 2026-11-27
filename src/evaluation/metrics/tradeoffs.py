@@ -110,6 +110,55 @@ def amenity_value(weights: Mapping[str, float], key: str, rule: Mapping[str, Any
     return weights[wkey] if wkey is not None else rule["default"]
 
 
+def amenity_credit_score(
+    raw_score: float,
+    policy_config: Mapping[str, Any] | None = None,
+) -> float:
+    """Transform a matcher score using the documented evaluation policy.
+
+    This deliberately reproduces the ranking rule without importing ranking
+    code. Keeping the two implementations independent lets evaluation detect
+    accidental changes or inconsistencies in the production ranker.
+    """
+
+    if policy_config is None:
+        return raw_score
+
+    policy_name = policy_config.get("policy", "raw")
+
+    if policy_name == "raw":
+        return raw_score
+
+    if policy_name != "floor":
+        raise ValueError(
+            f"unknown evaluation amenity-credit policy: {policy_name!r}"
+        )
+
+    if "floor" not in policy_config:
+        raise ValueError(
+            "evaluation amenity-credit floor policy requires a 'floor' value"
+        )
+
+    try:
+        minimum_positive_score = float(policy_config["floor"])
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "evaluation amenity-credit floor must be a number between 0 and 1"
+        ) from error
+
+    if not 0.0 <= minimum_positive_score <= 1.0:
+        raise ValueError(
+            "evaluation amenity-credit floor must be between 0 and 1"
+        )
+
+    # Zero means that the requested amenity was not matched. It must remain
+    # zero so the floor cannot award credit for an absent amenity.
+    if raw_score <= 0.0:
+        return 0.0
+
+    return max(raw_score, minimum_positive_score)
+
+
 # --------------------------------------------------------------------------- Pareto validity
 
 
@@ -393,9 +442,12 @@ def plan_cost(
     charge_scale: float = 1.0,
     rule: Mapping[str, Any] | None = None,
 ) -> float:
-    """cost = w_drive*drive + w_charge*charge + detour_extra*detour + overhead*stops
-    - sum over REQUESTED preferences of amenity value * best match score at any stop - evidence.
-    A preference with no value of its own uses the fallback rule (amenity_rule())."""
+    """Recompute one itinerary's minutes-equivalent cost for evaluation.
+
+    The formula follows docs/TRADEOFFS.md independently of ranking code.
+    A configuration-specific credit policy may transform positive matcher
+    scores before they become amenity-minute credit.
+    """
     rule = rule or amenity_rule()
     cost = (
         weights["drive_min_weight"] * itin.total_drive_min
@@ -403,9 +455,23 @@ def plan_cost(
         + weights["detour_extra_weight"] * itin.total_detour_min
         + weights["stop_overhead_min"] * len(itin.stops)
     )
-    for key in {p.key for p in request.amenities}:  # once per trip, at its best stop
-        best = max((s.satisfied_preferences.get(key, 0.0) for s in itin.stops), default=0.0)
-        cost -= amenity_value(weights, key, rule) * best
+    credit_policy = rule.get("credit_policy")
+
+    for key in {p.key for p in request.amenities}:
+        # A preference receives credit once per trip, using its strongest
+        # match across all charging stops.
+        raw_best_score = max(
+            (
+                stop.satisfied_preferences.get(key, 0.0)
+                for stop in itin.stops
+            ),
+            default=0.0,
+        )
+        credit_score = amenity_credit_score(
+            raw_best_score,
+            credit_policy,
+        )
+        cost -= amenity_value(weights, key, rule) * credit_score
     return cost - evidence_credit_min
 
 
@@ -657,8 +723,14 @@ def tradeoff_metrics(
     tradeoffs_cfg: Mapping[str, Any],
     evaluation_cfg: Mapping[str, Any] | None = None,
     evals: Sequence[ItemEval] | None = None,
+    amenity_credit_config: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     rule = amenity_rule(evaluation_cfg)
+
+    # Carry the active configuration's credit policy through every evaluator
+    # sensitivity calculation. Configs without one retain raw matcher scores.
+    if amenity_credit_config is not None:
+        rule["credit_policy"] = dict(amenity_credit_config)
     return {
         "pareto_validity": pareto_validity(items, results, oracle, evals=evals),
         "delta_faithfulness": delta_faithfulness(results),

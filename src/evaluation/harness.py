@@ -530,7 +530,16 @@ def run(
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
         "ontology_adequacy": _safe(kg_ontology_adequacy, cfg),  # once per run, Config C only (#158)
         "planning": _safe(planning_metrics, done, ordered, oracle),
-        "tradeoffs": _safe(tradeoff_metrics, done, ordered, oracle, cfg["tradeoffs"], cfg.get("evaluation")),
+        "tradeoffs": _safe(
+            tradeoff_metrics,
+            done,
+            ordered,
+            oracle,
+            cfg["tradeoffs"],
+            cfg.get("evaluation"),
+            None,
+            cfg.get("ranking", {}).get("tfidf_credit"),
+        ),
         # nDCG@3 (metrics.planning.pooled_ndcg_at_k) is computed across configs once graded relevance
         # labels exist: its ideal ranking comes from the pooled plans of all configs, not one run.
         # TODO(Ian): handoff, latency p50/p95

@@ -1,8 +1,12 @@
-"""Regression tests for the #74 review (Manas): one test per point, named after it.
+"""Regression coverage for the independent planning oracle and its metrics.
 
 Hand-built worlds from _oracle_world (vehicle T: 1 % SoC = 2.5 km, detour = 2 + 3.9 min per
 off-route km). Every oracle query also runs through TwinOracle, so each case additionally checks
 that the indexed path and the exhaustive reference still agree.
+
+The numbered sections preserve traceability to the original review findings,
+but the filename describes the behavior protected by the tests rather than an
+old pull-request number.
 """
 
 from __future__ import annotations
