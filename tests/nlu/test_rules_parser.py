@@ -53,10 +53,41 @@ def test_connector_mention_without_only_is_not_a_restriction(parser):
 
 
 @pytest.mark.parametrize(
+    "phrase",
+    ["don't use only Tesla chargers", "do not use only CCS chargers", "never use only CHAdeMO"],
+)
+def test_negated_use_only_is_not_a_restriction(parser, phrase):
+    request = parser.parse(f"Phoenix to Flagstaff in my Spark, 65%, {phrase}", "negated").request
+
+    assert request.connectors_override is None
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "ok, I have 50%",
+        "me and my dog",
+        "or somewhere close",
+        "in my Comet",
+        "Washington is not on my way",
+    ],
+)
+def test_words_after_a_comma_are_not_read_as_a_state(tmp_path, tail):
+    store = DataStore(
+        [], [], [], {"phoenix": (33.45, -112.07), "tucson": (32.22, -110.97)}, tmp_path
+    )
+    request = RulesParser(store).parse(f"From Phoenix to Tucson, {tail}", "comma-words").request
+
+    assert request.destination.resolved and request.destination.text == "Tucson"
+
+
+@pytest.mark.parametrize(
     "route",
     [
         "From Tempe, Arizona to Flagstaff, Arizona",
         "From Tempe, AZ to Flagstaff, AZ, in my Comet",
+        "Tempe, Arizona to Flagstaff, Arizona.",
+        "Tempe, AZ to Flagstaff, AZ",
     ],
 )
 def test_parses_city_state_endpoints(tmp_path, route):
