@@ -51,8 +51,9 @@ cached routes) and its own implementation of the documented energy model.
 - **Disagreements** between planner and oracle are reported as findings (`findings.csv`). Items where the search
   stops early are excluded from the oracle-based metrics and listed in `oracle_search.csv`.
 
-> Status: the full oracle and the planning metrics are in PR #74 (`ian/oracle`). On `main` they are still stubs, so
-> feasibility and hard-violation columns show `n/a` until #74 is merged.
+> Status: the full independent oracle and planning metrics are implemented on `main`. Final
+> Config A/B/C reports must be generated from the frozen snapshot and benchmark split; preliminary
+> reports produced before later planner and ranking decisions remain historical evidence only.
 
 ## Metrics
 

@@ -1,8 +1,11 @@
-"""Regression tests for the #75 review (Manas): one test per point, named after it.
+"""Regression coverage for trade-off metrics and sensitivity calculations.
 
 Point 5 (partial fronts) was already fixed in e1efcbc and is covered by
 test_tradeoff_metrics.py::test_pareto_validity_excludes_items_with_an_incomplete_search.
 Point 14 (tests tied to the live config) is fixed by pinning TRADEOFFS in test_tradeoff_metrics.py.
+
+The numbered sections preserve traceability to the original review findings,
+while the filename remains meaningful after that review is closed.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from clickless.config import repo_path
 from clickless.contracts import AmenityCategory, AmenityPreference, Itinerary, PlanResult, TripRequest
 from evaluation.metrics.planning import evaluate, request_from_item
 from evaluation.metrics.tradeoffs import (
+    amenity_credit_score,
     amenity_rule,
     charge_time_sensitivity,
     delta_faithfulness,
@@ -176,6 +180,102 @@ def test_p8_fallback_in_evaluation_config_matches_the_ranker():
                 weights = profile_weights(live, profile)
                 ours = -(plan_cost(it, request, weights, rule=rule) - weights["stop_overhead_min"])
                 assert ours == pytest.approx(ranker), (profile, pref.key)
+
+
+@pytest.mark.parametrize(
+    ("raw_score", "expected_credit_score"),
+    [
+        (0.0, 0.0),
+        (0.10, 0.52),
+        (0.45, 0.52),
+        (0.52, 0.52),
+        (0.80, 0.80),
+    ],
+)
+def test_p8_config_a_credit_floor_matches_documented_policy(
+    raw_score,
+    expected_credit_score,
+):
+    """Evaluation independently reproduces Config A's positive-score floor."""
+
+    config_a = yaml.safe_load(
+        repo_path("configs/config_a.yaml").read_text(encoding="utf-8")
+    )
+    credit_policy = config_a["ranking"]["tfidf_credit"]
+
+    assert amenity_credit_score(
+        raw_score,
+        credit_policy,
+    ) == pytest.approx(expected_credit_score)
+
+
+def test_p8_evaluation_cost_matches_ranker_with_credit_floor():
+    """The independent evaluator and production ranker agree at their boundary."""
+
+    from clickless.ranking.cost import plan_cost as ranker_cost
+
+    config_a = yaml.safe_load(
+        repo_path("configs/config_a.yaml").read_text(encoding="utf-8")
+    )
+    tradeoffs = yaml.safe_load(
+        repo_path("configs/tradeoffs.yaml").read_text(encoding="utf-8")
+    )
+    credit_policy = config_a["ranking"]["tfidf_credit"]
+
+    preference = AmenityPreference(category=AmenityCategory.FOOD)
+    matched_stop = stop("P").model_copy(
+        update={
+            "satisfied_preferences": {
+                preference.key: 0.20,
+            }
+        }
+    )
+    candidate = Itinerary(
+        itinerary_id="floor-check",
+        request_id="floor-check",
+        vehicle_id="t",
+        stops=[matched_stop],
+        legs=[],
+        total_drive_min=0,
+        total_charge_min=0,
+        total_detour_min=0,
+        arrival_soc_pct=20,
+    )
+    request = TripRequest(
+        request_id="floor-check",
+        raw_text="",
+        amenities=[preference],
+        tradeoff_profile="balanced",
+    )
+
+    production_credit = ranker_cost(
+        candidate,
+        request,
+        tradeoffs,
+        amenity_credit_config=credit_policy,
+    ).amenity_credit_min
+
+    weights = profile_weights(tradeoffs, "balanced")
+    evaluation_rule = {
+        **amenity_rule(),
+        "credit_policy": credit_policy,
+    }
+    evaluation_credit = -(
+        plan_cost(
+            candidate,
+            request,
+            weights,
+            rule=evaluation_rule,
+        )
+        - weights["stop_overhead_min"]
+    )
+
+    expected_credit = (
+        weights["amenity_value_min.food"]
+        * credit_policy["floor"]
+    )
+    assert production_credit == pytest.approx(expected_credit)
+    assert evaluation_credit == pytest.approx(expected_credit)
 
 
 # --------------------------------------------------------------------------- 9. parsed preference keys

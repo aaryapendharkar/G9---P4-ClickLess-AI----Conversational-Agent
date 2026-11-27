@@ -178,6 +178,16 @@ def run_metadata(
     env = os.environ if env is None else env
     meta: dict[str, Any] = {"config": cfg["name"], **(commit if commit is not None else git_commit())}
     meta["prompt_version"] = _prompt_version(cfg)
+
+    # Record the effective amenity-credit policy alongside every evaluation.
+    # Config A may define a floor; configurations without this setting retain
+    # the original raw matcher-score behavior.
+    configured_credit_policy = cfg.get("ranking", {}).get(
+        "tfidf_credit",
+        {"policy": "raw"},
+    )
+    meta["tfidf_credit"] = dict(configured_credit_policy)
+
     meta.update(snapshot_info(cfg, env))
     if not _uses_llm(cfg):
         meta.update(model=NA, ollama_version=NA, endpoint_host=NA, model_digest=NA,
@@ -530,7 +540,16 @@ def run(
         "freshness": _safe(freshness_mislabel_rate, ordered, pipe.store),
         "ontology_adequacy": _safe(kg_ontology_adequacy, cfg),  # once per run, Config C only (#158)
         "planning": _safe(planning_metrics, done, ordered, oracle),
-        "tradeoffs": _safe(tradeoff_metrics, done, ordered, oracle, cfg["tradeoffs"], cfg.get("evaluation")),
+        "tradeoffs": _safe(
+            tradeoff_metrics,
+            done,
+            ordered,
+            oracle,
+            cfg["tradeoffs"],
+            cfg.get("evaluation"),
+            None,
+            cfg.get("ranking", {}).get("tfidf_credit"),
+        ),
         # nDCG@3 (metrics.planning.pooled_ndcg_at_k) is computed across configs once graded relevance
         # labels exist: its ideal ranking comes from the pooled plans of all configs, not one run.
         # TODO(Ian): handoff, latency p50/p95

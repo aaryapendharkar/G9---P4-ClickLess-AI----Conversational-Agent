@@ -7,6 +7,7 @@ supported by KG evidence.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from ..contracts import Candidate, Itinerary, PlanCost, TripRequest
@@ -19,9 +20,15 @@ class WeightedRanker:
         self,
         tradeoffs_cfg: dict[str, Any],
         use_evidence: bool = False,
+        amenity_credit_config: Mapping[str, Any] | None = None,
     ) -> None:
         self.cfg = tradeoffs_cfg
         self.use_evidence = use_evidence
+        self.amenity_credit_config = (
+            dict(amenity_credit_config)
+            if amenity_credit_config is not None
+            else None
+        )
 
     def rank(
         self,
@@ -98,6 +105,7 @@ class WeightedRanker:
                         0.0,
                     ),
                     evidence_credit_min=evidence_credit_weight,
+                    amenity_credit_config=self.amenity_credit_config,
                 ),
             )
             for itinerary in itineraries

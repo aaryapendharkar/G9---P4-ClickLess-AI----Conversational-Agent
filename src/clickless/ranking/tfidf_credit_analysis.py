@@ -1,8 +1,12 @@
-"""Compare possible ways of turning TF-IDF matches into amenity credit.
+"""Compare ways of turning TF-IDF matches into amenity credit.
 
-This module is an analysis tool, not part of the live ranking pipeline.
-Config A continues to use the raw TF-IDF scores in ranking/cost.py until
-the team records and approves a policy decision.
+This DEV-only analysis compares Config A's configured category-gated floor
+with the raw, gated-full and per-request-normalized alternatives. The floor
+transformation reuses the production helper from ranking/cost.py, so the
+analysis and live ranking cannot implement different versions of the policy.
+
+The analysis never loads the held-out TEST split and does not mutate requests,
+itineraries or production configuration.
 
 Owner: Hriday.
 Reviewers for the policy decision: Manas and Ian.
@@ -25,16 +29,23 @@ from ..contracts import (
 )
 from .cost import (
     amenity_value_for_preference,
+    apply_amenity_credit_policy,
     best_match_per_preference,
     plan_cost,
     resolve_profile,
 )
 
-CreditPolicy = Literal["raw", "gated_full", "normalized"]
+CreditPolicy = Literal[
+    "raw",
+    "floor",
+    "gated_full",
+    "normalized",
+]
 PhraseSource = Literal["parsed", "category_fallback"]
 
 CREDIT_POLICIES: tuple[CreditPolicy, ...] = (
     "raw",
+    "floor",
     "gated_full",
     "normalized",
 )
@@ -278,14 +289,16 @@ def _score_group_summary(
 def apply_credit_policy(
     raw_scores_by_itinerary: Mapping[str, Mapping[str, float]],
     policy: CreditPolicy,
+    floor_policy_config: Mapping[str, Any] | None = None,
 ) -> dict[str, dict[str, float]]:
     """Return independent score copies transformed by one credit policy.
 
     The outer key is an itinerary ID. The inner key is a requested amenity
     key such as ``food`` or ``restroom_wheelchair``.
 
-    Keeping this transformation pure means the experiment cannot accidentally
-    modify an itinerary or affect the normal Config A planner.
+    The ``floor`` experiment deliberately calls the production transformation
+    helper. This prevents the DEV analysis from silently drifting away from
+    the policy used by Config A.
     """
 
     copied_scores = {
@@ -295,6 +308,25 @@ def apply_credit_policy(
 
     if policy == "raw":
         return copied_scores
+
+    if policy == "floor":
+        if floor_policy_config is None:
+            raise ValueError(
+                "floor comparison requires Config A's TF-IDF credit configuration"
+            )
+
+        if floor_policy_config.get("policy") != "floor":
+            raise ValueError(
+                "floor comparison requires a policy configuration named 'floor'"
+            )
+
+        return {
+            itinerary_id: apply_amenity_credit_policy(
+                preference_scores,
+                floor_policy_config,
+            )
+            for itinerary_id, preference_scores in copied_scores.items()
+        }
 
     if policy == "gated_full":
         return {
@@ -308,8 +340,6 @@ def apply_credit_policy(
     if policy == "normalized":
         return _normalize_scores_within_request(copied_scores)
 
-    # This protects future callers even though the CreditPolicy type already
-    # helps editors and type checkers detect unsupported values.
     raise ValueError(f"unknown TF-IDF credit policy: {policy}")
 
 
@@ -358,6 +388,7 @@ def compare_policy_costs(
     itineraries: Sequence[Itinerary],
     request: TripRequest,
     tradeoffs_cfg: dict[str, Any],
+    floor_policy_config: Mapping[str, Any],
 ) -> dict[CreditPolicy, list[PolicyItineraryCost]]:
     """Calculate how each policy would rank the same candidate itineraries.
 
@@ -394,6 +425,7 @@ def compare_policy_costs(
         policy_scores_by_itinerary = apply_credit_policy(
             raw_scores_by_itinerary,
             policy,
+            floor_policy_config=floor_policy_config,
         )
         policy_costs: list[PolicyItineraryCost] = []
 

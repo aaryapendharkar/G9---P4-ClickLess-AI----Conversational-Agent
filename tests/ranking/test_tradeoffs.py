@@ -1,8 +1,185 @@
 import pytest
 
-from clickless.contracts import Itinerary, PlanCost, TripRequest
-from clickless.ranking.cost import plan_cost, resolve_profile
+from clickless.contracts import (
+    AmenityCategory,
+    AmenityPreference,
+    ChargingStop,
+    Connector,
+    Itinerary,
+    PlanCost,
+    TripRequest,
+)
+from clickless.ranking.cost import (
+    apply_amenity_credit_policy,
+    plan_cost,
+    resolve_profile,
+)
 from clickless.ranking.tradeoffs import TradeoffSelector, dominates
+
+
+def test_floor_policy_only_raises_positive_scores():
+    """The floor helps weak matches without creating matches from zero."""
+
+    adjusted_scores = apply_amenity_credit_policy(
+        {
+            "food": 0.036,
+            "coffee": 0.70,
+            "restroom": 0.0,
+        },
+        {
+            "policy": "floor",
+            "floor": 0.52,
+        },
+    )
+
+    assert adjusted_scores == {
+        "food": pytest.approx(0.52),
+        "coffee": pytest.approx(0.70),
+        "restroom": 0.0,
+    }
+
+
+def test_raw_policy_preserves_matcher_scores():
+    """Configs without a floor keep their original matcher score scale."""
+
+    raw_scores = {
+        "food": 0.036,
+        "coffee": 0.70,
+        "restroom": 0.0,
+    }
+
+    assert apply_amenity_credit_policy(raw_scores) == raw_scores
+    assert (
+        apply_amenity_credit_policy(
+            raw_scores,
+            {"policy": "raw"},
+        )
+        == raw_scores
+    )
+
+
+@pytest.mark.parametrize(
+    "policy_config",
+    [
+        {"policy": "floor"},
+        {"policy": "floor", "floor": -0.01},
+        {"policy": "floor", "floor": 1.01},
+        {"policy": "floor", "floor": "not-a-number"},
+    ],
+)
+def test_floor_policy_rejects_invalid_configuration(policy_config):
+    """Invalid configuration must fail instead of silently changing ranking."""
+
+    with pytest.raises(ValueError, match="floor"):
+        apply_amenity_credit_policy(
+            {"food": 0.10},
+            policy_config,
+        )
+
+
+def test_amenity_credit_policy_rejects_unknown_policy():
+    """A misspelled policy name must not fall back to raw behavior."""
+
+    with pytest.raises(ValueError, match="unknown amenity-credit policy"):
+        apply_amenity_credit_policy(
+            {"food": 0.10},
+            {"policy": "full"},
+        )
+
+
+def test_plan_cost_uses_floor_for_credit_and_satisfaction(
+    pipe_a,
+    demo_text,
+    cfg_a,
+):
+    """The transformed score must affect both cost and the future model feature."""
+
+    request, itineraries = _plans(
+        pipe_a,
+        demo_text,
+    )
+    itinerary = itineraries[0]
+
+    raw_cost = plan_cost(
+        itinerary,
+        request,
+        cfg_a["tradeoffs"],
+    )
+    floor_cost = plan_cost(
+        itinerary,
+        request,
+        cfg_a["tradeoffs"],
+        amenity_credit_config=cfg_a["ranking"]["tfidf_credit"],
+    )
+
+    assert floor_cost.amenity_credit_min >= raw_cost.amenity_credit_min
+    assert floor_cost.amenity_satisfaction >= raw_cost.amenity_satisfaction
+
+
+def test_selector_uses_credit_policy_for_preference_gains(
+    cfg_a,
+):
+    """A floored match shown as better must also name the gained preference."""
+
+    request = TripRequest(
+        request_id="floor-selector-gains",
+        raw_text="Lunch would be nice",
+        amenities=[
+            AmenityPreference(
+                category=AmenityCategory.FOOD,
+                phrase="lunch",
+            )
+        ],
+    )
+    recommended = _test_itinerary(
+        "recommended",
+        total_time_min=100.0,
+        detour_min=0.0,
+        charge_min=0.0,
+    )
+    weak_food_match = _test_itinerary(
+        "weak-food-match",
+        total_time_min=103.0,
+        detour_min=3.0,
+        charge_min=0.0,
+    ).model_copy(
+        update={
+            "stops": [
+                ChargingStop(
+                    station_id="food-stop",
+                    station_name="Food stop",
+                    connector=Connector.CCS1,
+                    port_power_kw=50.0,
+                    along_route_km=50.0,
+                    detour_min=3.0,
+                    arrive_soc_pct=50.0,
+                    depart_soc_pct=50.0,
+                    charge_min_est=0.0,
+                    satisfied_preferences={"food": 0.07},
+                )
+            ]
+        }
+    )
+    selector = TradeoffSelector(
+        cfg_a["tradeoffs"],
+        amenity_credit_config=cfg_a["ranking"]["tfidf_credit"],
+    )
+
+    alternatives = selector.select(
+        [
+            (recommended, _test_cost(100.0, amenity_satisfaction=0.0)),
+            (weak_food_match, _test_cost(95.0, amenity_satisfaction=0.52)),
+        ],
+        request,
+    )
+    best_amenities = next(
+        alternative
+        for alternative in alternatives
+        if alternative.label == "Best amenities"
+    )
+
+    assert best_amenities.gains == ["food"]
+    assert best_amenities.losses == []
 
 
 def _test_itinerary(

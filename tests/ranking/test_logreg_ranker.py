@@ -2,11 +2,15 @@
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from clickless.config import load_config
 from clickless.contracts import Itinerary, TripRequest
+from clickless.pipeline import build_pipeline
 from clickless.ranking.cost import plan_cost
 from clickless.ranking.logreg_ranker import LogRegRanker, extract_feature_values
+from clickless.ranking.weighted_ranker import WeightedRanker
 
 
 def _itinerary(
@@ -37,6 +41,13 @@ def _request() -> TripRequest:
         request_id="logreg-test",
         raw_text="logistic regression ranker test",
     )
+
+
+class _AlwaysGoodModel:
+    """Small prediction stand-in for exercising the trained-model path."""
+
+    def predict_proba(self, feature_rows):
+        return np.array([[0.1, 0.9] for _feature_row in feature_rows])
 
 
 def test_feature_vector_follows_documented_order(cfg_a):
@@ -85,6 +96,177 @@ def test_missing_model_uses_weighted_fallback(cfg_a, tmp_path: Path):
         "faster",
         "slower",
     ]
+
+
+def test_pipeline_wires_floor_policy_into_every_config_a_ranker(
+    pipe_a,
+    cfg_a,
+    store,
+):
+    """Every Config A ranking path must use the same TF-IDF credit policy."""
+
+    expected_credit_policy = cfg_a["ranking"]["tfidf_credit"]
+
+    # Config A normally uses logistic-regression ranking.
+    assert isinstance(pipe_a.ranker, LogRegRanker)
+    assert pipe_a.ranker.amenity_credit_config == expected_credit_policy
+
+    # Verify the plain weighted-ranker path separately. This path may be used
+    # directly even though logistic regression is Config A's normal setting.
+    weighted_config_a = load_config("A")
+    weighted_config_a["components"]["ranker"] = "weighted"
+
+    weighted_pipe_a = build_pipeline(
+        weighted_config_a,
+        store,
+    )
+
+    assert isinstance(weighted_pipe_a.ranker, WeightedRanker)
+    assert weighted_pipe_a.ranker.amenity_credit_config == expected_credit_policy
+
+    # The evidence-aware weighted ranker must use the same amenity-credit scale.
+    evidence_weighted_config_a = load_config("A")
+    evidence_weighted_config_a["components"]["ranker"] = "weighted+evidence"
+
+    evidence_weighted_pipe_a = build_pipeline(
+        evidence_weighted_config_a,
+        store,
+    )
+
+    assert isinstance(evidence_weighted_pipe_a.ranker, WeightedRanker)
+    assert (
+        evidence_weighted_pipe_a.ranker.amenity_credit_config
+        == expected_credit_policy
+    )
+    assert evidence_weighted_pipe_a.ranker.use_evidence is True
+
+    # Config B does not define the Config A TF-IDF floor. Passing None keeps
+    # its existing raw Sentence-BERT scoring behavior unchanged.
+    config_b = load_config("B")
+
+    # Sentence-BERT is unrelated to this wiring check and may not be installed
+    # in a minimal test environment, so use the deterministic fixture matcher.
+    config_b["components"]["matcher"] = "tfidf"
+
+    pipe_b = build_pipeline(
+        config_b,
+        store,
+    )
+
+    assert isinstance(pipe_b.ranker, WeightedRanker)
+    assert pipe_b.ranker.amenity_credit_config is None
+
+
+def test_pipeline_rejects_tfidf_policy_with_non_tfidf_matcher(store):
+    """A matcher-specific calibration must not leak into SBERT configs."""
+
+    incompatible_config = load_config("A")
+    incompatible_config["components"]["matcher"] = "sbert"
+
+    with pytest.raises(
+        ValueError,
+        match="TF-IDF matcher",
+    ):
+        build_pipeline(
+            incompatible_config,
+            store,
+        )
+
+
+def test_pipeline_rejects_invalid_credit_policy_at_startup(store):
+    """Configuration errors must fail before the first request is planned."""
+
+    invalid_config = load_config("A")
+    invalid_config["ranking"]["tfidf_credit"] = {
+        "policy": "floor",
+        "floor": 1.5,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="floor",
+    ):
+        build_pipeline(
+            invalid_config,
+            store,
+        )
+
+
+def test_missing_model_fallback_uses_floor_policy(
+    pipe_a,
+    cfg_a,
+    demo_text,
+    tmp_path,
+):
+    """The current weighted fallback must use Config A's configured floor."""
+
+    source_result = pipe_a.run(
+        demo_text,
+        request_id="floor-fallback-source",
+    )
+    itinerary = source_result.alternatives[0].itinerary
+    request = source_result.request
+
+    ranker = LogRegRanker(
+        cfg_a["tradeoffs"],
+        model_path=tmp_path / "missing.joblib",
+        amenity_credit_config=cfg_a["ranking"]["tfidf_credit"],
+    )
+
+    ranked = ranker.rank(
+        [itinerary],
+        request,
+    )
+    returned_cost = ranked[0][1]
+
+    expected_cost = plan_cost(
+        itinerary,
+        request,
+        cfg_a["tradeoffs"],
+        amenity_credit_config=cfg_a["ranking"]["tfidf_credit"],
+    )
+
+    assert ranker.fallback_used
+    assert returned_cost == expected_cost
+
+
+def test_trained_model_path_uses_floor_policy(
+    pipe_a,
+    cfg_a,
+    demo_text,
+    tmp_path,
+):
+    """A future trained model must use the same score scale as its fallback."""
+
+    source_result = pipe_a.run(
+        demo_text,
+        request_id="floor-trained-source",
+    )
+    itinerary = source_result.alternatives[0].itinerary
+    request = source_result.request
+
+    ranker = LogRegRanker(
+        cfg_a["tradeoffs"],
+        model_path=tmp_path / "missing.joblib",
+        amenity_credit_config=cfg_a["ranking"]["tfidf_credit"],
+    )
+    ranker.model = _AlwaysGoodModel()
+
+    ranked = ranker.rank(
+        [itinerary],
+        request,
+    )
+    returned_cost = ranked[0][1]
+
+    expected_cost = plan_cost(
+        itinerary,
+        request,
+        cfg_a["tradeoffs"],
+        amenity_credit_config=cfg_a["ranking"]["tfidf_credit"],
+    )
+
+    assert not ranker.fallback_used
+    assert returned_cost == expected_cost
 
 
 def test_fit_saves_model_that_new_ranker_can_load(cfg_a, tmp_path: Path):

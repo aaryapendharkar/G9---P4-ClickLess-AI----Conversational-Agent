@@ -2,34 +2,34 @@
 
 ## Online pipeline (proposal Fig. 1) → code
 
-```
-text ─► RequestParser ─► ParseResult ──missing?──► reject (A,B) / Clarifier (C)
-          nlu/                │ TripRequest
-                              ▼
-                  Router.route (planning/routing) ─► Route
-                              ▼
-         CandidateRetriever (retrieval/corridor) ─► [Candidate]  (+ nearby amenities ≤ 400 m)
-                              ▼
-         PreferenceMatcher.score (tfidf | sbert)  ─► Candidate.amenities[].match_scores
-         Router.detour_min                        ─► Candidate.detour_min_est
-         KGEnricher (C only)                      ─► Candidate.evidence
-                              ▼
-         HardConstraintFilter (planning/filters)  ─► kept + rejected(reason)
-                              ▼
-         Planner (planning/planner)               ─► [Itinerary]
-                              ▼
-         Verifier (planning/verifier)  — rechecks every itinerary from scratch
-                              ▼            (none feasible → MinCostRelaxer)
-         Ranker (ranking/*_ranker)                ─► [(Itinerary, PlanCost)]
-                              ▼
-         TradeoffSelector (ranking/tradeoffs)     ─► [Alternative] (Recommended + Pareto alts)
-                              ▼
-         ResultEvidenceSelector (planning/result_evidence)
-                                                    ─► PlanResult.evidence (C only)
-                              ▼
-         Explainer (explain/templates | grounded) ─► text + claims
-                              ▼
-   user approves ─► Pipeline.approve ─► GoogleMapsHandoff ─► URL(s)  (+ audit log)
+```mermaid
+flowchart TD
+    request["Natural-language request"] --> parser["RequestParser<br/><code>nlu/</code>"]
+    parser --> parsed["ParseResult + TripRequest"]
+    parsed --> complete{"Safety-critical fields complete?"}
+
+    complete -- "No: Config A/B" --> reject["Reject incomplete request"]
+    complete -- "No: Config C" --> clarify["Clarifier asks one focused question"]
+    clarify --> parsed
+
+    complete -- Yes --> route["Router.route<br/><code>planning/routing.py</code>"]
+    route --> candidates["CandidateRetriever<br/>route-corridor stations + nearby amenities"]
+    candidates --> matching["PreferenceMatcher.score<br/>TF-IDF in A; SBERT in B/C"]
+    matching --> enrichment["Detour measurement<br/>+ KG evidence in Config C"]
+    enrichment --> constraints["HardConstraintFilter<br/>kept candidates + rejection reasons"]
+    constraints --> planner["Planner<br/>candidate stop sequences → itineraries"]
+    planner --> verifier["Independent Verifier<br/>rechecks route, energy, ports and constraints"]
+    verifier --> feasible{"Any verified itinerary?"}
+
+    feasible -- No --> relaxer["MinCostRelaxer<br/>proposes the least-cost consent-based relaxation"]
+    relaxer --> candidates
+    feasible -- Yes --> ranker["Ranker<br/>Itinerary + PlanCost"]
+    ranker --> alternatives["TradeoffSelector<br/>Recommended + up to two Pareto alternatives"]
+    alternatives --> evidence["ResultEvidenceSelector<br/>displayed KG facts only in Config C"]
+    evidence --> explainer["Template or grounded explainer<br/>text + traceable claims"]
+    explainer --> approval{"Driver approves an option?"}
+    approval -- No --> alternatives
+    approval -- Yes --> handoff["Pipeline.approve → GoogleMapsHandoff<br/>URL segments + audit log"]
 ```
 
 Orchestration: `src/clickless/pipeline.py`. Configs choose implementations:
@@ -67,31 +67,31 @@ subclass/subproperty axioms, and the stored graph holds no `prov:` triples (ADR 
 5. All randomness seeded; LLM temperature 0; prompts versioned; data frozen by hash; embedding
    models pinned by commit.
 
-## Implementation status (walking skeleton, Nov 1)
+## Implementation status (Nov 26)
 
 | Component | Status |
 |---|---|
 | contracts, configs, fixtures, DataStore, geo utils | done (contracts v0.5) |
-| rules parser, template clarifier, priority phrases | placeholder (fixture phrasings) |
-| corridor retrieval | placeholder (brute force) |
-| TF-IDF matcher (A) | implemented: deterministic cosine similarity over the shared amenity documents; fits the datastore vocabulary lazily once, reuses sparse document/query vectors, and returns 0 before fitting for another category (ADR 0013, issue #156) |
+| rules parser, multi-turn clarifier, priority phrases | implemented; Config A rejects incomplete requests while Config C keeps request-scoped clarification state (ADR 0014) |
+| corridor retrieval | implemented: route-distributed, usable candidates with bounded per-stretch selection (ADR 0018) |
+| TF-IDF matcher (A) | implemented: deterministic cosine similarity over shared amenity documents; fits the datastore vocabulary lazily once, reuses sparse document/query vectors, and returns 0 outside the requested category (ADR 0013, issue #156) |
 | SBERT matcher (B, C) | Sentence-BERT cosine on the shared amenity documents (`retrieval/documents.py`); model pinned by commit in `configs/retrieval.yaml`, CPU, embeddings cached in `data/cache/sbert/`; other categories score 0 (category gate, ADR 0013) |
-| cached router + detour | placeholder (straight-line detour) |
+| cached router + detour | implemented: frozen route-cache lookup with measured route geometry; deterministic geometry remains the documented fallback where allowed |
 | runtime OSRM routing | strict client, local cache, waypoint routing, verifier measurement, and temporary-failure fallback with user-visible estimate warnings implemented |
 | energy model, charging-time estimate | v0 implemented |
 | filters | v1: native connectors at any level + documented adapters at DC fast ports; a stated connector override only narrows (ADR 0012) |
 | planner | v4 forward label-setting search with Pareto pruning, separate +15% consumption robustness, and comfort meal-stop top-ups to the pre-taper threshold |
 | verifier | v3 independently replays SoC and validates station, connector, power, continuity, route-distance and detour claims; generated boundary tests cover tolerances and charge limits |
 | weighted cost, trade-off selector | v1: B uses minutes-equivalent weighted cost; C additionally credits exact KG support for displayed station, selected-port and amenity facts (maximum configured in `tradeoffs.yaml`) |
-| logreg ranker | standardized training, validation, save/load, probability ranking, and missing-model fallback implemented; final model awaits labeled DEV plans |
+| logreg ranker | standardized training, validation, save/load, probability ranking, and missing-model fallback implemented. Config A applies its documented positive-score amenity-credit floor before ranking; zero matches remain zero (ADR 0020). Final model awaits labeled DEV plans |
 | template explainer, trade-off presenter | template explanation v0; natural, contract-grounded comparisons and KG-backed claims implemented |
 | Maps URL + approval gate | segmentation done (3 waypoints per URL, ADR 0010) |
-| harness | runs; most metrics stubbed |
+| harness | implemented: frozen split execution, independent planning oracle, request-understanding, grounding, ontology and trade-off metrics; final reports are still in progress |
 | minimum-cost relaxation | integrated: penalty-ordered requests reuse the normal retrieve, filter, plan, verify, rank, and select path; changes require driver consent |
 | curated vehicle loader | done: 15 vehicles, strict validation, per-field provenance (ADR 0009) |
 | AFDC stations, OSM amenities, benchmark geocodes, snapshot build + manifest | done (ADR 0010, 0011); real snapshot built locally with `make snapshot-build` |
 | KG build + enrichment (C) | ontology v0.4: final namespace and PROV-O alignment (ADR 0019). Runtime rdflib graphs contain only the current route's corridor candidates and amenities; full graphs remain available for offline competency queries. The pipeline copies facts for displayed normal or relaxed alternatives into `PlanResult.evidence` (ADR 0015, issue #115) |
-| LLM parser, grounded explainer, evaluation splits/reporting | implemented; oracle and remaining statistics are still in progress |
+| LLM parser, grounded explainer, evaluation splits/reporting | implemented; final Config A/B/C runs and report synthesis are still in progress |
 
 Planner label/frontier primitives live in `planning/label_search.py`. Planning
 tests are grouped by energy and charging, filtering, search, and verification

@@ -1,4 +1,4 @@
-# Annotation guide (draft v0.1 — owner: Ian; must match `src/evaluation/schema.py`)
+# Annotation guide (frozen benchmark — owner: Ian; must match `src/evaluation/schema.py`)
 
 ## One item = one line of JSON
 ```json
@@ -42,8 +42,8 @@
    `priority: "important"` only for explicit needs ("must", "need").
    "Accessible restroom" and "wheelchair-accessible restroom" are treated the same: set
    `wheelchair_required: true`. Only set it when the driver mentions accessibility.
-   Keep both fields on the amenity; do not move them into `hard_constraints`. Per proposed ADR
-   0003 Option A, planning will treat the combination of `wheelchair_required: true` and
+   Keep both fields on the amenity; do not move them into `hard_constraints`. Per accepted ADR
+   0003 question 3, planning treats the combination of `wheelchair_required: true` and
    `priority: "important"` as a hard requirement, subject to explicit consent before relaxation.
 6. Trade-off phrasing (any category, wherever the driver states it): add `"tradeoff_profile"`
    to `gold_request` — `fastest` ("in a hurry"), `comfort` ("no rush if there's good food"),

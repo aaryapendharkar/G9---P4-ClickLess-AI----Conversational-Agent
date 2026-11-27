@@ -13,6 +13,7 @@ Owner: Hriday.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -57,9 +58,13 @@ class LogRegRanker:
         self,
         tradeoffs_cfg: dict[str, Any],
         model_path: str | Path = DEFAULT_MODEL_PATH,
+        amenity_credit_config: Mapping[str, Any] | None = None,
     ) -> None:
         self.tradeoffs_config = tradeoffs_cfg
         self.model_path = Path(model_path)
+        self.amenity_credit_config = (
+            dict(amenity_credit_config) if amenity_credit_config is not None else None
+        )
         self.model: SklearnPipeline | None = None
         self.fallback_used = False
 
@@ -138,7 +143,10 @@ class LogRegRanker:
 
         if self.model is None:
             self.fallback_used = True
-            return WeightedRanker(self.tradeoffs_config).rank(
+            return WeightedRanker(
+                self.tradeoffs_config,
+                amenity_credit_config=self.amenity_credit_config,
+            ).rank(
                 itineraries,
                 request,
             )
@@ -155,6 +163,7 @@ class LogRegRanker:
                     itinerary,
                     request,
                     self.tradeoffs_config,
+                    amenity_credit_config=self.amenity_credit_config,
                 ),
             )
             for itinerary in itineraries
