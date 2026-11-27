@@ -12,7 +12,10 @@ from clickless.contracts import (
     Place,
     TripRequest,
 )
-from clickless.ranking.cost import plan_cost
+from clickless.ranking.cost import (
+    apply_amenity_credit_policy,
+    plan_cost,
+)
 from clickless.ranking.tfidf_credit_analysis import (
     CREDIT_POLICIES,
     apply_credit_policy,
@@ -278,6 +281,54 @@ def test_raw_policy_preserves_original_scores_without_mutating_input():
     assert original_scores["amenity-plan"]["food"] == pytest.approx(0.04)
 
 
+def test_floor_policy_reuses_production_score_transformation():
+    """The experiment and live Config A policy must produce identical scores."""
+
+    raw_scores = {
+        "fast-plan": {
+            "food": 0.02,
+            "coffee": 0.70,
+            "restroom": 0.0,
+        },
+        "amenity-plan": {
+            "food": 0.10,
+            "coffee": 0.80,
+            "restroom": 0.0,
+        },
+    }
+    floor_config = {
+        "policy": "floor",
+        "floor": 0.45,
+    }
+
+    transformed_scores = apply_credit_policy(
+        raw_scores,
+        "floor",
+        floor_policy_config=floor_config,
+    )
+
+    for itinerary_id, preference_scores in raw_scores.items():
+        assert transformed_scores[itinerary_id] == (
+            apply_amenity_credit_policy(
+                preference_scores,
+                floor_config,
+            )
+        )
+
+
+def test_floor_policy_requires_explicit_production_configuration():
+    """The analysis must not hide another hard-coded floor value."""
+
+    with pytest.raises(
+        ValueError,
+        match="requires Config A",
+    ):
+        apply_credit_policy(
+            {"plan": {"food": 0.10}},
+            "floor",
+        )
+
+
 def test_gated_full_policy_grants_full_credit_only_to_positive_matches():
     """A category-gated positive match becomes one; no match remains zero."""
 
@@ -354,6 +405,7 @@ def test_policy_comparison_preserves_current_raw_cost(pipe_a, demo_text, cfg_a):
         itineraries,
         request,
         cfg_a["tradeoffs"],
+        floor_policy_config=cfg_a["ranking"]["tfidf_credit"],
     )
 
     raw_results_by_itinerary = {
@@ -397,6 +449,7 @@ def test_raw_policy_order_matches_weighted_ranker(
         itineraries,
         request,
         cfg_a["tradeoffs"],
+        floor_policy_config=cfg_a["ranking"]["tfidf_credit"],
     )
 
     weighted_ranker = WeightedRanker(
@@ -436,6 +489,7 @@ def test_policy_comparison_reports_policy_independent_trip_facts(
         itineraries,
         request,
         cfg_a["tradeoffs"],
+        floor_policy_config=cfg_a["ranking"]["tfidf_credit"],
     )
 
     for itinerary in itineraries:
@@ -498,6 +552,20 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
                         "extra_time_vs_fastest_min": 0.0,
                         "amenity_credit_min": 1.0,
                         "amenity_satisfaction": 0.1,
+                    }
+                },
+                "floor": {
+                    "recommended": {
+                        "itinerary_id": "food-stop",
+                        "stop_count": 1,
+                        "matched_preference_keys": ["food"],
+                        "drive_min": 52.0,
+                        "charge_min": 4.0,
+                        "detour_min": 2.0,
+                        "total_time_min": 56.0,
+                        "extra_time_vs_fastest_min": 6.0,
+                        "amenity_credit_min": 6.75,
+                        "amenity_satisfaction": 0.45,
                     }
                 },
                 "gated_full": {
@@ -570,6 +638,10 @@ def test_dev_summary_reports_recommendation_changes_and_unplanned_items():
     assert summary["category_fallback_item_ids"] == ["planned-change"]
 
     gated_summary = summary["policy_results"]["gated_full"]
+    floor_summary = summary["policy_results"]["floor"]
+
+    assert floor_summary["recommendations_changed_from_raw"] == 1
+    assert floor_summary["changed_item_ids"] == ["planned-change"]
 
     assert gated_summary["recommendations_changed_from_raw"] == 1
     assert gated_summary["changed_item_ids"] == ["planned-change"]

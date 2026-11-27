@@ -1,7 +1,7 @@
 """Compare TF-IDF amenity-credit policies on the frozen DEV split.
 
 This script is evidence for issue #166. It deliberately has no option for
-loading TEST, and it does not alter the live Config A ranking behavior.
+loading TEST, and it does not alter Config A configuration or ranking behavior.
 
 Run with snapshot data in PowerShell:
 
@@ -70,6 +70,7 @@ def _analyze_item(
     pipeline: Any,
     item: BenchmarkItem,
     tradeoffs_cfg: dict[str, Any],
+    floor_policy_config: dict[str, Any],
 ) -> dict[str, Any]:
     """Return one benchmark item's comparable policy outcomes."""
 
@@ -102,6 +103,7 @@ def _analyze_item(
         itineraries,
         request,
         tradeoffs_cfg,
+        floor_policy_config=floor_policy_config,
     )
 
     return {
@@ -150,6 +152,7 @@ def run_analysis(
                     pipeline,
                     item,
                     config["tradeoffs"],
+                    config["ranking"]["tfidf_credit"],
                 )
             )
         except Exception as error:  # noqa: BLE001 - preserve per-item failures
@@ -173,6 +176,9 @@ def run_analysis(
         "split": "dev",
         "items_path": DEV_ITEMS_PATH,
         "limit": limit,
+        "tfidf_credit_config": dict(
+            config["ranking"]["tfidf_credit"]
+        ),
         "run_metadata": {
             **git_commit(),
             **snapshot_info(config),

@@ -10,6 +10,13 @@ components:
   incomplete_request: reject # reject | clarify
   explainer: template        # template | grounded_llm
   provenance_labels: false
+ranking:
+  # TF-IDF often gives generic in-category phrases such as "lunch" a very
+  # small positive score. The floor keeps zero matches at zero while putting
+  # genuine category-gated matches on a scale comparable with Configs B/C.
+  tfidf_credit:
+    policy: floor
+    floor: 0.45
 data:
   source: fixtures           # fixtures | snapshot
   fixtures_dir: data/fixtures

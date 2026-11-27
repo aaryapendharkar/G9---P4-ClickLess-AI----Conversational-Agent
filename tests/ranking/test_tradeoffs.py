@@ -1,8 +1,111 @@
 import pytest
 
 from clickless.contracts import Itinerary, PlanCost, TripRequest
-from clickless.ranking.cost import plan_cost, resolve_profile
+from clickless.ranking.cost import (
+    apply_amenity_credit_policy,
+    plan_cost,
+    resolve_profile,
+)
 from clickless.ranking.tradeoffs import TradeoffSelector, dominates
+
+
+def test_floor_policy_only_raises_positive_scores():
+    """The floor helps weak matches without creating matches from zero."""
+
+    adjusted_scores = apply_amenity_credit_policy(
+        {
+            "food": 0.036,
+            "coffee": 0.70,
+            "restroom": 0.0,
+        },
+        {
+            "policy": "floor",
+            "floor": 0.45,
+        },
+    )
+
+    assert adjusted_scores == {
+        "food": pytest.approx(0.45),
+        "coffee": pytest.approx(0.70),
+        "restroom": 0.0,
+    }
+
+
+def test_raw_policy_preserves_matcher_scores():
+    """Configs without a floor keep their original matcher score scale."""
+
+    raw_scores = {
+        "food": 0.036,
+        "coffee": 0.70,
+        "restroom": 0.0,
+    }
+
+    assert apply_amenity_credit_policy(raw_scores) == raw_scores
+    assert (
+        apply_amenity_credit_policy(
+            raw_scores,
+            {"policy": "raw"},
+        )
+        == raw_scores
+    )
+
+
+@pytest.mark.parametrize(
+    "policy_config",
+    [
+        {"policy": "floor"},
+        {"policy": "floor", "floor": -0.01},
+        {"policy": "floor", "floor": 1.01},
+        {"policy": "floor", "floor": "not-a-number"},
+    ],
+)
+def test_floor_policy_rejects_invalid_configuration(policy_config):
+    """Invalid configuration must fail instead of silently changing ranking."""
+
+    with pytest.raises(ValueError, match="floor"):
+        apply_amenity_credit_policy(
+            {"food": 0.10},
+            policy_config,
+        )
+
+
+def test_amenity_credit_policy_rejects_unknown_policy():
+    """A misspelled policy name must not fall back to raw behavior."""
+
+    with pytest.raises(ValueError, match="unknown amenity-credit policy"):
+        apply_amenity_credit_policy(
+            {"food": 0.10},
+            {"policy": "full"},
+        )
+
+
+def test_plan_cost_uses_floor_for_credit_and_satisfaction(
+    pipe_a,
+    demo_text,
+    cfg_a,
+):
+    """The transformed score must affect both cost and the future model feature."""
+
+    request, itineraries = _plans(
+        pipe_a,
+        demo_text,
+    )
+    itinerary = itineraries[0]
+
+    raw_cost = plan_cost(
+        itinerary,
+        request,
+        cfg_a["tradeoffs"],
+    )
+    floor_cost = plan_cost(
+        itinerary,
+        request,
+        cfg_a["tradeoffs"],
+        amenity_credit_config=cfg_a["ranking"]["tfidf_credit"],
+    )
+
+    assert floor_cost.amenity_credit_min >= raw_cost.amenity_credit_min
+    assert floor_cost.amenity_satisfaction >= raw_cost.amenity_satisfaction
 
 
 def _test_itinerary(

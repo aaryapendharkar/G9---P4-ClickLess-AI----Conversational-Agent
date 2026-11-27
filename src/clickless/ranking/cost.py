@@ -2,10 +2,12 @@
 
     cost = w_drive*drive_min + w_charge*charge_min + detour_extra_weight*detour_min
            + stop_overhead_min*stops
-           - sum_{requested prefs p} amenity_value_min[p] * best_match(p)
+           - sum_{requested prefs p} amenity_value_min[p] * credit_score(best_match(p))
            - evidence_credit_min * evidence_coverage
 
-Each requested preference is credited once per trip (at its best stop). All weights come from
+Each requested preference is credited once per trip, using its best stop. An optional
+configuration-specific policy may transform that best score before it becomes minute credit.
+Without a policy, the raw matcher score is preserved. All weights come from
 configs/tradeoffs.yaml (tuned on DEV only, frozen before test). Every term is kept in PlanCost so
 the explanation can show the breakdown and the trade-off deltas without any re-computation.
 """
@@ -65,38 +67,112 @@ def amenity_value_for_preference(
     )
 
 
+def apply_amenity_credit_policy(
+    raw_scores: Mapping[str, float],
+    policy_config: Mapping[str, Any] | None = None,
+) -> dict[str, float]:
+    """Transform matcher scores before converting them into minute credit.
+
+    A missing configuration, or an explicit ``raw`` policy, preserves the
+    matcher scores. Config A's ``floor`` policy raises only positive,
+    category-gated TF-IDF scores to the configured minimum. A zero score stays
+    zero, so an unrelated or missing amenity never earns credit.
+    """
+
+    copied_scores = dict(raw_scores)
+
+    if policy_config is None:
+        return copied_scores
+
+    policy_name = policy_config.get("policy", "raw")
+
+    if policy_name == "raw":
+        return copied_scores
+
+    if policy_name != "floor":
+        raise ValueError(f"unknown amenity-credit policy: {policy_name!r}")
+
+    if "floor" not in policy_config:
+        raise ValueError("amenity-credit floor policy requires a 'floor' value")
+
+    try:
+        minimum_positive_score = float(policy_config["floor"])
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "amenity-credit floor must be a number between 0 and 1"
+        ) from error
+
+    if not 0.0 <= minimum_positive_score <= 1.0:
+        raise ValueError("amenity-credit floor must be between 0 and 1")
+
+    return {
+        preference_key: (
+            max(raw_score, minimum_positive_score) if raw_score > 0.0 else 0.0
+        )
+        for preference_key, raw_score in copied_scores.items()
+    }
+
+
 def plan_cost(
     itinerary: Itinerary,
     request: TripRequest,
     tradeoffs_cfg: dict[str, Any],
     evidence_coverage: float = 0.0,
     evidence_credit_min: float = 0.0,
+    amenity_credit_config: Mapping[str, Any] | None = None,
 ) -> PlanCost:
-    prof = resolve_profile(tradeoffs_cfg, request)
-    best = best_match_per_preference(itinerary, request)
-    values = prof["amenity_value_min"]
-    drive = prof["drive_min_weight"] * itinerary.total_drive_min
-    charge = prof["charge_min_weight"] * itinerary.total_charge_min
-    detour = prof["detour_extra_weight"] * itinerary.total_detour_min
-    stops = prof["stop_overhead_min"] * len(itinerary.stops)
-    amenity = sum(
+    """Convert one itinerary's time, preference and evidence facts into cost."""
+
+    profile = resolve_profile(tradeoffs_cfg, request)
+
+    # The matcher produces the raw score. The optional policy controls how
+    # that score becomes ranking credit without changing the stored match.
+    raw_best_matches = best_match_per_preference(
+        itinerary,
+        request,
+    )
+    credit_scores = apply_amenity_credit_policy(
+        raw_best_matches,
+        amenity_credit_config,
+    )
+
+    amenity_values = profile["amenity_value_min"]
+
+    drive_cost = profile["drive_min_weight"] * itinerary.total_drive_min
+    charge_cost = profile["charge_min_weight"] * itinerary.total_charge_min
+    detour_cost = profile["detour_extra_weight"] * itinerary.total_detour_min
+    stop_cost = profile["stop_overhead_min"] * len(itinerary.stops)
+
+    amenity_credit = sum(
         amenity_value_for_preference(
-            values,
+            amenity_values,
             preference_key,
         )
         * score
-        for preference_key, score in best.items()
+        for preference_key, score in credit_scores.items()
     )
-    evidence = evidence_credit_min * evidence_coverage
-    satisfaction = sum(best.values()) / len(best) if best else 1.0
+
+    evidence_credit = evidence_credit_min * evidence_coverage
+
+    amenity_satisfaction = (
+        sum(credit_scores.values()) / len(credit_scores) if credit_scores else 1.0
+    )
+
     return PlanCost(
         profile=request.tradeoff_profile,
-        drive_min=drive,
-        charge_min=charge,
-        detour_penalty_min=detour,
-        stop_overhead_min=stops,
-        amenity_credit_min=amenity,
-        evidence_credit_min=evidence,
-        total_min=drive + charge + detour + stops - amenity - evidence,
-        amenity_satisfaction=satisfaction,
+        drive_min=drive_cost,
+        charge_min=charge_cost,
+        detour_penalty_min=detour_cost,
+        stop_overhead_min=stop_cost,
+        amenity_credit_min=amenity_credit,
+        evidence_credit_min=evidence_credit,
+        total_min=(
+            drive_cost
+            + charge_cost
+            + detour_cost
+            + stop_cost
+            - amenity_credit
+            - evidence_credit
+        ),
+        amenity_satisfaction=amenity_satisfaction,
     )
