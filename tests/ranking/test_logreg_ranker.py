@@ -157,6 +157,41 @@ def test_pipeline_wires_floor_policy_into_every_config_a_ranker(
     assert pipe_b.ranker.amenity_credit_config is None
 
 
+def test_pipeline_rejects_tfidf_policy_with_non_tfidf_matcher(store):
+    """A matcher-specific calibration must not leak into SBERT configs."""
+
+    incompatible_config = load_config("A")
+    incompatible_config["components"]["matcher"] = "sbert"
+
+    with pytest.raises(
+        ValueError,
+        match="TF-IDF matcher",
+    ):
+        build_pipeline(
+            incompatible_config,
+            store,
+        )
+
+
+def test_pipeline_rejects_invalid_credit_policy_at_startup(store):
+    """Configuration errors must fail before the first request is planned."""
+
+    invalid_config = load_config("A")
+    invalid_config["ranking"]["tfidf_credit"] = {
+        "policy": "floor",
+        "floor": 1.5,
+    }
+
+    with pytest.raises(
+        ValueError,
+        match="floor",
+    ):
+        build_pipeline(
+            invalid_config,
+            store,
+        )
+
+
 def test_missing_model_fallback_uses_floor_policy(
     pipe_a,
     cfg_a,

@@ -1,6 +1,14 @@
 import pytest
 
-from clickless.contracts import Itinerary, PlanCost, TripRequest
+from clickless.contracts import (
+    AmenityCategory,
+    AmenityPreference,
+    ChargingStop,
+    Connector,
+    Itinerary,
+    PlanCost,
+    TripRequest,
+)
 from clickless.ranking.cost import (
     apply_amenity_credit_policy,
     plan_cost,
@@ -106,6 +114,72 @@ def test_plan_cost_uses_floor_for_credit_and_satisfaction(
 
     assert floor_cost.amenity_credit_min >= raw_cost.amenity_credit_min
     assert floor_cost.amenity_satisfaction >= raw_cost.amenity_satisfaction
+
+
+def test_selector_uses_credit_policy_for_preference_gains(
+    cfg_a,
+):
+    """A floored match shown as better must also name the gained preference."""
+
+    request = TripRequest(
+        request_id="floor-selector-gains",
+        raw_text="Lunch would be nice",
+        amenities=[
+            AmenityPreference(
+                category=AmenityCategory.FOOD,
+                phrase="lunch",
+            )
+        ],
+    )
+    recommended = _test_itinerary(
+        "recommended",
+        total_time_min=100.0,
+        detour_min=0.0,
+        charge_min=0.0,
+    )
+    weak_food_match = _test_itinerary(
+        "weak-food-match",
+        total_time_min=103.0,
+        detour_min=3.0,
+        charge_min=0.0,
+    ).model_copy(
+        update={
+            "stops": [
+                ChargingStop(
+                    station_id="food-stop",
+                    station_name="Food stop",
+                    connector=Connector.CCS1,
+                    port_power_kw=50.0,
+                    along_route_km=50.0,
+                    detour_min=3.0,
+                    arrive_soc_pct=50.0,
+                    depart_soc_pct=50.0,
+                    charge_min_est=0.0,
+                    satisfied_preferences={"food": 0.07},
+                )
+            ]
+        }
+    )
+    selector = TradeoffSelector(
+        cfg_a["tradeoffs"],
+        amenity_credit_config=cfg_a["ranking"]["tfidf_credit"],
+    )
+
+    alternatives = selector.select(
+        [
+            (recommended, _test_cost(100.0, amenity_satisfaction=0.0)),
+            (weak_food_match, _test_cost(95.0, amenity_satisfaction=0.52)),
+        ],
+        request,
+    )
+    best_amenities = next(
+        alternative
+        for alternative in alternatives
+        if alternative.label == "Best amenities"
+    )
+
+    assert best_amenities.gains == ["food"]
+    assert best_amenities.losses == []
 
 
 def _test_itinerary(

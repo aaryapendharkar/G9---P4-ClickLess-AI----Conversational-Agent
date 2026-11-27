@@ -9,10 +9,14 @@ Owner: Hriday.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from ..contracts import Alternative, Itinerary, PlanCost, TripRequest
-from .cost import best_match_per_preference
+from .cost import (
+    apply_amenity_credit_policy,
+    best_match_per_preference,
+)
 
 
 def axis_values(
@@ -93,8 +97,13 @@ def pareto_front(
 class TradeoffSelector:
     """Select Recommended plus meaningful axis-specific alternatives."""
 
-    def __init__(self, tradeoffs_cfg: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        tradeoffs_cfg: dict[str, Any],
+        amenity_credit_config: Mapping[str, Any] | None = None,
+    ) -> None:
         self.presentation_config = tradeoffs_cfg["presentation"]
+        self.amenity_credit_config = amenity_credit_config
 
     def select(
         self,
@@ -257,15 +266,20 @@ class TradeoffSelector:
         itinerary: Itinerary,
         request: TripRequest,
     ) -> set[str]:
-        """Return requested preferences satisfied above the configured score."""
+        """Return preferences met on the same score scale used for ranking."""
 
         satisfaction_threshold = self.presentation_config["satisfied_threshold"]
+        raw_scores = best_match_per_preference(
+            itinerary,
+            request,
+        )
+        credit_scores = apply_amenity_credit_policy(
+            raw_scores,
+            self.amenity_credit_config,
+        )
 
         return {
             preference_key
-            for preference_key, score in best_match_per_preference(
-                itinerary,
-                request,
-            ).items()
+            for preference_key, score in credit_scores.items()
             if score >= satisfaction_threshold
         }

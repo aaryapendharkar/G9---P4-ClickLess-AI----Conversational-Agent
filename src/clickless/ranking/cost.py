@@ -67,27 +67,18 @@ def amenity_value_for_preference(
     )
 
 
-def apply_amenity_credit_policy(
-    raw_scores: Mapping[str, float],
-    policy_config: Mapping[str, Any] | None = None,
-) -> dict[str, float]:
-    """Transform matcher scores before converting them into minute credit.
-
-    A missing configuration, or an explicit ``raw`` policy, preserves the
-    matcher scores. Config A's ``floor`` policy raises only positive,
-    category-gated TF-IDF scores to the configured minimum. A zero score stays
-    zero, so an unrelated or missing amenity never earns credit.
-    """
-
-    copied_scores = dict(raw_scores)
+def _validated_credit_policy(
+    policy_config: Mapping[str, Any] | None,
+) -> tuple[str, float | None]:
+    """Return a validated policy name and its optional positive-score floor."""
 
     if policy_config is None:
-        return copied_scores
+        return "raw", None
 
     policy_name = policy_config.get("policy", "raw")
 
     if policy_name == "raw":
-        return copied_scores
+        return "raw", None
 
     if policy_name != "floor":
         raise ValueError(f"unknown amenity-credit policy: {policy_name!r}")
@@ -104,6 +95,40 @@ def apply_amenity_credit_policy(
 
     if not 0.0 <= minimum_positive_score <= 1.0:
         raise ValueError("amenity-credit floor must be between 0 and 1")
+
+    return policy_name, minimum_positive_score
+
+
+def validate_amenity_credit_policy(
+    policy_config: Mapping[str, Any] | None,
+) -> None:
+    """Fail fast when an amenity-credit configuration is invalid."""
+
+    _validated_credit_policy(policy_config)
+
+
+def apply_amenity_credit_policy(
+    raw_scores: Mapping[str, float],
+    policy_config: Mapping[str, Any] | None = None,
+) -> dict[str, float]:
+    """Transform matcher scores before converting them into minute credit.
+
+    A missing configuration, or an explicit ``raw`` policy, preserves the
+    matcher scores. Config A's ``floor`` policy raises only positive,
+    category-gated TF-IDF scores to the configured minimum. A zero score stays
+    zero, so an unrelated or missing amenity never earns credit.
+    """
+
+    copied_scores = dict(raw_scores)
+    policy_name, minimum_positive_score = _validated_credit_policy(
+        policy_config
+    )
+
+    if policy_name == "raw":
+        return copied_scores
+
+    # A validated floor policy always returns a numerical floor.
+    assert minimum_positive_score is not None
 
     return {
         preference_key: (

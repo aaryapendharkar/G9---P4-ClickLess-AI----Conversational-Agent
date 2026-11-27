@@ -41,8 +41,13 @@ The calibration reduces a score-scale confound in the A/B/C comparison: Config A
 on which amenities TF-IDF matches, rather than being penalized merely because positive TF-IDF
 cosines tend to be smaller than positive SBERT cosines. It does not make the two score
 distributions identical and does not grant credit to a zero or category-rejected match.
+Because the rule uses `max(s, 0.52)`, positive scores below `0.52` receive equal ranking credit;
+their raw ordering is preserved for diagnostics but not for cost or driver-facing satisfaction.
+Scores above the floor retain their original ordering.
 
 Both the logistic-regression ranker and its weighted fallback use the same production helper.
+The trade-off selector uses the same transformed scores for its amenity axis and for the
+driver-facing gained/lost preference lists, while the stored matcher scores remain raw.
 The independent evaluator reproduces the documented rule without importing ranking code, so it
 can still detect implementation drift while avoiding false formula/ranker mismatches.
 

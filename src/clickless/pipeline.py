@@ -53,6 +53,7 @@ from .planning.routing import (
     TemporaryFailureDetourMeasurer,
 )
 from .planning.verifier import CompleteItineraryVerifier
+from .ranking.cost import validate_amenity_credit_policy
 from .ranking.logreg_ranker import LogRegRanker
 from .ranking.tradeoffs import TradeoffSelector
 from .ranking.weighted_ranker import WeightedRanker
@@ -150,6 +151,18 @@ class _PendingClarification:
 class Pipeline:
     def __init__(self, cfg: dict[str, Any], store: DataStore) -> None:
         comp = cfg["components"]
+        tfidf_credit_config = cfg.get("ranking", {}).get("tfidf_credit")
+
+        if (
+            tfidf_credit_config is not None
+            and comp["matcher"] != "tfidf"
+        ):
+            raise ValueError(
+                "ranking.tfidf_credit is supported only with the TF-IDF matcher"
+            )
+
+        validate_amenity_credit_policy(tfidf_credit_config)
+
         self.cfg, self.store = cfg, store
         self.name = cfg["name"]
         self.parser = {
@@ -219,7 +232,6 @@ class Pipeline:
         )
         self.relaxer = MinCostRelaxer(cfg["relaxation"])
         tradeoffs_config = cfg["tradeoffs"]
-        tfidf_credit_config = cfg.get("ranking", {}).get("tfidf_credit")
 
         self.ranker = {
             "logreg": lambda: LogRegRanker(
@@ -237,7 +249,10 @@ class Pipeline:
             ),
         }[comp["ranker"]]()
 
-        self.selector = TradeoffSelector(tradeoffs_config)
+        self.selector = TradeoffSelector(
+            tradeoffs_config,
+            amenity_credit_config=tfidf_credit_config,
+        )
         self.explainer = (
             GroundedLLMExplainer(store, cfg.get("llm", {}))
             if comp["explainer"] == "grounded_llm"

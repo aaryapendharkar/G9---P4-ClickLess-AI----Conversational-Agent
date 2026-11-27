@@ -108,7 +108,7 @@ Why this ranks first (balanced priorities, in minutes-equivalent): driving 143 +
   + detour penalty 2 + stop overhead 5 - requested amenities 0 = 158.
 Other options:
   Best amenities: stop at Fixture Camp Verde Hub instead; about 10 min longer; about 10 min
-  more charging (estimate).
+  more charging (estimate); adds a lunch spot.
 ```
 
 Hriday's learning-swap presenter now translates signed deltas into natural
