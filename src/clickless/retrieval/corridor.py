@@ -51,7 +51,10 @@ first. These extras sit on top of max_candidates. A request without a required p
 this step, so its candidates are exactly the ones above. `other` preferences are not retained:
 whether an `other` amenity satisfies the phrase is the matcher's decision, made after retrieval.
 
-TODO(Manas): a BallTree / R-tree could replace the grids; the equivalence tests stay the contract.
+Spatial index (#190): a BallTree prototype (corridor_balltree.py) gives identical candidates on all
+130 frozen routes, with a median corridor scan 1.4x faster, but it is slower on short routes and
+needs more peak memory. That saves about 35 ms on a median Config A request, so the grids stay.
+Rerun scripts/benchmark_corridor_index.py before revisiting; the equivalence tests stay the contract.
 """
 
 from __future__ import annotations
