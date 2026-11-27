@@ -16,9 +16,8 @@ credit even though the category gate had already established relevance.
 
 Issue #166 compares credit policies on the frozen DEV split only. Earlier analysis established
 the reporting machinery and showed that changing the credit interpretation can change some
-recommendations. The chosen `0.45` value has passed unit, integration and a three-item snapshot
-smoke run. A clean full-DEV comparison is still required before this decision is accepted. The
-held-out TEST split must not be used to select or tune the policy.
+recommendations. The chosen `0.45` value passed unit, integration, snapshot smoke and clean
+full-DEV runs. The held-out TEST split was not used to select or tune the policy.
 
 ## Decision
 
@@ -39,6 +38,26 @@ Both the logistic-regression ranker and its weighted fallback use the same produ
 The independent evaluator reproduces the documented rule without importing ranking code, so it
 can still detect implementation drift while avoiding false formula/ranker mismatches.
 
+## DEV evidence
+
+The final comparison ran from clean commit `06d82c9` against frozen snapshot
+`snapshot:96dfbabb4837`. It loaded all 50 DEV items: 40 produced verified plans, 10 were skipped
+or unplanned, and none raised an analysis error.
+
+| policy | recommendations changed from raw | mean recommended amenity credit (min) | mean recommended amenity satisfaction |
+|---|---:|---:|---:|
+| raw | 0 | 3.189 | 0.598 |
+| floor 0.45 | 0 | 3.880 | 0.642 |
+| full credit for any positive score | 2 | 7.775 | 0.875 |
+| normalize within the request | 4 | 6.550 | 0.826 |
+
+The floor modestly changes the interpretation of positive TF-IDF matches without changing which
+itinerary is recommended on DEV. Full credit changes two recommendations. Normalization changes
+four, including two items whose preference phrase came from the category fallback rather than a
+parsed phrase. This makes the floor the least disruptive tested calibration, but the run does not
+show that its recommendations are objectively better: the policy-selection evidence is stability
+and bounded credit, not recommendation-accuracy labels.
+
 ## Alternatives considered
 
 - **Raw TF-IDF score.** Simple and continuous, but weak positive scores make valid generic requests
@@ -57,5 +76,5 @@ can still detect implementation drift while avoiding false formula/ranker mismat
   changes.
 - Config B/C behavior remains unchanged.
 - Existing Config A ranking results from before this policy are not directly comparable.
-- Acceptance requires the clean full-DEV policy report, review by Manas and Ian, and recorded
-  approval. Any later change to `0.45` requires new DEV evidence and an ADR update.
+- Acceptance now requires review by Manas and Ian and their recorded approvals. Any later change
+  to `0.45` requires new DEV evidence and an ADR update.

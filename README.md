@@ -55,8 +55,8 @@ the configurations are compared.
 - **Preliminary dev-set results** are in [`evaluations/preliminary/`](evaluations/preliminary).
 - The independent planning oracle, route-distributed candidate retrieval and required accessible-restroom handling
   are implemented.
-- **In progress:** final evaluation and reporting. Config A's TF-IDF credit floor is being validated on frozen DEV;
-  held-out TEST remains untouched until the final run.
+- **In progress:** final evaluation and reporting. Config A's TF-IDF credit floor has been compared on frozen DEV
+  and awaits ADR approval; held-out TEST remains untouched until the final run.
 
 Open specs are marked `xfail` in the tests (`make todo`).
 
