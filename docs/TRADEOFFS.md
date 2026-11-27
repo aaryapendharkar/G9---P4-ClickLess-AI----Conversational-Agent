@@ -23,12 +23,17 @@ cost = w_drive · drive_min                (includes detour driving)
      + w_charge · charge_min              (estimated, §3)
      + detour_extra_weight · detour_min   (extra dislike of leaving the highway)
      + stop_overhead_min · number_of_stops
-     − Σ over requested preferences p:  amenity_value_min[p] · best_match_score(p)
+     − Σ over requested preferences p:  amenity_value_min[p] · credit_score(best_match(p))
      − evidence_credit_min · evidence_coverage          (Config C only)
 ```
 
-* A preference counts only if the user **asked for it**, once per trip, at its best stop, scaled
-  by the matcher's score in [0, 1] (TF-IDF in A, SBERT in B/C).
+* A preference counts only if the user **asked for it**, once per trip, at its best stop. The
+  matcher produces a score in [0, 1] (TF-IDF in A, SBERT in B/C), and the active configuration
+  decides how that score becomes ranking credit.
+* Config A uses `credit_score(s) = 0` when `s = 0`, otherwise `max(s, 0.45)` (ADR 0020). The
+  category gate therefore still prevents unrelated amenities from earning credit, while a weak
+  positive TF-IDF match is not treated as nearly worthless. Configs B/C retain their raw SBERT
+  scores; the TF-IDF policy is not applied to them.
 * Accessibility: only amenities tagged `wheelchair=yes` count toward `restroom_wheelchair`;
   `unknown` never counts (proposal §II).
 * Config C evidence coverage is the supported share of displayed station-name, selected-connector,
@@ -121,6 +126,10 @@ from `Alternative.deltas`.
 | unknown-power sensitivity | same with `unknown_power_kw` varied, for plans with unknown-power stops (ADR 0010) |
 | priority-phrase accuracy | predicted profile vs gold on the `priority_tradeoff` benchmark items |
 
+The evaluator independently implements the documented amenity-credit policy instead of importing
+`clickless.ranking`. This preserves the independent-check boundary while preventing Config A's
+intentional score transformation from being reported as a formula/ranker mismatch.
+
 Each author adds 2 `priority_tradeoff` items (10 total). Optional, if time allows: 3–5 classmates
 choose between Recommended/alternative on 5 scripted trips; report agreement with our ranking.
 
@@ -133,11 +142,13 @@ choose between Recommended/alternative on 5 scripted trips; report agreement wit
 > and up to two Pareto-optimal alternatives described by their time differences and the
 > preferences they gain or lose; all stated differences are taken from verified plan fields.
 
-## 7. Open decisions (decide by Oct 25, record as ADRs)
+## 7. Resolved constraints and remaining decisions
 
-- Is "wheelchair-accessible restroom" a soft preference (current) or a hard constraint when the
-  user says "need"? Proposal relaxes amenities first — be explicit about accessibility.
-- Default arrival SoC when unstated (currently 20 %) and the reserve (10 %).
+- A wheelchair-accessible restroom is a hard requirement when the parsed preference is both
+  `wheelchair_required` and `important`; relaxing it requires explicit driver consent. A
+  `nice_to_have` accessible restroom remains a ranked preference (ADR 0003 question 3).
+- Default arrival SoC when unstated (currently 20 %) and the reserve (10 %) remain proposed in
+  ADR 0003 questions 1–2.
 
 Resolved charging policy: balanced and fastest charge just enough for the next
 leg. Comfort may top up while eating only when the stop satisfies food requested

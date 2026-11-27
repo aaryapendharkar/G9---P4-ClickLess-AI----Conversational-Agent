@@ -41,23 +41,22 @@ All three share the same planner and verifier; they differ in understanding, ret
 
 | Config | Summary |
 |---|---|
-| **A**, classical baseline | rules extraction, TF-IDF matching, logistic-regression ranker, template explanation; rejects incomplete requests |
+| **A**, classical baseline | rules extraction, category-gated TF-IDF matching with a documented positive-score credit floor, logistic-regression ranker, template explanation; rejects incomplete requests |
 | **B**, modern language stack | LLM extraction (Qwen3 8B, local via Ollama), Sentence-BERT matching, weighted ranking, template explanation |
 | **C**, hybrid | B + KG evidence, clarification questions, source and freshness labels, evidence-grounded explanation |
 
 `configs/config_c_nokg.yaml` (**C-noKG**) is the ablation without the KG. See [`evaluations/`](evaluations) for how
 the configurations are compared.
 
-## Status (Nov 22)
+## Status (Nov 26)
 
-- **A, B and C run end-to-end** on the shared real-data snapshot (v1 draft; the final frozen build comes before the
-  test run).
+- **A, B and C run end-to-end** on the final frozen real-data snapshot v1.
 - **The 150-item benchmark is frozen:** 50 dev / 100 test.
 - **Preliminary dev-set results** are in [`evaluations/preliminary/`](evaluations/preliminary).
-- **In progress:**
-  - the independent oracle and planning metrics (#74);
-  - hard enforcement of "need" accessibility requirements (#136);
-  - route-distributed candidates (#133).
+- The independent planning oracle, route-distributed candidate retrieval and required accessible-restroom handling
+  are implemented.
+- **In progress:** final evaluation and reporting. Config A's TF-IDF credit floor is being validated on frozen DEV;
+  held-out TEST remains untouched until the final run.
 
 Open specs are marked `xfail` in the tests (`make todo`).
 
@@ -92,8 +91,8 @@ pip install -e ".[dev,nlp,kg]"   # nlp: Sentence-BERT (B, C); kg: rdflib (C)
 pytest                           # = make test; xfail = an open TODO with an owner
 ```
 
-**Snapshot (real data).** It isn't in git. Download `snapshot-v1-draft.zip` from the repository's GitHub release
-`snapshot-v1-draft` (or the team drive) and unzip it into `data/snapshot/`, so that `data/snapshot/MANIFEST.json`,
+**Snapshot (real data).** It isn't in git. Download `snapshot-v1.zip` from the repository's GitHub release
+`snapshot-v1` (or the team drive) and unzip it into `data/snapshot/`, so that `data/snapshot/MANIFEST.json`,
 `stations.json` and `routes/` exist. Then verify it:
 ```bash
 python -m clickless.data.snapshot_report --verify-only   # = make snapshot-verify; must print: verify_manifest() -> [] (intact)
