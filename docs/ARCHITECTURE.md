@@ -49,7 +49,8 @@ Planner, filters, verifier and the approval gate are identical in all configs (p
 ## Offline pipeline
 
 `data/afdc.py`, `data/vehicles.py`, `data/osm_amenities.py` → normalized JSON in the fixture
-layout → `data/snapshot/` + `MANIFEST.json` (hashes) → `retrieval/kg/build.py` → `kg.ttl`.
+layout → `data/snapshot/` + `MANIFEST.json` (hashes). The KG is not serialized: `retrieval/kg/build.py`
+builds it in memory, route-scoped for Config C and complete for the competency queries (ADR 0021).
 
 The KG ontology (`retrieval/kg/ontology.ttl`, v0.4) uses the namespace
 `https://w3id.org/clickless#` (prefix `cc:`) for its terms and for the data IRIs `build.py` mints.

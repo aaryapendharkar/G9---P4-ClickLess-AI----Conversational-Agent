@@ -21,8 +21,9 @@ offline analysis can still call ``build_graph(store)`` for a complete graph. Thi
 0001's fallback to keep request-time spatial scope outside the KG after the full snapshot measured
 7.2 million triples and about 7 GB of additional memory (#115).
 
-TODO(Manas): if a complete serialized KG is needed for offline analysis, write ``kg.ttl`` during
-the snapshot build and record its hash in the manifest. Runtime enrichment does not require it.
+No serialized ``kg.ttl`` is produced (ADR 0021, #191): no reader needs it, and the full graph
+would be about 340 MB of Turtle. ``build_graph(store).serialize(format="turtle")`` gives
+deterministic Turtle for one-off local inspection of a fixture or sliced store.
 """
 
 from __future__ import annotations
