@@ -186,8 +186,9 @@ def test_p8_fallback_in_evaluation_config_matches_the_ranker():
     ("raw_score", "expected_credit_score"),
     [
         (0.0, 0.0),
-        (0.10, 0.45),
-        (0.45, 0.45),
+        (0.10, 0.52),
+        (0.45, 0.52),
+        (0.52, 0.52),
         (0.80, 0.80),
     ],
 )

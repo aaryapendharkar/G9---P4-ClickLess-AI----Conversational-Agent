@@ -16,7 +16,7 @@ ranking:
   # genuine category-gated matches on a scale comparable with Configs B/C.
   tfidf_credit:
     policy: floor
-    floor: 0.45
+    floor: 0.52
 data:
   source: fixtures           # fixtures | snapshot
   fixtures_dir: data/fixtures

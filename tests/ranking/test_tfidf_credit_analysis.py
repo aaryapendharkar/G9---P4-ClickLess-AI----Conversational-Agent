@@ -49,6 +49,69 @@ def _load_analysis_script():
 
 analysis_script = _load_analysis_script()
 
+def test_sbert_floor_derivation_uses_positive_b_c_median(
+    tmp_path,
+):
+    """The floor comes from positive B/C DEV scores without double-counting."""
+
+    scores_path = tmp_path / "recommended_scores.csv"
+    scores_path.write_text(
+        "\n".join(
+            [
+                (
+                    "config,item_id,itinerary_id,preference_key,phrase,"
+                    "n_stops,best_score,amenity_credit_min"
+                ),
+                "A,a-1,a-route,food,lunch,1,0.25,3.75",
+                "B,b-1,b-route,food,lunch,1,0.40,6.00",
+                "B,b-2,b-route,coffee,coffee,1,0.00,0.00",
+                "B,b-3,b-route,restroom,restroom,1,0.60,9.00",
+                "B,b-4,b-route,food,food,1,0.80,12.00",
+                "C,b-1,b-route,food,lunch,1,0.40,6.00",
+                "C,b-2,b-route,coffee,coffee,1,0.00,0.00",
+                "C,b-3,b-route,restroom,restroom,1,0.60,9.00",
+                "C,b-4,b-route,food,food,1,0.80,12.00",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    derivation = analysis_script.derive_sbert_credit_floor(scores_path)
+
+    assert derivation["positive_score_count"] == 3
+    assert derivation["mean_positive_score"] == pytest.approx(0.60)
+    assert derivation["median_positive_score"] == pytest.approx(0.60)
+    assert derivation["recommended_floor"] == pytest.approx(0.60)
+    assert derivation["b_c_positive_scores_identical"] is True
+
+
+def test_sbert_floor_derivation_rejects_different_b_c_populations(
+    tmp_path,
+):
+    """Different B/C results require a documented population decision."""
+
+    scores_path = tmp_path / "different_scores.csv"
+    scores_path.write_text(
+        "\n".join(
+            [
+                (
+                    "config,item_id,itinerary_id,preference_key,phrase,"
+                    "n_stops,best_score,amenity_credit_min"
+                ),
+                "B,b-1,b-route,food,lunch,1,0.40,6.00",
+                "C,c-1,c-route,food,lunch,1,0.60,9.00",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="positive scores differ",
+    ):
+        analysis_script.derive_sbert_credit_floor(scores_path)
 
 def _fixture_amenity(store, amenity_id):
     """Find one readable fixture amenity for matcher diagnostics."""
@@ -298,7 +361,7 @@ def test_floor_policy_reuses_production_score_transformation():
     }
     floor_config = {
         "policy": "floor",
-        "floor": 0.45,
+        "floor": 0.52,
     }
 
     transformed_scores = apply_credit_policy(

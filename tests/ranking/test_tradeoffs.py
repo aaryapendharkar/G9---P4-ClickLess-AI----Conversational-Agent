@@ -20,12 +20,12 @@ def test_floor_policy_only_raises_positive_scores():
         },
         {
             "policy": "floor",
-            "floor": 0.45,
+            "floor": 0.52,
         },
     )
 
     assert adjusted_scores == {
-        "food": pytest.approx(0.45),
+        "food": pytest.approx(0.52),
         "coffee": pytest.approx(0.70),
         "restroom": 0.0,
     }

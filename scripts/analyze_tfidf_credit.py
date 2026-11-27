@@ -17,10 +17,12 @@ Run with snapshot data in Bash:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from statistics import mean, median
 from typing import Any
 
 from clickless.config import load_config
@@ -40,6 +42,76 @@ from evaluation.snapshot_id import snapshot_info
 
 DEV_ITEMS_PATH = "benchmark/requests/dev"
 DEFAULT_OUTPUT_PATH = "results/preliminary/tfidf_credit_policy/dev.json"
+SBERT_RECOMMENDED_SCORES_PATH = Path(
+    "evaluations/preliminary/dev-20261126/recommended_amenity_scores.csv"
+)
+
+
+def derive_sbert_credit_floor(
+    scores_path: Path = SBERT_RECOMMENDED_SCORES_PATH,
+) -> dict[str, Any]:
+    """Derive a Config A floor from positive B/C recommended-plan scores.
+
+    Configs B and C used the same Sentence-BERT matcher and recommended the
+    same plans in Ian's saved DEV run. We verify that their positive scores
+    agree, then use one copy so identical observations are not counted twice.
+
+    Zero remains a meaningful no-match value, so it is excluded from the
+    positive-match calibration and remains zero in the production policy.
+    """
+
+    with scores_path.open(
+        encoding="utf-8",
+        newline="",
+    ) as scores_file:
+        score_rows = list(csv.DictReader(scores_file))
+
+    positive_scores_by_config: dict[str, list[float]] = {
+        "B": [],
+        "C": [],
+    }
+
+    for row in score_rows:
+        config_name = row["config"]
+
+        if config_name not in positive_scores_by_config:
+            continue
+
+        matcher_score = float(row["best_score"])
+
+        if matcher_score > 0:
+            positive_scores_by_config[config_name].append(matcher_score)
+
+    config_b_scores = sorted(positive_scores_by_config["B"])
+    config_c_scores = sorted(positive_scores_by_config["C"])
+
+    if not config_b_scores:
+        raise ValueError(
+            "the calibration artifact contains no positive Config B scores"
+        )
+
+    if config_b_scores != config_c_scores:
+        raise ValueError(
+            "Config B and C positive scores differ; choose and document "
+            "a calibration population before deriving the floor"
+        )
+
+    median_positive_score = median(config_b_scores)
+
+    return {
+        "source": scores_path.as_posix(),
+        "split": "dev",
+        "configs_checked": ["B", "C"],
+        "b_c_positive_scores_identical": True,
+        "positive_score_count": len(config_b_scores),
+        "mean_positive_score": mean(config_b_scores),
+        "median_positive_score": median_positive_score,
+        "recommended_floor": round(median_positive_score, 2),
+        "selection_rule": (
+            "median positive Config B score, after verifying Config C has "
+            "the identical positive-score population"
+        ),
+    }
 
 
 def _analysis_request(
@@ -179,6 +251,7 @@ def run_analysis(
         "tfidf_credit_config": dict(
             config["ranking"]["tfidf_credit"]
         ),
+        "floor_derivation": derive_sbert_credit_floor(),
         "run_metadata": {
             **git_commit(),
             **snapshot_info(config),
