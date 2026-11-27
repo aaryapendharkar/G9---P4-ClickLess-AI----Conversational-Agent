@@ -11,8 +11,8 @@ different question, different raters' files, different agreement numbers.
 ## What is judged
 
 One **judgment** = one request text + one plan. The plans for a request are the **pool**: the
-ranked top 3 of every configuration in the final TEST run (A, B, C, and C-noKG if it is run), saved
-(`SelectRecorder`, #192), merged, with duplicates removed and the order shuffled. A plan is a
+ranked top 3 of every configuration in the final TEST run (A, B, C and C-noKG), saved
+(`SelectRecorder`, #192, #197), merged, with duplicates removed and the order shuffled. A plan is a
 duplicate of another when it has the same ordered list of station ids. Plans not in the pool get
 gain 0 in nDCG.
 
@@ -89,15 +89,50 @@ rule says "another pooled plan". Go down the list and stop at the first grade th
   on one grade, which replaces both. Each adjudication is recorded with the two original grades,
   the agreed grade and a one-line reason. Pairs that differ by 1 are not adjudicated.
 
-## Notes for sampling, schema and wiring (Ian)
+## Sampling rule (fixed before the TEST run)
 
-Suggestions from the relevance side, for you to decide:
+Ian, #184. This rule and its seed were fixed before the final TEST run (#187) and are applied
+once, to that run's saved outputs. Nothing in it is changed after any TEST output has been seen.
 
-- Sample only TEST items whose pool has at least 2 distinct plans. With one plan, nDCG@3 is 1 for
-  every ranking and says nothing. Exclude items rejected as incomplete or infeasible by all
-  configurations for the same reason.
-- Prefer a sampling rule that avoids items authored by either rater (Manas, Aarya).
-- The rater packet needs the stop and trip fields listed above. `SelectRecorder.summarize` (#192)
-  currently saves `station_ids`, `total_min` and the stop amenities, but not station names, charge,
-  detour, battery or drive minutes, so the packet can't be built from the saved top 3 alone.
-  `total_min` should stay in the run output for analysis but be left out of the packet.
+**Eligible items.** A TEST item (`benchmark/requests/test/test.jsonl`, hash in `FROZEN.json`) is
+eligible when both hold:
+
+1. its `author` is neither rater (not `manas`, not `aarya`);
+2. its **pool** has at least 2 distinct plans. The pool is the union of the saved `ranked_top3`
+   of Configs A, B, C and C-noKG for that item. Two plans are the same plan when they have the same
+   stations in the same order (`plan_key`, the ordered `station_ids`, as in `pooled_ndcg_at_k`,
+   #197). A configuration that returned no plan for the item, or crashed, adds nothing to the pool.
+   With fewer than 2 distinct plans, nDCG@3 is the same for every ranking and says nothing.
+
+**Selecting 30 items** (seed **573**, the benchmark's freeze seed), stratified by the item's
+`category` as evenly as possible:
+
+1. Fixed category order: alphabetical (`accessibility`, `conflicting_prefs`, `incomplete`,
+   `multi_stop`, `priority_tradeoff`, `rural`, `sparse_charging`, `urban`).
+2. `rng = random.Random(573)`. For each category in that order: sort its eligible item ids, then
+   `rng.shuffle` them (one generator, used in this order).
+3. Round robin: go through the categories in the fixed order, taking the next item of each
+   category's shuffled list, and repeat until 30 items are taken. A category with no items left is
+   skipped, so a category that runs short is filled from the others in the same fixed order.
+   With 8 categories and enough items, the first 6 in the order get 4 items and the last 2 get 3.
+4. If fewer than 30 items are eligible, all of them are taken and the shortfall is reported. The
+   eligibility rule is not loosened to reach 30.
+
+The selected ids, per-category counts, eligible counts and the commit of the selection script are
+recorded with the labels.
+
+**What raters get.** For each selected item, the request `text` and the pool: deduplicated, config
+and rank hidden, in a shuffled order under neutral ids `P1`, `P2`, ... (shuffle seeded with
+`random.Random(f"573:{item_id}")`, so it is reproducible). When duplicates differ in anything shown
+(for example charge minutes), the copy shown is the first one met going through A, B, C, C-noKG,
+each in rank order. Raters see only the fields listed under "What a rater sees".
+
+**Grades.** Both raters (Manas and Aarya) grade every pooled plan of every selected item, on their
+own, on the 0–3 scale above. The gain in nDCG@3 is the mean of the two grades, after adjudication
+as described above. Each configuration's nDCG@3 uses the pool's grades for its ideal ranking
+(`pooled_ndcg_at_k`, #197).
+
+**Saved fields.** `ranked_top3` in the run output already has everything the packet needs (#197):
+per stop the station name, connector, port power, charge minutes, detour minutes and arrival /
+departure battery %, plus trip totals (drive, charge and detour minutes, number of stops, arrival
+battery %). `total_min` is saved for analysis but is left out of the packet.
