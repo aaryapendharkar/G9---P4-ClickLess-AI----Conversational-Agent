@@ -162,7 +162,7 @@ def test_ok_rows_save_the_rankers_ordered_top3(smoke_run):
     for row in _ok_rows(smoke_run):
         top = row["ranked_top3"]
         assert 1 <= len(top) <= 3
-        assert set(top[0]) == {"itinerary_id", "station_ids", "total_min", "amenities"}
+        assert set(top[0]) == {"itinerary_id", "station_ids", "total_min", "amenities", "stops", "totals"}
         assert top[0]["itinerary_id"] == row["result"]["alternatives"][0]["itinerary"]["itinerary_id"]
         assert [t["total_min"] for t in top] == sorted(t["total_min"] for t in top)
         for t in top:
@@ -198,9 +198,12 @@ def test_select_recorder_unknown_amenity_and_delegation():
 
     class Stop:
         station_id, amenity_ids = "s1", ["osm:missing"]
+        station_name, connector, port_power_kw = "S One", "CCS1", 150.0
+        charge_min_est, detour_min, arrive_soc_pct, depart_soc_pct = 20.0, 3.0, 18.0, 70.0
 
     class It:
         itinerary_id, stops = "it1", [Stop()]
+        total_drive_min, total_charge_min, total_detour_min, arrival_soc_pct = 95.0, 20.0, 3.0, 41.0
 
     class Cost:
         total_min = 12.5
@@ -208,5 +211,34 @@ def test_select_recorder_unknown_amenity_and_delegation():
     rec = harness.SelectRecorder(Sel(), store=None)
     assert rec.presentation_config == "kept"
     assert rec.select([(It(), Cost())], None) == ["picked"]
+    unknown = {"name": None, "category": None, "wheelchair": None}
     assert rec.last == [{"itinerary_id": "it1", "station_ids": ["s1"], "total_min": 12.5,
-                         "amenities": [{"name": None, "category": None, "wheelchair": None}]}]
+                         "amenities": [unknown],
+                         "stops": [{"station_id": "s1", "station_name": "S One", "connector": "CCS1",
+                                    "port_power_kw": 150.0, "charge_min_est": 20.0, "detour_min": 3.0,
+                                    "arrive_soc_pct": 18.0, "depart_soc_pct": 70.0, "amenities": [unknown]}],
+                         "totals": {"drive_min": 95.0, "charge_min": 20.0, "detour_min": 3.0, "n_stops": 1,
+                                    "arrival_soc_pct": 41.0}}]
+
+
+def test_top3_saves_the_rater_packet_fields_from_the_ranked_itineraries(tmp_path, pipes):
+    """Every stop and trip field the relevance raters see is saved, equal to the itinerary's own (#184)."""
+    out = run("A", items_paths=[SMOKE], out_dir=str(tmp_path), n_boot=20)
+    by_id = {a.amenity_id: a for a in pipes[0].store.amenities}
+    checked = 0
+    for row in json.loads(out.read_text())["rows"]:
+        if row["status"] != "ok":
+            continue
+        top, rec = row["ranked_top3"][0], row["result"]["alternatives"][0]["itinerary"]
+        assert [s["station_id"] for s in top["stops"]] == top["station_ids"]
+        for saved, stop in zip(top["stops"], rec["stops"], strict=True):
+            for f in ("station_id", "station_name", "connector", "port_power_kw", "charge_min_est",
+                      "detour_min", "arrive_soc_pct", "depart_soc_pct"):
+                assert saved[f] == stop[f], f
+            expected_names = [by_id[i].name for i in dict.fromkeys(stop["amenity_ids"])]
+            assert [a["name"] for a in saved["amenities"]] == expected_names
+        assert top["totals"] == {"drive_min": rec["total_drive_min"], "charge_min": rec["total_charge_min"],
+                                 "detour_min": rec["total_detour_min"], "n_stops": len(rec["stops"]),
+                                 "arrival_soc_pct": rec["arrival_soc_pct"]}
+        checked += 1
+    assert checked

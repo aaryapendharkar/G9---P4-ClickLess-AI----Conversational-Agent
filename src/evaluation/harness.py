@@ -15,7 +15,12 @@ Saved per row, for metrics computed later from the saved outputs without a rerun
     approved=False, and the approval is logged to `<out>/<config>_handoff_audit.jsonl`, never to
     results/handoff_audit.jsonl. The handoff is not part of `latency_ms`.
   * `ranked_top3`: the ranker's ordered top 3 ([{itinerary_id, station_ids, total_min,
-    amenities: [{name, category, wheelchair}]}]), which the trade-off alternatives do not preserve.
+    amenities: [{name, category, wheelchair}], stops, totals}]), which the trade-off alternatives do
+    not preserve. `stops` has, per stop, station_id, station_name, connector, port_power_kw,
+    charge_min_est, detour_min, arrive_soc_pct, depart_soc_pct and that stop's amenities; `totals`
+    has drive_min (incl. detours), charge_min, detour_min, n_stops and arrival_soc_pct. These are
+    the fields the relevance raters see (benchmark/labels/relevance, #184); `total_min` is kept for
+    analysis but is left out of the rater packet.
 
 Every output records run metadata (`run_metadata`): config name, git commit, prompt version,
 model, Ollama version, endpoint host (never the API key) and the full model digest from the
@@ -286,8 +291,9 @@ class SelectRecorder:
     The selector receives the ranked (Itinerary, PlanCost) list; the saved alternatives are trade-off
     picks, not that order, so nDCG@3 needs this list. When planning falls back to a relaxation, the
     last call is the relaxation that was shown (MinCostRelaxer stops at the first feasible attempt).
-    Each itinerary records its station ids and the amenities at its stops (name, category, wheelchair)
-    from the run's own data store, so human raters can judge relevance without the snapshot."""
+    Each itinerary records its station ids, the amenities at its stops (name, category, wheelchair)
+    from the run's own data store, each stop's charging fields and the trip totals, so human raters
+    can judge relevance from the saved run, without the snapshot or a rerun."""
 
     def __init__(self, selector: Any, store: Any) -> None:
         self._selector = selector
@@ -301,6 +307,17 @@ class SelectRecorder:
             return {"name": None, "category": None, "wheelchair": None}
         return {"name": a.name, "category": getattr(a.category, "value", a.category), "wheelchair": a.wheelchair}
 
+    def _stop(self, stop: Any) -> dict[str, Any]:
+        return {"station_id": stop.station_id,
+                "station_name": stop.station_name,
+                "connector": getattr(stop.connector, "value", stop.connector),
+                "port_power_kw": stop.port_power_kw,
+                "charge_min_est": stop.charge_min_est,
+                "detour_min": stop.detour_min,
+                "arrive_soc_pct": stop.arrive_soc_pct,
+                "depart_soc_pct": stop.depart_soc_pct,
+                "amenities": [self._amenity(a) for a in dict.fromkeys(stop.amenity_ids)]}
+
     def summarize(self, ranked_plans: Any) -> list[dict[str, Any]]:
         top = []
         for itinerary, cost in list(ranked_plans)[:3]:
@@ -308,7 +325,13 @@ class SelectRecorder:
             top.append({"itinerary_id": itinerary.itinerary_id,
                         "station_ids": [stop.station_id for stop in itinerary.stops],
                         "total_min": cost.total_min,
-                        "amenities": [self._amenity(a) for a in amenity_ids]})
+                        "amenities": [self._amenity(a) for a in amenity_ids],
+                        "stops": [self._stop(stop) for stop in itinerary.stops],
+                        "totals": {"drive_min": itinerary.total_drive_min,
+                                   "charge_min": itinerary.total_charge_min,
+                                   "detour_min": itinerary.total_detour_min,
+                                   "n_stops": len(itinerary.stops),
+                                   "arrival_soc_pct": itinerary.arrival_soc_pct}})
         return top
 
     def select(self, ranked_plans: Any, *args: Any, **kwargs: Any) -> Any:
@@ -508,7 +531,8 @@ def run(
         "ontology_adequacy": _safe(kg_ontology_adequacy, cfg),  # once per run, Config C only (#158)
         "planning": _safe(planning_metrics, done, ordered, oracle),
         "tradeoffs": _safe(tradeoff_metrics, done, ordered, oracle, cfg["tradeoffs"], cfg.get("evaluation")),
-        # nDCG@3 (metrics.planning.ndcg_at_k) is wired once graded relevance labels exist.
+        # nDCG@3 (metrics.planning.pooled_ndcg_at_k) is computed across configs once graded relevance
+        # labels exist: its ideal ranking comes from the pooled plans of all configs, not one run.
         # TODO(Ian): handoff, latency p50/p95
     }
     # Planner/oracle disagreements are findings, reported on their own (docs/EVALUATION_ORACLE.md).

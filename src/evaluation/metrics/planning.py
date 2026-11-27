@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -601,13 +601,49 @@ def dcg_at_k(relevances: Sequence[float], k: int = 3) -> float:
     return sum(gain / math.log2(i + 1) for i, gain in enumerate(relevances[:k], start=1))
 
 
-def ndcg_at_k_single(relevances: Sequence[float], k: int = 3) -> float:
-    """nDCG@k of one ranked list. The ideal ranking sorts ALL judged relevances; NaN if its DCG is 0."""
-    ideal = dcg_at_k(sorted(relevances, reverse=True), k)
+def ndcg_at_k_single(relevances: Sequence[float], k: int = 3,
+                     pool: Sequence[float] | None = None) -> float:
+    """nDCG@k of one ranked list; NaN if the ideal DCG is 0.
+
+    The ideal ranking sorts `pool`: the grades of EVERY judged plan for the item, across all
+    configurations (#184). Without a pool, `relevances` itself must already be that whole judged
+    list. Never pass a configuration's own top 3 as the pool: its ideal would be its own best plans,
+    so three marginal plans would score 1.0 even when another configuration found a better one.
+    """
+    ideal = dcg_at_k(sorted(relevances if pool is None else pool, reverse=True), k)
     return math.nan if ideal == 0 else dcg_at_k(relevances, k) / ideal
 
 
-def ndcg_at_k(ranked_relevances: list[list[float]], k: int = 3) -> float:
-    """Mean nDCG@k over ranked lists, skipping lists whose ideal DCG is 0 (NaN if none remain)."""
-    values = [v for v in (ndcg_at_k_single(r, k) for r in ranked_relevances) if not math.isnan(v)]
+def ndcg_at_k(ranked_relevances: list[list[float]], k: int = 3,
+              pools: list[Sequence[float]] | None = None) -> float:
+    """Mean nDCG@k over ranked lists, skipping lists whose ideal DCG is 0 (NaN if none remain).
+    `pools[i]` is the judged pool of list i (see ndcg_at_k_single)."""
+    if pools is not None and len(pools) != len(ranked_relevances):
+        raise ValueError("pools must have one entry per ranked list")
+    values = [ndcg_at_k_single(r, k, None if pools is None else pools[i])
+              for i, r in enumerate(ranked_relevances)]
+    values = [v for v in values if not math.isnan(v)]
     return sum(values) / len(values) if values else math.nan
+
+
+def plan_key(entry: Mapping[str, Any]) -> tuple[str, ...]:
+    """A saved `ranked_top3` entry's identity in the relevance pool: its ordered station ids."""
+    return tuple(entry["station_ids"])
+
+
+def pooled_ndcg_at_k(ranked: Mapping[str, Sequence[tuple[str, ...]]],
+                     grades: Mapping[str, Mapping[tuple[str, ...], float]], k: int = 3) -> float:
+    """Mean nDCG@k of one configuration over the judged items, with the ideal from the item's pool.
+
+    ranked: item id -> that configuration's ordered plan keys (plan_key of its `ranked_top3`).
+    grades: item id -> {plan key: gain} for every pooled plan of the item, pooled across all
+        configurations (the mean of the raters' grades, benchmark/labels/relevance).
+    A plan that isn't in the item's pool gets gain 0. A judged item the configuration returned no
+    plan for scores 0, not skipped, so failures stay in the denominator. Items without grades
+    (not sampled) are ignored.
+    """
+    lists, pools = [], []
+    for item_id, judged in grades.items():
+        lists.append([judged.get(key, 0.0) for key in ranked.get(item_id, ())])
+        pools.append(list(judged.values()))
+    return ndcg_at_k(lists, k, pools)
