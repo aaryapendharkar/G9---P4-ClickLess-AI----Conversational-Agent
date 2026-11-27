@@ -14,10 +14,13 @@ can receive a small positive cosine score. The minutes-equivalent ranker previou
 amenity value directly by that raw score, so a valid requested amenity could receive almost no
 credit even though the category gate had already established relevance.
 
-Issue #166 compares credit policies on the frozen DEV split only. Earlier analysis established
-the reporting machinery and showed that changing the credit interpretation can change some
-recommendations. The chosen `0.45` value passed unit, integration, snapshot smoke and clean
-full-DEV runs. The held-out TEST split was not used to select or tune the policy.
+Issue #166 compares credit policies on the frozen DEV split only. The saved Config B/C DEV
+artifact in `evaluations/preliminary/dev-20261126/recommended_amenity_scores.csv` contains the
+matcher scores for requested amenities on each recommended plan. Configs B and C recommended the
+same plans and have identical positive-score populations. Across the 19 positive observations,
+the mean is `0.5266` and the median is `0.5158`. The policy uses that median rounded to two decimal
+places (`0.52`); it was not selected by sweeping thresholds or optimizing Config A outcomes. The
+held-out TEST split was not used to select or tune the policy.
 
 ## Decision
 
@@ -26,7 +29,7 @@ minutes-equivalent amenity credit:
 
 ```text
 credit_score(s) = 0                    when s = 0
-credit_score(s) = max(s, 0.45)         when s > 0
+credit_score(s) = max(s, 0.52)         when s > 0
 amenity_credit = amenity_value_min[p] * credit_score(s)
 ```
 
@@ -34,29 +37,35 @@ The zero case is essential: an absent or category-rejected amenity earns no cred
 configured under `ranking.tfidf_credit` in `configs/config_a.yaml`. Configs B and C keep their raw
 SBERT scores and therefore do not inherit a TF-IDF-specific calibration rule.
 
+The calibration reduces a score-scale confound in the A/B/C comparison: Config A should be judged
+on which amenities TF-IDF matches, rather than being penalized merely because positive TF-IDF
+cosines tend to be smaller than positive SBERT cosines. It does not make the two score
+distributions identical and does not grant credit to a zero or category-rejected match.
+
 Both the logistic-regression ranker and its weighted fallback use the same production helper.
 The independent evaluator reproduces the documented rule without importing ranking code, so it
 can still detect implementation drift while avoiding false formula/ranker mismatches.
 
 ## DEV evidence
 
-The final comparison ran from clean commit `06d82c9` against frozen snapshot
+The final comparison ran from clean commit `cd06605` against frozen snapshot
 `snapshot:96dfbabb4837`. It loaded all 50 DEV items: 40 produced verified plans, 10 were skipped
 or unplanned, and none raised an analysis error.
 
 | policy | recommendations changed from raw | mean recommended amenity credit (min) | mean recommended amenity satisfaction |
 |---|---:|---:|---:|
 | raw | 0 | 3.189 | 0.598 |
-| floor 0.45 | 0 | 3.880 | 0.642 |
+| floor 0.52 | 1 | 4.266 | 0.671 |
 | full credit for any positive score | 2 | 7.775 | 0.875 |
 | normalize within the request | 4 | 6.550 | 0.826 |
 
-The floor modestly changes the interpretation of positive TF-IDF matches without changing which
-itinerary is recommended on DEV. Full credit changes two recommendations. Normalization changes
-four, including two items whose preference phrase came from the category fallback rather than a
-parsed phrase. This makes the floor the least disruptive tested calibration, but the run does not
-show that its recommendations are objectively better: the policy-selection evidence is stability
-and bounded credit, not recommendation-accuracy labels.
+The floor changes one recommendation, `deepti-008`: it selects a plan satisfying the requested
+grocery preference for about `2.80` additional minutes, without changing the number of charging
+stops. Full credit changes two recommendations. Normalization changes four, including two items
+whose preference phrase came from the category fallback rather than a parsed phrase. The derived
+floor is less disruptive than either alternative, but the run does not show that its recommendation
+is objectively better: the policy-selection evidence is a predeclared scale-calibration rule,
+bounded credit and DEV stability, not recommendation-accuracy labels.
 
 ## Alternatives considered
 
@@ -76,5 +85,7 @@ and bounded credit, not recommendation-accuracy labels.
   changes.
 - Config B/C behavior remains unchanged.
 - Existing Config A ranking results from before this policy are not directly comparable.
+- The policy and its `0.52` value must be frozen before the held-out TEST run and before issue #79
+  trains the logistic-regression ranker, so training and evaluation use the same feature scale.
 - Acceptance now requires review by Manas and Ian and their recorded approvals. Any later change
-  to `0.45` requires new DEV evidence and an ADR update.
+  to `0.52` requires new DEV evidence and an ADR update.

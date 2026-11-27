@@ -12,8 +12,9 @@ components:
   provenance_labels: false
 ranking:
   # TF-IDF often gives generic in-category phrases such as "lunch" a very
-  # small positive score. The floor keeps zero matches at zero while putting
-  # genuine category-gated matches on a scale comparable with Configs B/C.
+  # small positive score. The floor keeps zero matches at zero and calibrates
+  # positive matches to the median positive B/C score observed on frozen DEV.
+  # It reduces a score-scale confound without making TF-IDF and SBERT identical.
   tfidf_credit:
     policy: floor
     floor: 0.52

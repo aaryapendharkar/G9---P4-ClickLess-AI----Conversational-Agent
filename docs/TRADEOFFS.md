@@ -30,10 +30,13 @@ cost = w_drive · drive_min                (includes detour driving)
 * A preference counts only if the user **asked for it**, once per trip, at its best stop. The
   matcher produces a score in [0, 1] (TF-IDF in A, SBERT in B/C), and the active configuration
   decides how that score becomes ranking credit.
-* Config A uses `credit_score(s) = 0` when `s = 0`, otherwise `max(s, 0.45)` (ADR 0020). The
-  category gate therefore still prevents unrelated amenities from earning credit, while a weak
-  positive TF-IDF match is not treated as nearly worthless. Configs B/C retain their raw SBERT
-  scores; the TF-IDF policy is not applied to them.
+* Config A uses `credit_score(s) = 0` when `s = 0`, otherwise `max(s, 0.52)` (ADR 0020). The
+  `0.52` floor is the frozen-DEV median of 19 positive SBERT scores from Config B's recommended
+  plans, rounded from `0.5158`; Config C had the identical positive-score population. The category
+  gate still prevents unrelated amenities from earning credit. Configs B/C retain their raw SBERT
+  scores; the TF-IDF policy is not applied to them. This calibration reduces a score-scale
+  confound when comparing matchers, but it does not claim that TF-IDF and SBERT score
+  distributions are identical.
 * Accessibility: only amenities tagged `wheelchair=yes` count toward `restroom_wheelchair`;
   `unknown` never counts (proposal §II).
 * Config C evidence coverage is the supported share of displayed station-name, selected-connector,
