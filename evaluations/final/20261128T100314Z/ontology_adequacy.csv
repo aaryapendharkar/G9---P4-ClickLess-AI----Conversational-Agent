@@ -1,0 +1,5 @@
+config,status,answerable,total,ontology_adequacy,inventory_version,kg,snapshot_id,failing_ids,failing_reasons
+A,n/a: config A does not build the KG,,,,,,"snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",,
+B,n/a: config B does not build the KG,,,,,,"snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",,
+C,ok,20,20,1.0,2,fixtures (data/fixtures),"snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",,
+C-noKG,n/a: config C-noKG does not build the KG,,,,,,"snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",,
