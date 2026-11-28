@@ -15,6 +15,7 @@ from typing import Any
 
 from ..config import repo_path
 from ..contracts import Amenity, Place, Provenance, Station, Vehicle
+from .place_names import place_key
 
 _NEGATION = re.compile(r"\b(not|neither|nor|isn'?t|aren'?t|don'?t|doesn'?t)\b|n't\b")
 _LABEL_WORD = re.compile(r"[a-z0-9.]+")
@@ -189,10 +190,31 @@ class DataStore:
         ambiguous name such as "Springfield", comes back unresolved (`lat`/`lon` None), and the
         caller must ask the driver again. The snapshot gazetteer is closed: it holds the benchmark
         origins/destinations ("City, ST" and the bare city when unique), so a clarification answer
-        naming another place stays unresolved (ADR 0014).
+        naming another place stays unresolved (ADR 0014). Another spelling of a gazetteer place
+        ("Ely, Nevada", "Ely,NV", "Ely, NV, USA" for "ely, nv") resolves to it; see place_names.
         """
         key = text.strip().lower()
+        if key not in self.places:
+            # Same place, other spelling ("Ely, Nevada" for "ely, nv"): compare normalized keys
+            # (place_names.place_key). Spelling only, so the gazetteer stays closed.
+            key = self._keys_by_spelling().get(place_key(text), key)
         if key in self.places:
             lat, lon = self.places[key]
-            return Place(text=key.title(), lat=lat, lon=lon)
+            return Place(text=key.title(), lat=lat, lon=lon)  # gazetteer spelling: route cache names use it
         return Place(text=text.strip())
+
+    def _keys_by_spelling(self) -> dict[str, str]:
+        """place_key -> gazetteer key, built once. A normalized key shared by gazetteer entries at
+        different coordinates is left out, so a normalized lookup never picks between two places."""
+        index = getattr(self, "_spelling_index", None)
+        if index is None or self._spelling_index_for is not self.places:
+            groups: dict[str, list[str]] = {}
+            for k in sorted(self.places):
+                groups.setdefault(place_key(k), []).append(k)
+            index = {
+                norm: keys[0]
+                for norm, keys in groups.items()
+                if len({tuple(self.places[k]) for k in keys}) == 1
+            }
+            self._spelling_index, self._spelling_index_for = index, self.places
+        return index
