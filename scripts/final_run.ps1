@@ -1,14 +1,15 @@
 <#
 .SYNOPSIS
-    Evaluation run: preflight checks, then Configs A, B, C and C-noKG one at a time, then the combined report.
+    Evaluation run: preflight checks, then Configs A, B, C and C-noKG (or the ones given with -Configs)
+    one at a time, then the combined report.
 
 .DESCRIPTION
     Run it yourself in a plain PowerShell window (Windows PowerShell 5.1 or PowerShell 7), from any
     directory. It is not meant to be run from Claude Code.
 
     Preflight (aborts with a message if anything fails):
-      - -Split / -Final are consistent; for test, benchmark/FROZEN.json exists and no earlier final
-        test run is in results/
+      - -Split / -Final / -Configs are consistent (-Final runs all four configs); for test,
+        benchmark/FROZEN.json exists and no earlier final test run is in results/
       - git: on main, working tree clean (untracked files count); prints the commit. With -Limit
         (a smoke run) another branch or a dirty tree only gives a warning: not reproducible.
       - python imports clickless and evaluation from this repo's src (PYTHONPATH is set to it, ahead
@@ -16,7 +17,8 @@
       - CLICKLESS_DATA_SOURCE=snapshot (VOYAGER_BASE_URL and CLICKLESS_DATA_SOURCE are read from the
         repo's .env when not set; their values are not printed)
       - snapshot: verify_manifest() -> [] and every config's snapshot id is snapshot:96dfbabb4837 (frozen)
-      - Ollama: reachable at VOYAGER_BASE_URL, qwen3:8b digest starts 500a1f067a9f, a warm-up call succeeds
+      - Ollama: reachable at VOYAGER_BASE_URL, qwen3:8b digest starts 500a1f067a9f, a warm-up call succeeds.
+        Skipped when only Config A is selected (A uses no LLM).
 
     Then each config runs as its own process (python -m evaluation.harness), logging to
     results/<timestamp>/<config>.log. A crashed config is reported and the others still run.
@@ -32,6 +34,11 @@
     Run only the first N items of the split (a quick smoke run; passed to the harness as --limit).
     Not allowed with -Final: the final test run always covers the whole split.
 
+.PARAMETER Configs
+    Which configs to run, in any order (they always run in the order A, B, C, C-noKG). Default: all
+    four. Names are A, B, C, C-noKG (case-insensitive); "-Configs A,B" and "-Configs A B" both work,
+    also through powershell -File. -Final requires all four: the held-out test run is never partial.
+
 .PARAMETER Python
     Python executable to use (default: python on PATH).
 
@@ -42,6 +49,9 @@
 
 .EXAMPLE
     .\scripts\final_run.ps1 -Split dev -Limit 5
+
+.EXAMPLE
+    .\scripts\final_run.ps1 -Split dev -Configs A
 
 .EXAMPLE
     .\scripts\final_run.ps1 -Split test -Final
@@ -57,13 +67,16 @@ param(
     [ValidateRange(1, [int]::MaxValue)]
     [int]$Limit = 0,
 
+    # Validated in the preflight (a ValidateSet would reject "A,B" passed as one string by -File).
+    [string[]]$Configs = @('A', 'B', 'C', 'C-noKG'),
+
     [string]$Python = 'python'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$Configs          = @('A', 'B', 'C', 'C-noKG')
+$AllConfigs       = @('A', 'B', 'C', 'C-noKG')
 $ExpectedSnapshot = 'snapshot:96dfbabb4837 (frozen'
 $Model            = 'qwen3:8b'
 $ExpectedDigest   = '500a1f067a9f'
@@ -94,6 +107,25 @@ function Write-Utf8NoBom([string]$Path, [string]$Text) {
 
 $Scope = if ($Limit -gt 0) { "first $Limit items of the $Split split" } else { "$Split split" }
 Write-Host "Preflight ($Scope)" -ForegroundColor Cyan
+
+# --- configs ------------------------------------------------------------------------------------
+# Split "A,B" (one string via powershell -File) as well as A,B / A B; map any casing to the
+# canonical name and keep the canonical order, so the run and the report look the same either way.
+$requested = @($Configs | ForEach-Object { "$_" -split '[,\s]+' } | Where-Object { $_ })
+$unknown = @($requested | Where-Object { $AllConfigs -notcontains $_ })
+if ($requested.Count -eq 0) {
+    Stop-Preflight "-Configs is empty. Valid names: $($AllConfigs -join ', ')."
+}
+if ($unknown.Count -gt 0) {
+    Stop-Preflight "unknown config name(s): $($unknown -join ', '). Valid names: $($AllConfigs -join ', ')."
+}
+$Configs = @($AllConfigs | Where-Object { $requested -contains $_ })
+if ($Final -and $Configs.Count -ne $AllConfigs.Count) {
+    Stop-Preflight ("-Final runs all four configs ($($AllConfigs -join ', ')); got $($Configs -join ', '). " +
+        "The held-out test split runs once, so it is never partial.")
+}
+$NeedsLlm = @($Configs | Where-Object { $_ -ne 'A' }).Count -gt 0
+Write-Ok "configs: $($Configs -join ', ')$(if (-not $NeedsLlm) { ' (no LLM: Ollama checks skipped)' })"
 
 # --- split / -Final -----------------------------------------------------------------------------
 if ($Split -eq 'test' -and -not $Final) {
@@ -222,41 +254,44 @@ foreach ($c in $Configs) {
 Write-Ok "snapshot id: $($SnapshotIds.A)"
 
 # --- Ollama -------------------------------------------------------------------------------------
-if (-not $env:VOYAGER_BASE_URL) {
-    Stop-Preflight "VOYAGER_BASE_URL is not set. Run: `$env:VOYAGER_BASE_URL = `"http://localhost:11434/v1`""
-}
-$OllamaRoot = ($env:VOYAGER_BASE_URL.TrimEnd('/')) -replace '/v1$', ''
-try { $u = [Uri]$OllamaRoot; $OllamaHost = "$($u.Scheme)://$($u.Authority)" } catch {
-    Stop-Preflight "VOYAGER_BASE_URL is not a valid URL."
-}  # scheme://host:port only: never print a path or credentials from the URL
-try {
-    $tags = Invoke-RestMethod -Uri "$OllamaRoot/api/tags" -TimeoutSec 15
-} catch {
-    Stop-Preflight "Ollama not reachable at $OllamaHost ($($_.Exception.Message)). Is 'ollama serve' running?"
-}
-$entry = @($tags.models | Where-Object { $_.name -eq $Model -or $_.model -eq $Model }) | Select-Object -First 1
-if (-not $entry) { Stop-Preflight "$Model is not pulled on $OllamaHost. Run: ollama pull $Model" }
-if (-not $entry.digest.StartsWith($ExpectedDigest)) {
-    Stop-Preflight "$Model digest is $($entry.digest.Substring(0, 12)), expected $ExpectedDigest (docs/VOYAGER_LOCAL.md)."
-}
-Write-Ok "Ollama at $OllamaHost, $Model digest $($entry.digest.Substring(0, 12))"
+# Only Configs B, C and C-noKG call the LLM; a run of Config A alone needs no Ollama.
+if ($NeedsLlm) {
+    if (-not $env:VOYAGER_BASE_URL) {
+        Stop-Preflight "VOYAGER_BASE_URL is not set. Run: `$env:VOYAGER_BASE_URL = `"http://localhost:11434/v1`""
+    }
+    $OllamaRoot = ($env:VOYAGER_BASE_URL.TrimEnd('/')) -replace '/v1$', ''
+    try { $u = [Uri]$OllamaRoot; $OllamaHost = "$($u.Scheme)://$($u.Authority)" } catch {
+        Stop-Preflight "VOYAGER_BASE_URL is not a valid URL."
+    }  # scheme://host:port only: never print a path or credentials from the URL
+    try {
+        $tags = Invoke-RestMethod -Uri "$OllamaRoot/api/tags" -TimeoutSec 15
+    } catch {
+        Stop-Preflight "Ollama not reachable at $OllamaHost ($($_.Exception.Message)). Is 'ollama serve' running?"
+    }
+    $entry = @($tags.models | Where-Object { $_.name -eq $Model -or $_.model -eq $Model }) | Select-Object -First 1
+    if (-not $entry) { Stop-Preflight "$Model is not pulled on $OllamaHost. Run: ollama pull $Model" }
+    if (-not $entry.digest.StartsWith($ExpectedDigest)) {
+        Stop-Preflight "$Model digest is $($entry.digest.Substring(0, 12)), expected $ExpectedDigest (docs/VOYAGER_LOCAL.md)."
+    }
+    Write-Ok "Ollama at $OllamaHost, $Model digest $($entry.digest.Substring(0, 12))"
 
-$warmBody = @{
-    model      = $Model
-    prompt     = 'OK'
-    stream     = $false
-    think      = $false
-    keep_alive = '2h'
-    options    = @{ num_predict = 1 }
-} | ConvertTo-Json -Compress
-try {
-    $warm = Invoke-RestMethod -Uri "$OllamaRoot/api/generate" -Method Post -Body $warmBody `
-        -ContentType 'application/json' -TimeoutSec 300
-} catch {
-    Stop-Preflight "warm-up call to $Model failed: $($_.Exception.Message)"
+    $warmBody = @{
+        model      = $Model
+        prompt     = 'OK'
+        stream     = $false
+        think      = $false
+        keep_alive = '2h'
+        options    = @{ num_predict = 1 }
+    } | ConvertTo-Json -Compress
+    try {
+        $warm = Invoke-RestMethod -Uri "$OllamaRoot/api/generate" -Method Post -Body $warmBody `
+            -ContentType 'application/json' -TimeoutSec 300
+    } catch {
+        Stop-Preflight "warm-up call to $Model failed: $($_.Exception.Message)"
+    }
+    if (-not $warm.done) { Stop-Preflight "warm-up call to $Model did not finish (done=false)." }
+    Write-Ok "warm-up call succeeded (model loaded, keep_alive 2h)"
 }
-if (-not $warm.done) { Stop-Preflight "warm-up call to $Model did not finish (done=false)." }
-Write-Ok "warm-up call succeeded (model loaded, keep_alive 2h)"
 
 # --- run the configs ----------------------------------------------------------------------------
 $Stamp  = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
