@@ -8,8 +8,7 @@ they fit together and keeps the reports we cite.
 |---|---|
 | `README.md` | methodology and how to reproduce (this file) |
 | [`preliminary/`](preliminary) | **preliminary** dev-set results and figures. Not final numbers; see that folder's README |
-
-Final results (the held-out test split) will go in `final/` after the final run.
+| [`final/`](final) | **final** results on the held-out test split: the cited report and its analysis |
 
 ## What is compared
 

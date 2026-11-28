@@ -1,0 +1,91 @@
+config,item_id,kind,detail
+A,aarya-023,oracle_search_incomplete,max_labels (40000) hit; 4 plan(s) found; excluded from front-based metrics
+A,hriday-016,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+A,hriday-017,oracle_search_incomplete,max_labels (40000) hit; 4 plan(s) found; excluded from front-based metrics
+A,hriday-018,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+A,hriday-029,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+A,hriday-030,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+A,ian-018,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+A,manas-017,oracle_search_incomplete,max_labels (40000) hit; 3 plan(s) found; excluded from front-based metrics
+A,manas-018,oracle_search_incomplete,max_labels (40000) hit; 3 plan(s) found; excluded from front-based metrics
+A,manas-028,oracle_search_incomplete,max_labels (40000) hit; 1 plan(s) found; excluded from front-based metrics
+A,aarya-002,parse_changed_constraints,"arrival_soc_pct_min: gold 25.0, parsed None"
+A,aarya-004,parse_changed_constraints,"min_power_kw: gold 150.0, parsed None"
+A,aarya-007,parse_changed_constraints,"arrival_soc_pct_min: gold 30.0, parsed None"
+A,aarya-009,parse_changed_constraints,"arrival_soc_pct_min: gold 15.0, parsed None"
+A,aarya-010,parse_changed_constraints,"connectors_override: gold ['CCS1'], parsed None"
+A,aarya-013,parse_changed_constraints,"arrival_soc_pct_min: gold 25.0, parsed None"
+A,aarya-018,parse_changed_constraints,"min_power_kw: gold 150.0, parsed None"
+A,aarya-024,parse_changed_constraints,"max_detour_min: gold 0.0, parsed None"
+A,aarya-025,parse_changed_constraints,"min_power_kw: gold 250.0, parsed None"
+A,hriday-002,oracle_feasible_planner_rejected,oracle witness ['afdc:63047']
+A,hriday-003,parse_changed_constraints,"connectors_override: gold ['CCS1'], parsed None"
+A,hriday-004,parse_changed_constraints,"min_power_kw: gold 150.0, parsed None"
+A,hriday-005,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,hriday-006,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,hriday-008,parse_changed_constraints,"min_power_kw: gold 100.0, parsed None"
+A,hriday-010,parse_changed_constraints,"arrival_soc_pct_min: gold 18.0, parsed None; connectors_override: gold ['CCS1'], parsed None"
+A,hriday-014,parse_changed_constraints,"connectors_override: gold ['CHADEMO'], parsed None"
+A,hriday-015,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,hriday-017,parse_changed_constraints,"connectors_override: gold ['CCS1'], parsed None"
+A,hriday-018,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None; min_power_kw: gold 150.0, parsed None"
+A,hriday-024,parse_changed_constraints,"max_detour_min: gold 0.0, parsed None"
+A,ian-002,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,ian-003,parse_changed_constraints,"arrival_soc_pct_min: gold 15.0, parsed None"
+A,ian-006,parse_changed_constraints,"arrival_soc_pct_min: gold 25.0, parsed None"
+A,ian-009,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,ian-011,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,ian-013,parse_changed_constraints,"min_power_kw: gold None, parsed 50.0; connectors_override: gold ['CCS1'], parsed None"
+A,ian-014,parse_changed_constraints,"arrival_soc_pct_min: gold 10.0, parsed None"
+A,ian-016,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,ian-024,parse_changed_constraints,"max_detour_min: gold 0.0, parsed None"
+A,ian-025,parse_changed_constraints,"min_power_kw: gold 150.0, parsed None"
+A,manas-003,parse_changed_constraints,"min_power_kw: gold 50.0, parsed None"
+A,manas-005,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,manas-006,parse_changed_constraints,"arrival_soc_pct_min: gold 30.0, parsed None"
+A,manas-012,parse_changed_constraints,"min_power_kw: gold 350.0, parsed None"
+A,manas-013,parse_changed_constraints,"arrival_soc_pct_min: gold 25.0, parsed None"
+A,manas-014,parse_changed_constraints,"arrival_soc_pct_min: gold 20.0, parsed None"
+A,manas-016,parse_changed_constraints,"arrival_soc_pct_min: gold 15.0, parsed None"
+A,manas-024,parse_changed_constraints,"max_detour_min: gold 0.0, parsed None"
+A,manas-025,parse_changed_constraints,"max_detour_min: gold 3.0, parsed None"
+A,manas-028,parse_changed_constraints,"arrival_soc_pct_min: gold 25.0, parsed None"
+B,aarya-023,oracle_search_incomplete,max_labels (40000) hit; 4 plan(s) found; excluded from front-based metrics
+B,hriday-015,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+B,hriday-016,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+B,hriday-017,oracle_search_incomplete,max_labels (40000) hit; 4 plan(s) found; excluded from front-based metrics
+B,hriday-018,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+B,hriday-029,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+B,hriday-030,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+B,ian-018,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+B,manas-016,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+B,manas-017,oracle_search_incomplete,max_labels (40000) hit; 3 plan(s) found; excluded from front-based metrics
+B,manas-018,oracle_search_incomplete,max_labels (40000) hit; 3 plan(s) found; excluded from front-based metrics
+B,manas-028,oracle_search_incomplete,max_labels (40000) hit; 1 plan(s) found; excluded from front-based metrics
+B,hriday-002,oracle_feasible_planner_rejected,oracle witness ['afdc:63047']
+C,aarya-023,oracle_search_incomplete,max_labels (40000) hit; 4 plan(s) found; excluded from front-based metrics
+C,hriday-015,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C,hriday-016,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C,hriday-017,oracle_search_incomplete,max_labels (40000) hit; 4 plan(s) found; excluded from front-based metrics
+C,hriday-018,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C,hriday-029,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C,hriday-030,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C,ian-018,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C,manas-016,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C,manas-017,oracle_search_incomplete,max_labels (40000) hit; 3 plan(s) found; excluded from front-based metrics
+C,manas-018,oracle_search_incomplete,max_labels (40000) hit; 3 plan(s) found; excluded from front-based metrics
+C,manas-028,oracle_search_incomplete,max_labels (40000) hit; 1 plan(s) found; excluded from front-based metrics
+C,hriday-002,oracle_feasible_planner_rejected,oracle witness ['afdc:63047']
+C-noKG,aarya-023,oracle_search_incomplete,max_labels (40000) hit; 4 plan(s) found; excluded from front-based metrics
+C-noKG,hriday-015,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C-noKG,hriday-016,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C-noKG,hriday-017,oracle_search_incomplete,max_labels (40000) hit; 4 plan(s) found; excluded from front-based metrics
+C-noKG,hriday-018,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C-noKG,hriday-029,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C-noKG,hriday-030,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C-noKG,ian-018,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C-noKG,manas-016,oracle_search_incomplete,max_labels (40000) hit; 0 plan(s) found; excluded from front-based metrics
+C-noKG,manas-017,oracle_search_incomplete,max_labels (40000) hit; 3 plan(s) found; excluded from front-based metrics
+C-noKG,manas-018,oracle_search_incomplete,max_labels (40000) hit; 3 plan(s) found; excluded from front-based metrics
+C-noKG,manas-028,oracle_search_incomplete,max_labels (40000) hit; 1 plan(s) found; excluded from front-based metrics
+C-noKG,hriday-002,oracle_feasible_planner_rejected,oracle witness ['afdc:63047']

@@ -1,0 +1,31 @@
+pair,outcome,test,n,rate_a,rate_b,b,c,statistic,p_value,note
+A vs B,exact_match,McNemar,100,0.38,0.72,3,37,27.225,1.8110172867751746e-07,"chi-square, continuity-corrected"
+A vs B,clarification_correct,McNemar,100,0.59,0.63,3,7,3.0,0.34375,exact binomial
+A vs B,no_error,McNemar,100,1.0,1.0,0,0,0.0,1.0,exact binomial
+A vs B,no_invented_constraint,McNemar,100,0.99,1.0,0,1,0.0,1.0,exact binomial
+A vs B,got_valid_plan,McNemar,70,0.38571428571428573,0.5714285714285714,1,14,1.0,0.0009765625,exact binomial
+A vs B,field_f1,Wilcoxon,100,0.8561330891330892,0.9363131313131313,,,231.5,7.851390903184642e-07,59 non-zero differences
+A vs B,latency_ms,Wilcoxon,100,864.7646870004246,11077.498679999406,,,0.0,3.8965598450959084e-18,100 non-zero differences
+A vs C,exact_match,McNemar,100,0.38,0.72,3,37,27.225,1.8110172867751746e-07,"chi-square, continuity-corrected"
+A vs C,clarification_correct,McNemar,100,0.59,0.63,3,7,3.0,0.34375,exact binomial
+A vs C,no_error,McNemar,100,1.0,1.0,0,0,0.0,1.0,exact binomial
+A vs C,no_invented_constraint,McNemar,100,0.99,1.0,0,1,0.0,1.0,exact binomial
+A vs C,got_valid_plan,McNemar,70,0.38571428571428573,0.5714285714285714,1,14,1.0,0.0009765625,exact binomial
+A vs C,field_f1,Wilcoxon,100,0.8561330891330892,0.9363131313131313,,,231.5,7.851390903184642e-07,59 non-zero differences
+A vs C,latency_ms,Wilcoxon,100,864.7646870004246,11044.819886000187,,,0.0,3.8965598450959084e-18,100 non-zero differences
+B vs C,exact_match,McNemar,100,0.72,0.72,0,0,0.0,1.0,exact binomial
+B vs C,clarification_correct,McNemar,100,0.63,0.63,0,0,0.0,1.0,exact binomial
+B vs C,no_error,McNemar,100,1.0,1.0,0,0,0.0,1.0,exact binomial
+B vs C,no_invented_constraint,McNemar,100,1.0,1.0,0,0,0.0,1.0,exact binomial
+B vs C,got_valid_plan,McNemar,70,0.5714285714285714,0.5714285714285714,0,0,0.0,1.0,exact binomial
+B vs C,field_f1,Wilcoxon,100,0.9363131313131313,0.9363131313131313,,,,,0 non-zero differences
+B vs C,latency_ms,Wilcoxon,100,11077.498679999406,11044.819886000187,,,2243.0,0.3322421202721664,100 non-zero differences
+C vs C-noKG,exact_match,McNemar,100,0.72,0.72,0,0,0.0,1.0,exact binomial
+C vs C-noKG,clarification_correct,McNemar,100,0.63,0.63,0,0,0.0,1.0,exact binomial
+C vs C-noKG,no_error,McNemar,100,1.0,1.0,0,0,0.0,1.0,exact binomial
+C vs C-noKG,no_invented_constraint,McNemar,100,1.0,1.0,0,0,0.0,1.0,exact binomial
+C vs C-noKG,got_valid_plan,McNemar,70,0.5714285714285714,0.5714285714285714,0,0,0.0,1.0,exact binomial
+C vs C-noKG,field_f1,Wilcoxon,100,0.9363131313131313,0.9363131313131313,,,,,0 non-zero differences
+C vs C-noKG,latency_ms,Wilcoxon,100,11044.819886000187,10686.523885999779,,,764.0,1.4051360614769775e-09,100 non-zero differences
+C vs C-noKG,kg_evidence_coverage,Wilcoxon,38,1.0,0.0,,,0.0,7.074463098970675e-10,38 non-zero differences
+C vs C-noKG,kg_claim_share,Wilcoxon,41,0.4389469608981804,0.0,,,0.0,4.65363612737974e-08,38 non-zero differences
