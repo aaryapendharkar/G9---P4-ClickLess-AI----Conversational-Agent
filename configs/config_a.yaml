@@ -1,11 +1,14 @@
 # Configuration A -- classical baseline (proposal Table II).
 name: A
-description: Rules/spaCy extraction, TF-IDF matching, corridor retrieval, logistic-regression ranker, templates.
+description: Rules/spaCy extraction, TF-IDF matching, corridor retrieval, weighted ranker, templates.
 components:
   parser: rules              # rules | spacy | llm
   matcher: tfidf             # tfidf | sbert
   retriever: corridor        # corridor | corridor+kg
-  ranker: logreg             # logreg | weighted | weighted+evidence
+  # weighted for the final run (issue #79): the logistic-regression ranker is implemented but
+  # untrained, and A previously fell back to weighted silently. Using the same ranker as B keeps
+  # A-vs-B/C a comparison of parsing/matching only. logreg remains available for a DEV ablation.
+  ranker: weighted           # logreg | weighted | weighted+evidence
   selector: tradeoff         # trade-off alternatives (TA feedback) -- same in all configs
   incomplete_request: reject # reject | clarify
   explainer: template        # template | grounded_llm

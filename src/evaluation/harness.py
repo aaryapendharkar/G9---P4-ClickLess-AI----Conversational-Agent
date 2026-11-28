@@ -71,7 +71,9 @@ import requests
 
 from clickless.config import load_config, repo_path
 from clickless.contracts import PlanResult
+from clickless.data.snapshot import sha256_file
 from clickless.pipeline import build_pipeline
+from clickless.ranking.logreg_ranker import DEFAULT_MODEL_PATH
 
 from .config_names import ABLATIONS, SnapshotRequired, config_path, data_source, require_snapshot  # noqa: F401
 from .llm_residency import LLMResidency
@@ -166,6 +168,18 @@ def endpoint_host(base_url: str) -> str:
     return (parts.hostname or "") + (f":{parts.port}" if parts.port else "")
 
 
+def ranker_info(cfg: Mapping[str, Any], model_path: str | Path = DEFAULT_MODEL_PATH) -> dict[str, Any]:
+    """The configured ranker, and for logreg the artifact it would load: path and sha256, or
+    "absent" when the file is missing (the pipeline then falls back to the weighted ranker)."""
+    ranker = cfg.get("components", {}).get("ranker", NA)
+    if ranker != "logreg":
+        return {"ranker": ranker, "ranker_model_path": NA, "ranker_model_sha256": NA}
+    # Same relative path LogRegRanker opens (resolved against the working directory).
+    path = Path(model_path)
+    digest = sha256_file(path) if path.is_file() else "absent"
+    return {"ranker": ranker, "ranker_model_path": path.as_posix(), "ranker_model_sha256": digest}
+
+
 def run_metadata(
     cfg: Mapping[str, Any],
     config_text: str = "",
@@ -187,6 +201,7 @@ def run_metadata(
         {"policy": "raw"},
     )
     meta["tfidf_credit"] = dict(configured_credit_policy)
+    meta.update(ranker_info(cfg))
 
     meta.update(snapshot_info(cfg, env))
     if not _uses_llm(cfg):

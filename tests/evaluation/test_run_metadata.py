@@ -1,5 +1,6 @@
 """Harness run metadata: Config A is n/a, LLM configs record endpoint + digest, never the key."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 
 from clickless.config import load_config
 from clickless.nlu import llm_parser
-from evaluation.harness import expected_digest, run_metadata
+from evaluation.harness import expected_digest, ranker_info, run_metadata
 
 FULL = "500a1f067a9f" + "0" * 52
 COMMIT = {"git_commit": "abc123", "git_dirty": False}
@@ -92,3 +93,19 @@ def test_unpinned_and_missing_model():
 def test_expected_digest_parsing():
     assert expected_digest({}, CONFIG_TEXT) == "500a1f067a9f"
     assert expected_digest({}, "model: CHANGE_ME") is None
+
+
+def test_config_a_records_the_weighted_ranker():
+    meta = run_metadata(load_config("A"), env={}, commit=COMMIT)
+    assert meta["ranker"] == "weighted"
+    assert meta["ranker_model_path"] == "n/a" and meta["ranker_model_sha256"] == "n/a"
+
+
+def test_logreg_records_model_path_and_sha256(tmp_path):
+    cfg = {"components": {"ranker": "logreg"}}
+    model = tmp_path / "logreg_a.joblib"
+    assert ranker_info(cfg, model)["ranker_model_sha256"] == "absent"
+    model.write_bytes(b"model")
+    info = ranker_info(cfg, model)
+    assert info["ranker"] == "logreg" and info["ranker_model_path"] == model.as_posix()
+    assert info["ranker_model_sha256"] == hashlib.sha256(b"model").hexdigest()

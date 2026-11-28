@@ -927,6 +927,9 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
                 "ollama_version": meta.get("ollama_version"),
                 "endpoint_host": meta.get("endpoint_host"),
                 "prompt_version": meta.get("prompt_version"),
+                "ranker": meta.get("ranker"),
+                "ranker_model_path": meta.get("ranker_model_path"),
+                "ranker_model_sha256": meta.get("ranker_model_sha256"),
                 "snapshot_id": snapshot.get(config),
                 "gpu_share_n": share.get("n", 0),
                 "gpu_share_min": share.get("min"),
@@ -946,6 +949,9 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
         "ollama_version",
         "endpoint_host",
         "prompt_version",
+        "ranker",
+        "ranker_model_path",
+        "ranker_model_sha256",
         "snapshot_id",
         "gpu_share_n",
         "gpu_share_min",
@@ -1199,7 +1205,7 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     )
     lines += ["", "## Run metadata", ""]
     lines += _md_table(
-        ["Config", "Git commit", "Model", "Digest", "Ollama", "Prompt", "Snapshot"],
+        ["Config", "Git commit", "Model", "Digest", "Ollama", "Prompt", "Ranker", "Snapshot"],
         [
             [
                 r["config"],
@@ -1208,6 +1214,8 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
                 _fmt(r["model_digest"]),
                 _fmt(r["ollama_version"]),
                 _fmt(r["prompt_version"]),
+                _fmt(r["ranker"])
+                + (f" ({_fmt(r['ranker_model_sha256'])})" if r["ranker"] == "logreg" else ""),
                 _fmt(r["snapshot_id"]),
             ]
             for r in meta_rows
