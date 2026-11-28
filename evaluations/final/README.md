@@ -13,7 +13,7 @@ configs (A, B, C, C-noKG), no failed configs. The per-config result JSONs (about
 in the run folder, and `python -m evaluation.report --from <folder>` rebuilds the report from them. It writes
 `report.md` and the CSVs into the folder it reads, so run it on a copy (the result JSONs, `*_handoff_audit.jsonl`
 and `report_inputs.json`), never on the run folder itself. That is how `20261128T100314Z_recomputed/` was made,
-with `--latency-note "one Windows laptop (RTX 2060, qwen3:8b on GPU)"`.
+with `--latency-note "one Windows laptop (RTX 2060 6 GB; qwen3:8b ~70% on GPU, rest on CPU)"`.
 
 ## Aborted attempt
 
