@@ -1,6 +1,7 @@
 import pytest
 
-from clickless.contracts import ParseResult
+from clickless.contracts import Connector, ParseResult
+from clickless.data import DataStore
 from clickless.nlu.clarification import TemplateClarifier
 from clickless.nlu.rules_parser import RulesParser
 
@@ -26,6 +27,77 @@ def test_missing_battery_is_reported_not_invented(parser):
 def test_priority_phrase_sets_profile(parser):
     r = parser.parse("from Phoenix to Flagstaff, comet, 80%, I'm in a hurry", "t3").request
     assert r.tradeoff_profile == "fastest"
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected"),
+    [
+        ("use only CHAdeMO chargers", Connector.CHADEMO),
+        ("use only CCS combo 1", Connector.CCS1),
+        ("use only Tesla chargers", Connector.NACS),
+    ],
+)
+def test_explicit_connector_restriction(parser, phrase, expected):
+    request = parser.parse(f"Phoenix to Flagstaff in my Spark, 65%, {phrase}", "connector-only").request
+
+    assert request.connectors_override == [expected]
+
+
+def test_connector_mention_without_only_is_not_a_restriction(parser):
+    request = parser.parse(
+        "Phoenix to Flagstaff in my Spark, 65%, I prefer CHAdeMO chargers",
+        "connector-preference",
+    ).request
+
+    assert request.connectors_override is None
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["don't use only Tesla chargers", "do not use only CCS chargers", "never use only CHAdeMO"],
+)
+def test_negated_use_only_is_not_a_restriction(parser, phrase):
+    request = parser.parse(f"Phoenix to Flagstaff in my Spark, 65%, {phrase}", "negated").request
+
+    assert request.connectors_override is None
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "ok, I have 50%",
+        "me and my dog",
+        "or somewhere close",
+        "in my Comet",
+        "Washington is not on my way",
+    ],
+)
+def test_words_after_a_comma_are_not_read_as_a_state(tmp_path, tail):
+    store = DataStore(
+        [], [], [], {"phoenix": (33.45, -112.07), "tucson": (32.22, -110.97)}, tmp_path
+    )
+    request = RulesParser(store).parse(f"From Phoenix to Tucson, {tail}", "comma-words").request
+
+    assert request.destination.resolved and request.destination.text == "Tucson"
+
+
+@pytest.mark.parametrize(
+    "route",
+    [
+        "From Tempe, Arizona to Flagstaff, Arizona",
+        "From Tempe, AZ to Flagstaff, AZ, in my Comet",
+        "Tempe, Arizona to Flagstaff, Arizona.",
+        "Tempe, AZ to Flagstaff, AZ",
+    ],
+)
+def test_parses_city_state_endpoints(tmp_path, route):
+    store = DataStore(
+        [], [], [], {"tempe, az": (33.4255, -111.94), "flagstaff, az": (35.1983, -111.6513)}, tmp_path
+    )
+    request = RulesParser(store).parse(route, "city-state").request
+
+    assert request.origin.resolved and request.origin.text == "Tempe, Az"
+    assert request.destination.resolved and request.destination.text == "Flagstaff, Az"
 
 
 def test_required_wheelchair_restroom_is_important_but_negation_is_not(parser):

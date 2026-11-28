@@ -20,6 +20,7 @@ from pydantic import ValidationError
 
 from ..config import repo_path
 from ..contracts import AmenityCategory, AmenityPreference, Connector, ParseResult, TripRequest
+from .connector_normalization import normalize_connector
 from .priority_phrases import detect_priority_keys, detect_profile, detect_weight_overrides
 from .rules_parser import RulesParser
 from .voyager_client import chat
@@ -36,17 +37,6 @@ _NUMERIC_RANGES = {
     "arrival_soc_pct_min": (0.0, 100.0),
     "max_detour_min": (0.0, math.inf),
     "min_power_kw": (0.0, math.inf),
-}
-_CONNECTOR_ALIASES = {
-    "ccs": Connector.CCS1,
-    "ccs1": Connector.CCS1,
-    "combo 1": Connector.CCS1,
-    "ccs combo 1": Connector.CCS1,
-    "j1772 combo": Connector.CCS1,
-    "nacs": Connector.NACS,
-    "tesla": Connector.NACS,
-    "chademo": Connector.CHADEMO,
-    "j1772": Connector.J1772,
 }
 _CONNECTOR_MENTIONS = (
     (Connector.CCS1, re.compile(r"\b(?:ccs(?:\s*1)?|ccs\s+combo\s*1|combo\s*1|j1772\s+combo)\b", re.I)),
@@ -88,11 +78,10 @@ def _json_object(raw_response: str) -> dict[str, Any]:
 
 def _normalize_connector(value: str) -> Connector:
     """Map common driver/model phrases to the canonical connector enum."""
-    normalized_value = re.sub(r"\s+", " ", value.strip().lower())
     try:
-        return _CONNECTOR_ALIASES[normalized_value]
-    except KeyError as error:
-        raise ExtractionValidationError(f"unsupported connector: {value}") from error
+        return normalize_connector(value)
+    except ValueError as error:
+        raise ExtractionValidationError(str(error)) from error
 
 
 def _explicitly_mentioned_connectors(text: str) -> set[Connector]:

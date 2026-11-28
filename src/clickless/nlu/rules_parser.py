@@ -10,10 +10,29 @@ import re
 
 from ..contracts import AmenityCategory, AmenityPreference, ParseResult, TripRequest
 from ..data import DataStore
+from ..data.place_names import STATE_CODES
+from .connector_normalization import CONNECTOR_ALIASES, normalize_connector
 from .priority_phrases import detect_priority_keys, detect_profile, detect_weight_overrides
 
 _STOP = r"(?=\s+(?:in|with|and|on|via|using|driving)\b|[,.!?;]|$)"
-_PLACE = r"([a-z][a-z .'-]*?)"
+# A place may carry its state after a comma ("Tempe, Arizona", "Tempe, AZ"). Any other comma still
+# ends the place. DataStore.geocode normalizes the state spelling.
+_STATES = "|".join(
+    re.escape(state)
+    for state in sorted((*STATE_CODES, *STATE_CODES.values()), key=len, reverse=True)
+)
+_PLACE = rf"([a-z][a-z .'-]*?(?:,\s*(?:{_STATES})\b)?)"
+# Typed in lower case after a comma, these postal codes are ordinary words (", ok", ", me and ...").
+_COMMA_BEFORE_WORD = re.compile(r",(?=\s*(?:hi|in|me|oh|ok|or)\b)")
+_CONNECTOR_NAMES = "|".join(
+    r"\s+".join(re.escape(word) for word in name.split())
+    for name in sorted(CONNECTOR_ALIASES, key=len, reverse=True)
+)
+_CONNECTOR_RESTRICTION = re.compile(
+    r"(?<!\bnot )(?<!\bnever )(?<!\bdont )(?<!n't )(?<!n’t )"
+    rf"\buse\s+only\s+(?P<connector>{_CONNECTOR_NAMES})\b",
+    re.IGNORECASE,
+)
 _OD_PATTERNS = [
     re.compile(rf"\bfrom\s+{_PLACE}\s+to\s+{_PLACE}{_STOP}"),
     # A leading clause such as "I'm in a hurry: Phoenix to Flagstaff" is allowed.
@@ -57,8 +76,13 @@ class RulesParser:
         req = TripRequest(request_id=request_id, raw_text=text)
         ambiguous: dict[str, list[str]] = {}
 
+        connector_match = _CONNECTOR_RESTRICTION.search(low)
+        if connector_match:
+            req.connectors_override = [normalize_connector(connector_match.group("connector"))]
+
+        route_text = _COMMA_BEFORE_WORD.sub(";", text.strip()).lower()
         for pat in _OD_PATTERNS:
-            m = pat.search(low)
+            m = pat.search(route_text)
             if m:
                 req.origin = self.store.geocode(m.group(1))
                 req.destination = self.store.geocode(m.group(2))
