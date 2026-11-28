@@ -87,10 +87,48 @@ Owners by module:
 
 ## Setup
 
-```bash
-pip install -e ".[dev,nlp,kg]"   # nlp: Sentence-BERT (B, C); kg: rdflib (C)
-pytest                           # = make test; xfail = an open TODO with an owner
+Run these commands from the repository root. Python 3.10 or newer is required.
+
+### Windows PowerShell
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev,nlp,kg]"
 ```
+
+If PowerShell blocks activation, allow local scripts for only the current terminal and try again:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\.venv\Scripts\Activate.ps1
+```
+
+### macOS and Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev,nlp,kg]"
+```
+
+The `nlp` extra installs Sentence-BERT for Configs B/C; `kg` installs rdflib for Config C. After
+activation, the same direct Python commands work in both shells:
+
+| Task | Direct command |
+|---|---|
+| Run the test suite | `python -m pytest` |
+| Run the fixture demo | `python -m clickless plan --config A --no-input "From Phoenix to Flagstaff in my Spark LR, I have 65% battery and want to arrive with at least 20%, lunch stop and a wheelchair accessible restroom please"` |
+| Verify the downloaded snapshot | `python -m clickless.data.snapshot_report --verify-only` |
+| Validate benchmark files | `python -c "from evaluation.schema import load_items; [print(split, len(load_items('benchmark/requests/' + split))) for split in ('raw', 'dev', 'test')]"` |
+
+GNU Make is optional. Where it is installed, `make setup`, `make test`, `make demo`,
+`make snapshot-verify` and `make bench-check` are aliases for the corresponding direct commands.
+Windows contributors do not need to install Make.
+
+CI runs the full non-network suite on Linux and a focused CLI, pipeline, benchmark and fixture-demo
+smoke on Windows and macOS. Snapshot and local-model checks remain manual because those artifacts
+are intentionally not stored in git.
 
 **Snapshot (real data).** It isn't in git. Download `snapshot-v1.zip` from the repository's GitHub release
 `snapshot-v1` (or the team drive) and unzip it into `data/snapshot/`, so that `data/snapshot/MANIFEST.json`,
@@ -106,9 +144,15 @@ read `.env` by itself; set the variables in the shell:
 ```powershell
 $env:CLICKLESS_DATA_SOURCE = "snapshot"            # default is the synthetic fixtures
 $env:VOYAGER_BASE_URL = "http://localhost:11434/v1"
-$env:VOYAGER_API_KEY = ""
-# Bash: export CLICKLESS_DATA_SOURCE=snapshot; set -a; source .env; set +a
+Remove-Item Env:VOYAGER_API_KEY -ErrorAction SilentlyContinue  # local Ollama needs no key
+# Bash: export CLICKLESS_DATA_SOURCE=snapshot VOYAGER_BASE_URL=http://localhost:11434/v1; unset VOYAGER_API_KEY
 ```
+
+`VOYAGER_API_KEY` is a generic bearer-token variable despite its name: a hosted OpenAI-compatible
+endpoint can use its own provider-issued key. A standard OpenAI API key is not a drop-in replacement
+for the reproducible project setup because Configs B/C pin `qwen3:8b`; changing to a model offered by
+another provider changes the evaluated configuration. Outside-ASU users can run the pinned model
+locally through Ollama without any API key. See `docs/VOYAGER_LOCAL.md` for provider requirements.
 
 ## Running it
 
