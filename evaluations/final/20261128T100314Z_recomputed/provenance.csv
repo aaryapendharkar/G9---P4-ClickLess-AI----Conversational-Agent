@@ -1,0 +1,5 @@
+config,n_results,n_results_with_stops,n_results_without_evidence,n_displayed,n_with_evidence,n_complete,provenance_completeness,ci_lo,ci_hi,validate_required_share,source_updated_at_share,missing_evidence,missing_source,missing_source_record_id,missing_retrieved_at,missing_source_updated_at,note
+A,100,35,100,257,0,0,0.0,0.0,0.0,0.0,0.0,257,0,0,0,0,no evidence in any result (by design: no KG)
+B,100,38,100,314,0,0,0.0,0.0,0.0,0.0,0.0,314,0,0,0,0,no evidence in any result (by design: no KG)
+C,100,38,57,314,314,314,1.0,1.0,1.0,1.0,0.5636942675159236,0,0,0,0,137,
+C-noKG,100,38,100,314,0,0,0.0,0.0,0.0,0.0,0.0,314,0,0,0,0,no evidence in any result (by design: no KG)

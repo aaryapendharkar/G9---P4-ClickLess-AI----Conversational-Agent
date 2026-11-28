@@ -362,10 +362,13 @@ def test_build_report_writes_every_section_and_csv(run_dir):
         "## Ontology adequacy (competency questions on the fixture KG)",
         "## Findings",
         "## Run metadata",
+        "## Handoff correctness (offline, #185)",
+        "## Latency (#185)",
+        "## Provenance completeness (#186)",
     ):
         assert section in text
     for name in ("headline.csv", "paired.csv", "breakdown.csv", "errors.csv", "findings.csv", "oracle_search.csv",
-                 "ontology_adequacy.csv", "metadata.csv"):
+                 "ontology_adequacy.csv", "metadata.csv", "handoff.csv", "latency.csv", "provenance.csv"):
         assert (run_dir / name).is_file()
     assert "## Errors by stage and type" in text
     assert [(r["config"], r["stage"], r["error_type"], r["n"]) for r in read_csv(run_dir / "errors.csv")] == [
@@ -908,3 +911,74 @@ def test_valid_plan_mcnemar_and_kg_pair_outcomes(run_dir):
     nokg = ConfigRun({**c.payload, "config": "C-noKG"}, c.items)
     kg_rows = {r["outcome"]: r for r in paired(c, nokg)}
     assert {"kg_evidence_coverage", "kg_claim_share"} <= set(kg_rows)
+
+
+# --------------------------------------------------------------------------- handoff, latency, provenance (#185, #186)
+
+
+def test_latency_in_report_counts_every_row_and_names_the_machine(run_dir):
+    text = build_report(run_dir, n_boot=50, latency_note="test laptop").read_text(encoding="utf-8")
+
+    lat = {(r["config"], r["scope"]): r for r in read_csv(run_dir / "latency.csv")}
+    a = lat[("A", "request (all rows)")]
+    assert (a["n"], float(a["p50_ms"]), a["n_error_rows"], a["missing_latency_ids"]) == ("5", 100.0, "1", "i5")
+    assert lat[("B", "request (all rows)")]["p50_ms"] == "200.0"
+    assert "Measured on: test laptop." in text
+    assert "rows without latency_ms (not in the sample): i5" in text
+    assert "machine not recorded" in build_report(run_dir, n_boot=50).read_text(encoding="utf-8")
+
+
+def test_configs_without_handoff_fields_or_evidence_are_reported_not_skipped(run_dir):
+    text = build_report(run_dir, n_boot=50).read_text(encoding="utf-8")
+
+    handoff = {r["config"]: r for r in read_csv(run_dir / "handoff.csv")}
+    assert handoff["A"]["n_scored"] == "0" and handoff["A"]["audit_found"] == "False"
+    assert "n/a (no audit log)" in text
+    prov = {r["config"]: r for r in read_csv(run_dir / "provenance.csv")}
+    assert prov["A"]["n_results_with_stops"] == "0" and prov["A"]["provenance_completeness"] == ""
+
+
+URL = ("https://www.google.com/maps/dir/?api=1&origin=33.000000,-112.000000&destination=36.000000,-109.000000"
+       "&travelmode=driving&waypoints=34.000000,-111.000000")
+PROV = {"source": "AFDC", "source_record_id": "1", "retrieved_at": "2026-11-01T00:00:00Z",
+        "source_updated_at": None, "status": "cached"}
+
+
+def _handoff_row():
+    stop = {"station_id": "afdc:1", "station_name": "One", "connector": "CCS1", "port_power_kw": 150.0,
+            "along_route_km": 10.0, "detour_min": 1.0, "arrive_soc_pct": 30.0, "depart_soc_pct": 80.0,
+            "charge_min_est": 10.0}
+    itinerary = {"itinerary_id": "x", "request_id": "i1", "vehicle_id": "fixture-spark-lr-2025", "stops": [stop],
+                 "legs": [], "total_drive_min": 60.0, "total_charge_min": 10.0, "total_detour_min": 1.0,
+                 "arrival_soc_pct": 20.0}
+    cost = {"profile": "balanced", "drive_min": 60, "charge_min": 10, "detour_penalty_min": 0,
+            "stop_overhead_min": 5, "amenity_credit_min": 0, "evidence_credit_min": 0, "total_min": 75,
+            "amenity_satisfaction": 1.0}
+    evidence = [{"evidence_id": f"kg:afdc:1:{f}", "subject_id": "afdc:1", "field": f, "value": v, "provenance": PROV}
+                for f, v in (("name", "One"), ("ports[0].connector", "CCS1"), ("ports[0].power_kw", 150.0))]
+    r = row("i1", "ok", latency=100)
+    r["result"]["request"]["origin"] = {"text": "Phoenix, AZ", "lat": 33.0, "lon": -112.0}
+    r["result"]["request"]["destination"] = {"text": "Flagstaff, AZ", "lat": 36.0, "lon": -109.0}
+    r["result"].update(alternatives=[{"label": "Recommended", "itinerary": itinerary, "cost": cost}],
+                       evidence=evidence, timings_ms={"parse": 5.0, "route": 10.0})
+    r.update(handoff_urls=[URL], expected_stops=[{"station_id": "afdc:1", "lat": 34.0, "lon": -111.0}])
+    return r
+
+
+def test_handoff_and_provenance_from_saved_rows_and_audit_log(run_dir):
+    payload_c = json.loads((run_dir / "C_items.json").read_text(encoding="utf-8"))
+    payload_c["rows"][0] = _handoff_row()
+    (run_dir / "C_items.json").write_text(json.dumps(payload_c), encoding="utf-8")
+    (run_dir / "C_handoff_audit.jsonl").write_text(
+        json.dumps({"request_id": "i1", "approved": True, "urls": 1}) + "\n", encoding="utf-8"
+    )
+
+    text = build_report(run_dir, n_boot=50).read_text(encoding="utf-8")
+
+    c = {r["config"]: r for r in read_csv(run_dir / "handoff.csv")}["C"]
+    assert (c["n_scored"], c["fully_correct_passed"], c["fully_correct_rate"]) == ("1", "1", "1.0")
+    assert c["not_ok_with_handoff"] == "" and c["saved_results_approved_or_with_urls"] == ""
+    assert "1.000 (1/1)" in text
+    prov = {r["config"]: r for r in read_csv(run_dir / "provenance.csv")}["C"]
+    assert (prov["n_displayed"], prov["n_complete"], prov["missing_source_updated_at"]) == ("3", "3", "3")
+    assert float(prov["provenance_completeness"]) == 1.0
