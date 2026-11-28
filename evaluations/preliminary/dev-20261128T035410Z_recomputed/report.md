@@ -79,7 +79,7 @@ For each ok item the harness approved a COPY of the result for the recommended o
 
 ## Latency (#185)
 
-Measured on: one Windows laptop (RTX 2060, qwen3:8b on GPU). LLM GPU share (median): B 0.703, C 0.703, C-noKG 0.703. Latency depends on the machine; compare configs within this run only.
+Measured on: one Windows laptop (RTX 2060 6 GB; qwen3:8b ~70% on GPU, rest on CPU). LLM GPU share (median): B 0.703, C 0.703, C-noKG 0.703. Latency depends on the machine; compare configs within this run only.
 
 Request latency (`latency_ms`) runs from just before pipeline.run() until it returns or raises: parse, route, retrieve, plan+verify, rank, explain. It excludes the one-off LLM warm-up before the first item and the offline handoff check. All rows count, errors included (their count is shown); routed items are those that got past parsing to routing (rejected requests stop after parsing). Stage laps come from each result's timings_ms; an error row keeps the laps recorded before the exception. p50 / p95: numpy linear interpolation.
 
