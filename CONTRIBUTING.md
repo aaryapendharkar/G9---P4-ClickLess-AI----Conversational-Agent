@@ -12,7 +12,7 @@ py -m venv .venv
 python -m pip install -e ".[dev,nlp,kg]"
 
 # Only needed for Configs B/C (Voyager) or live AFDC/OSRM settings.
-Copy-Item .env.example .env
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 
 python -m pytest
 python -m clickless plan --config A --no-input "From Phoenix to Flagstaff in my Spark LR, I have 65% battery and want to arrive with at least 20%, lunch stop and a wheelchair accessible restroom please"
@@ -29,7 +29,7 @@ source .venv/bin/activate
 python -m pip install -e ".[dev,nlp,kg]"
 
 # Only needed for Configs B/C (Voyager) or live AFDC/OSRM settings.
-cp .env.example .env
+cp -n .env.example .env
 
 python -m pytest
 python -m clickless plan --config A --no-input "From Phoenix to Flagstaff in my Spark LR, I have 65% battery and want to arrive with at least 20%, lunch stop and a wheelchair accessible restroom please"
