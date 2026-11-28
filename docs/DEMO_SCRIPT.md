@@ -59,13 +59,12 @@ in both Windows PowerShell and macOS/Linux Bash.
 
 6. **Warm up** (the first Config C request after a cold start took about 4 minutes in the Nov 21 dry run):
 
-   Windows PowerShell (`curl.exe` selects the curl executable rather than PowerShell's web-request alias):
+   Windows PowerShell 5.1 or later:
 
    ```powershell
    # load the model and keep it loaded for 2 h
-   curl.exe http://localhost:11434/api/generate `
-     -H "Content-Type: application/json" `
-     -d '{"model":"qwen3:8b","prompt":"OK","keep_alive":"2h","think":false,"options":{"num_predict":1}}'
+   Invoke-RestMethod -Method Post -Uri http://localhost:11434/api/generate -ContentType 'application/json' `
+     -Body '{"model":"qwen3:8b","prompt":"OK","keep_alive":"2h","think":false,"stream":false,"options":{"num_predict":1}}'
 
    # one full request, not shown to the audience (also fills the SBERT amenity cache)
    python -m clickless plan --config C --no-input "From Downtown Los Angeles to Santa Monica in my Model 3 Long Range, I have 25% battery and want to arrive with at least 20%, and I'd like a coffee shop while I charge"
