@@ -448,3 +448,77 @@ def test_kg_coverage_is_none_without_a_charging_plan_and_zero_without_kg():
     m = kg_evidence([with_kg, no_kg])
     assert (m["n_results_with_stops"], m["kg_evidence_coverage"], m["n_full_coverage"]) == (2, 0.5, 1)
     assert (m["n_claims"], m["n_kg_claims"], m["kg_claim_share"]) == (4, 2, 0.5)  # kg and mixed count
+
+
+# --------------------------------------------------------------------------- provenance completeness (#186)
+
+OSM = CACHED.model_copy(update={"source": "OSM", "source_record_id": "node/1", "source_updated_at": None})
+NO_RECORD_ID = CACHED.model_copy(update={"source_record_id": None})
+
+
+def test_provenance_complete_when_every_displayed_fact_has_a_cited_record():
+    from evaluation.metrics.grounding import provenance_completeness_item
+
+    c = provenance_completeness_item(result(evidence=_stop_facts()))
+
+    assert (c["n_displayed"], c["n_with_evidence"], c["n_complete"], c["n_source_updated_at"]) == (3, 3, 3, 3)
+    assert set(c["missing"].values()) == {0}
+
+
+def test_displayed_fact_without_evidence_gets_no_credit():
+    from evaluation.metrics.grounding import provenance_completeness_item
+
+    # power 150 kW is shown, but the KG port says 50 kW: the power fact has no supporting evidence
+    facts = [fact("ST-1", "name", "ST-1"), fact("ST-1", "ports[0].connector", "CCS1"),
+             fact("ST-1", "ports[0].power_kw", 50.0)]
+
+    c = provenance_completeness_item(result(evidence=facts))
+
+    assert (c["n_displayed"], c["n_with_evidence"], c["n_complete"]) == (3, 2, 2)
+    assert c["missing"]["evidence"] == 1
+
+
+def test_record_id_is_required_and_updated_at_is_only_a_share():
+    from evaluation.metrics.grounding import provenance_completeness_item
+
+    s = stop().model_copy(update={"amenity_ids": ["osm:1"]})
+    facts = [fact("ST-1", "name", "ST-1", NO_RECORD_ID), fact("ST-1", "ports[0].connector", "CCS1"),
+             fact("ST-1", "ports[0].power_kw", 150.0), fact("osm:1", "category", "coffee", OSM)]
+
+    c = provenance_completeness_item(result(alternatives=[alternative(s)], evidence=facts))
+
+    assert (c["n_displayed"], c["n_complete"], c["n_validate_required"], c["n_source_updated_at"]) == (4, 3, 4, 3)
+    assert c["missing"]["source_record_id"] == 1 and c["missing"]["source_updated_at"] == 1
+
+
+def test_best_supporting_fact_is_judged():
+    from evaluation.metrics.grounding import provenance_completeness_item
+
+    facts = [*_stop_facts(), fact("ST-1", "name", "ST-1", NO_RECORD_ID).model_copy(
+        update={"evidence_id": "kg:ST-1:name-copy"})]
+
+    assert provenance_completeness_item(result(evidence=facts))["n_complete"] == 3
+
+
+def test_configs_without_evidence_are_reported_with_their_denominator():
+    from evaluation.metrics.grounding import provenance_completeness
+
+    no_kg = result(claim("verified:r1:arrival"))
+    direct = result(alternatives=[alternative()])
+    p = provenance_completeness([no_kg, direct, result(status="infeasible", alternatives=[])])
+
+    assert (p["n_results"], p["n_results_with_stops"], p["n_results_without_evidence"]) == (3, 1, 3)
+    assert (p["n_displayed"], p["provenance_completeness"], p["missing"]["evidence"]) == (3, 0.0, 3)
+    assert provenance_completeness([])["provenance_completeness"] is None
+
+
+def test_provenance_completeness_pools_displayed_facts():
+    from evaluation.metrics.grounding import provenance_completeness
+
+    full = result(evidence=_stop_facts())
+    half = result(request_id="r2", evidence=[fact("ST-1", "name", "ST-1")])
+
+    p = provenance_completeness([full, half])
+
+    assert (p["n_displayed"], p["n_complete"]) == (6, 4)
+    assert p["provenance_completeness"] == pytest.approx(4 / 6)

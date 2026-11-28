@@ -1,0 +1,5 @@
+config,n_items_searched,n_incomplete,incomplete_reasons,pareto_time_budget_s,items_incomplete
+A,35,10,max_labels: 10,600.0,aarya-023 hriday-016 hriday-017 hriday-018 hriday-029 hriday-030 ian-018 manas-017 manas-018 manas-028
+B,40,12,max_labels: 12,600.0,aarya-023 hriday-015 hriday-016 hriday-017 hriday-018 hriday-029 hriday-030 ian-018 manas-016 manas-017 manas-018 manas-028
+C,40,12,max_labels: 12,600.0,aarya-023 hriday-015 hriday-016 hriday-017 hriday-018 hriday-029 hriday-030 ian-018 manas-016 manas-017 manas-018 manas-028
+C-noKG,40,12,max_labels: 12,600.0,aarya-023 hriday-015 hriday-016 hriday-017 hriday-018 hriday-029 hriday-030 ian-018 manas-016 manas-017 manas-018 manas-028

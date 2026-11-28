@@ -4,6 +4,14 @@ Everything in this folder comes from the **dev split**. These runs validate comp
 not final held-out results. The final numbers come from the sealed 100-item test split (`../README.md`). Each run
 below records its own code and known caveats.
 
+## `dev-20261128T035410Z_recomputed/`: DEV run 20261128T035410Z, report recomputed for #185 / #186
+
+This is the full DEV run (A, B, C, C-noKG) at commit `697eb08`, rebuilt with `evaluation.report --from` from its saved
+outputs; nothing was re-run. It adds handoff correctness, latency p50/p95 and provenance completeness
+(`handoff.csv`, `latency.csv`, `provenance.csv`), and its other CSVs are byte-identical to the run's original
+report. This run's Config A predates #178. A's DEV re-run after #178 is `results/20261128T063519Z`, which is not
+recomputed here.
+
 ## `2026-11-22_dev_config_a_tfidf/`: Config A after real TF-IDF (#156)
 
 This is the required full 50-item DEV rerun after Config A's category-only placeholder was replaced

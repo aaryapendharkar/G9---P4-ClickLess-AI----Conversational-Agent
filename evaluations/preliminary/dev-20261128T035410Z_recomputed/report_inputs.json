@@ -1,0 +1,30 @@
+{
+    "split":  "dev",
+    "items":  null,
+    "final":  false,
+    "limit":  null,
+    "configs":  [
+                    "A",
+                    "B",
+                    "C",
+                    "C-noKG"
+                ],
+    "snapshot_id":  {
+                        "A":  "snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",
+                        "B":  "snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",
+                        "C":  "snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",
+                        "C-noKG":  "snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)"
+                    },
+    "failed":  {
+
+               },
+    "outputs":  {
+                    "A":  "A_dev_20261128T041125Z.json",
+                    "B":  "B_dev_20261128T044556Z.json",
+                    "C":  "C_dev_20261128T052032Z.json",
+                    "C-noKG":  "C-noKG_dev_20261128T055517Z.json"
+                },
+    "commit":  "697eb0892a36919e044d46f16e5951dfcea47731",
+    "git_branch":  "main",
+    "git_dirty":  false
+}

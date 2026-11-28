@@ -24,6 +24,12 @@ Steps
                           reasons, inventory version (Config C only; the others n/a)
        metadata.csv       git commit, model, digest, Ollama version + host, prompt version, snapshot id,
                           LLM GPU share, keep-alive
+       handoff.csv        per config: offline handoff correctness (metrics.handoff.handoff_correctness)
+                          from the saved handoff_urls / expected_stops and <config>_handoff_audit.jsonl
+       latency.csv        per config: request and per-stage latency p50 / p95 (metrics.latency), all
+                          rows including errors; --latency-note names the machine
+       provenance.csv     per config: provenance completeness of the displayed stop facts
+                          (metrics.grounding.provenance_completeness, #186)
 
 Snapshot: each config's snapshot id comes from its own run_metadata (recorded by the process
 that ran it), so `--from` reports have it too. A report refuses to build (MixedSnapshots) when
@@ -74,7 +80,16 @@ from clickless.config import repo_path
 from clickless.contracts import PlanResult
 
 from .config_names import SnapshotRequired, load_named_config, require_snapshot
-from .metrics.grounding import kg_claim_counts_item, kg_evidence_coverage_item
+from .metrics.grounding import (
+    kg_claim_counts_item,
+    kg_evidence_coverage_item,
+    provenance_completeness,
+    provenance_completeness_item,
+)
+from .metrics.handoff import CHECKS as HANDOFF_URL_CHECKS
+from .metrics.handoff import PLAN_CHECKS as HANDOFF_PLAN_CHECKS
+from .metrics.handoff import handoff_correctness, read_audit
+from .metrics.latency import latency_summary
 from .metrics.request_understanding import (
     asked,
     clarification_prf,
@@ -781,7 +796,238 @@ def ontology_row(config: str, block: Mapping[str, Any] | None) -> dict[str, Any]
     }
 
 
-def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
+HANDOFF_FIELDS = (
+    ["config", "n_rows", "n_ok", "n_scored", "n_handoff_errors"]
+    + [f"{c}_rate" for c in HANDOFF_URL_CHECKS]
+    + ["url_correct_rate"]
+    + [f"{c}_rate" for c in HANDOFF_PLAN_CHECKS]
+    + ["fully_correct_passed", "fully_correct_n", "fully_correct_rate", "audit_found", "n_audit_entries",
+       "audit_ids_not_ok", "saved_results_approved_or_with_urls", "n_not_ok", "not_ok_with_handoff", "failures"]
+)
+LATENCY_FIELDS = ["config", "scope", "n", "p50_ms", "p95_ms", "mean_ms", "max_ms", "n_rows", "n_error_rows",
+                  "missing_latency_ids"]
+PROVENANCE_FIELDS = [
+    "config", "n_results", "n_results_with_stops", "n_results_without_evidence", "n_displayed", "n_with_evidence",
+    "n_complete", "provenance_completeness", "ci_lo", "ci_hi", "validate_required_share", "source_updated_at_share",
+    "missing_evidence", "missing_source", "missing_source_record_id", "missing_retrieved_at",
+    "missing_source_updated_at", "note",
+]
+PROVENANCE_MISSING = ("evidence", "source", "source_record_id", "retrieved_at", "source_updated_at")
+NO_LATENCY_NOTE = 'machine not recorded for this report (python -m evaluation.report --latency-note "...")'
+
+
+def _audit_path(run_dir: Path, run: ConfigRun) -> Path:
+    """The run folder's <config>_handoff_audit.jsonl (the saved absolute path may be another machine's)."""
+    return run_dir / f"{run.config}_handoff_audit.jsonl"
+
+
+def handoff_row(run: ConfigRun, run_dir: Path) -> dict[str, Any]:
+    """One config's handoff correctness (metrics.handoff.handoff_correctness) as a CSV row."""
+    h = handoff_correctness(run.rows, read_audit(_audit_path(run_dir, run)))
+    plan = h["plan_checks"]
+    failures = [f"{f['id']}: {', '.join(f['failed'])}" for f in h["failures"] + h["plan_failures"]]
+    return {
+        "config": run.config,
+        "n_rows": h["n_rows"],
+        "n_ok": h["rows_by_status"].get("ok", 0),
+        "n_scored": h["n_scored"],
+        "n_handoff_errors": h["n_handoff_errors"],
+        **{f"{c}_rate": h["checks"][c]["rate"] for c in HANDOFF_URL_CHECKS},
+        "url_correct_rate": h["correct"]["rate"],
+        **{f"{c}_rate": (plan[c] or {}).get("rate") for c in HANDOFF_PLAN_CHECKS},
+        "fully_correct_passed": h["fully_correct"]["passed"],
+        "fully_correct_n": h["fully_correct"]["n"],
+        "fully_correct_rate": h["fully_correct"]["rate"],
+        "audit_found": h["approval"]["audit_found"],
+        "n_audit_entries": h["approval"]["n_audit_entries"],
+        "audit_ids_not_ok": " ".join(h["approval"]["audit_ids_not_ok"]),
+        "saved_results_approved_or_with_urls": " ".join(
+            map(str, h["approval"]["saved_results_approved_or_with_urls"])
+        ),
+        "n_not_ok": h["non_ok"]["n"],
+        "not_ok_with_handoff": " ".join(h["non_ok"]["with_handoff"]),
+        "failures": "; ".join(failures),
+    }
+
+
+def latency_rows(run: ConfigRun) -> list[dict[str, Any]]:
+    """One config's request and per-stage latency (metrics.latency) as CSV rows."""
+    s = latency_summary(run.rows)
+    scopes = [
+        ("request (all rows)", s["request"]),
+        ("request (non-error rows)", s["request_ok_only"]),
+        ("request (routed items)", s["request_routed"]),
+    ]
+    scopes += [(f"stage: {stage}", stats) for stage, stats in s["stages"].items()]
+    return [
+        {
+            "config": run.config,
+            "scope": scope,
+            "n": st["n"],
+            "p50_ms": st["p50"],
+            "p95_ms": st["p95"],
+            "mean_ms": st["mean"],
+            "max_ms": st["max"],
+            "n_rows": s["n_rows"],
+            "n_error_rows": s["n_error_rows"],
+            "missing_latency_ids": " ".join(map(str, s["missing_latency_ids"])),
+        }
+        for scope, st in scopes
+    ]
+
+
+def provenance_row(run: ConfigRun, n_boot: int) -> dict[str, Any]:
+    """One config's provenance completeness (#186) with a bootstrap CI over items."""
+    results = [run.results[i] for i in sorted(run.results)]
+    p = provenance_completeness(results)
+    records = [
+        (float(c["n_complete"]), float(c["n_displayed"]))
+        for c in (provenance_completeness_item(r) for r in results)
+        if c is not None
+    ]
+    _value, ci = _ratio_ci(records, n_boot)
+    no_evidence = bool(p["n_results"]) and p["n_results_without_evidence"] == p["n_results"]
+    keep = ("n_results", "n_results_with_stops", "n_results_without_evidence", "n_displayed", "n_with_evidence",
+            "n_complete", "provenance_completeness", "validate_required_share", "source_updated_at_share")
+    return {
+        "config": run.config,
+        **{k: p[k] for k in keep},
+        "ci_lo": ci[0] if ci else None,
+        "ci_hi": ci[1] if ci else None,
+        **{f"missing_{f}": p["missing"].get(f, 0) for f in PROVENANCE_MISSING},
+        "note": "no evidence in any result (by design: no KG)" if no_evidence else "",
+    }
+
+
+def _rate_cell(rate: float | None, passed: int | None = None, n: int | None = None) -> str:
+    if rate is None:
+        return NA
+    return f"{rate:.3f}" + (f" ({passed}/{n})" if passed is not None else "")
+
+
+def _ms(x: float | None) -> str:
+    return NA if x is None else f"{x:,.0f}"
+
+
+def _count(ids: str, total: int) -> str:
+    return f"{len(ids.split())}/{total}"
+
+
+def new_metric_lines(
+    handoff: list[dict[str, Any]],
+    latency: list[dict[str, Any]],
+    provenance: list[dict[str, Any]],
+    shares: Mapping[str, Mapping[str, Any]],
+    latency_note: str | None,
+) -> list[str]:
+    """report.md sections for handoff correctness, latency and provenance completeness (#185, #186)."""
+    lines = [
+        "",
+        "## Handoff correctness (offline, #185)",
+        "",
+        "For each ok item the harness approved a COPY of the result for the recommended option (no real "
+        "approval, no navigation) and saved the Google Maps URLs and the expected stops. They are checked by "
+        "evaluation.metrics.handoff, which parses the URLs and does not use the handoff builder. URL checks: "
+        "parses, stops in order, each stop once, segment boundaries, no extra stops. Matches plan: the approved "
+        "stops are the saved recommended itinerary's. Endpoints: the URLs start at the request's origin and end "
+        "at its destination. Approved: exactly one approval entry in the run folder's audit log. Run-wide: no "
+        "saved result is approved or carries URLs, and no item without status ok has a handoff.",
+        "",
+    ]
+    if handoff:
+        lines += _md_table(
+            ["Config", "ok items", "Scored", "URL checks", "Matches plan", "Endpoints", "Approved (audit)",
+             "Fully correct", "Saved results approved", "Non-ok items with a handoff", "Handoff errors"],
+            [
+                [
+                    r["config"],
+                    str(r["n_ok"]),
+                    str(r["n_scored"]),
+                    _rate_cell(r["url_correct_rate"]),
+                    _rate_cell(r["matches_plan_rate"]),
+                    _rate_cell(r["endpoints_ok_rate"]),
+                    _rate_cell(r["approved_in_audit_rate"]) if r["audit_found"] else "n/a (no audit log)",
+                    _rate_cell(r["fully_correct_rate"], r["fully_correct_passed"], r["fully_correct_n"]),
+                    _count(r["saved_results_approved_or_with_urls"], r["n_rows"]),
+                    _count(r["not_ok_with_handoff"], r["n_not_ok"]),
+                    str(r["n_handoff_errors"]),
+                ]
+                for r in handoff
+            ],
+        )
+        lines += [f"- {r['config']} failures: {r['failures']}" for r in handoff if r["failures"]]
+    else:
+        lines.append(NA)
+    medians = ", ".join(f"{c} {s['median']:.3f}" for c, s in shares.items() if s.get("n")) or NA
+    lines += [
+        "",
+        "## Latency (#185)",
+        "",
+        f"Measured on: {latency_note or NO_LATENCY_NOTE}. LLM GPU share (median): {medians}. "
+        "Latency depends on the machine; compare configs within this run only.",
+        "",
+        "Request latency (`latency_ms`) runs from just before pipeline.run() until it returns or raises: parse, "
+        "route, retrieve, plan+verify, rank, explain. It excludes the one-off LLM warm-up before the first item "
+        "and the offline handoff check. All rows count, errors included (their count is shown); routed items are "
+        "those that got past parsing to routing (rejected requests stop after parsing). Stage laps come "
+        "from each result's timings_ms; an error row keeps the laps recorded before the exception. p50 / p95: "
+        "numpy linear interpolation.",
+        "",
+    ]
+    if latency:
+        lines += _md_table(
+            ["Config", "Scope", "n", "p50 (ms)", "p95 (ms)", "Mean (ms)", "Max (ms)", "Error rows"],
+            [
+                [r["config"], r["scope"], str(r["n"]), _ms(r["p50_ms"]), _ms(r["p95_ms"]), _ms(r["mean_ms"]),
+                 _ms(r["max_ms"]), str(r["n_error_rows"])]
+                for r in latency
+            ],
+        )
+        lines += [
+            f"- {r['config']}: rows without latency_ms (not in the sample): {r['missing_latency_ids']}"
+            for r in latency
+            if r["scope"] == "request (all rows)" and r["missing_latency_ids"]
+        ]
+    else:
+        lines.append(NA)
+    lines += [
+        "",
+        "## Provenance completeness (#186)",
+        "",
+        "Over the displayed charging-stop facts of each recommended plan (station name, connector, power, "
+        "amenities: the facts KG evidence coverage counts), pooled over items. A fact is complete when a fact in "
+        "the result's own KG evidence supports it and that fact's provenance has source, source_record_id and "
+        "retrieved_at; a displayed fact without supporting evidence is never complete (missing: evidence). "
+        "Validate-required counts only source and retrieved_at, the fields clickless.data.validate requires of "
+        "every record. source_updated_at is optional there (OSM does not publish it) and is reported as a share. "
+        "CI: bootstrap over items.",
+        "",
+    ]
+    if provenance:
+        lines += _md_table(
+            ["Config", "Items with stops", "Displayed facts", "With evidence", "Complete", "Validate-required",
+             "source_updated_at", "Missing: evidence / source / record id / retrieved_at / updated_at", "Note"],
+            [
+                [
+                    r["config"],
+                    str(r["n_results_with_stops"]),
+                    str(r["n_displayed"]),
+                    str(r["n_with_evidence"]),
+                    _fmt_ci(r["provenance_completeness"], None if r["ci_lo"] is None else (r["ci_lo"], r["ci_hi"])),
+                    _fmt(r["validate_required_share"]),
+                    _fmt(r["source_updated_at_share"]),
+                    " / ".join(str(r[f"missing_{f}"]) for f in PROVENANCE_MISSING),
+                    r["note"] or "-",
+                ]
+                for r in provenance
+            ],
+        )
+    else:
+        lines.append(NA)
+    return lines
+
+
+def build_report(run_dir: str | Path, n_boot: int = 10_000, latency_note: str | None = None) -> Path:
     """Write report.md and the CSVs into run_dir; return the report.md path."""
     run_dir = Path(run_dir)
     runs, inputs = load_runs(run_dir)
@@ -962,6 +1208,14 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
     ]
     _write_csv(run_dir / "metadata.csv", meta_rows, meta_fields)
 
+    # Handoff correctness, latency (#185) and provenance completeness (#186), from the saved rows
+    handoff_out = [handoff_row(runs[c], run_dir) for c in configs if c in runs]
+    _write_csv(run_dir / "handoff.csv", handoff_out, HANDOFF_FIELDS)
+    latency_out = [r for c in configs if c in runs for r in latency_rows(runs[c])]
+    _write_csv(run_dir / "latency.csv", latency_out, LATENCY_FIELDS)
+    provenance_out = [provenance_row(runs[c], n_boot) for c in configs if c in runs]
+    _write_csv(run_dir / "provenance.csv", provenance_out, PROVENANCE_FIELDS)
+
     # report.md
     split = inputs.get("split")
     lines = [
@@ -1068,6 +1322,7 @@ def build_report(run_dir: str | Path, n_boot: int = 10_000) -> Path:
             ],
         )
     lines += [f"- {s}" for s in skipped_pairs]
+    lines += new_metric_lines(handoff_out, latency_out, provenance_out, shares, latency_note)
     lines += ["", "## Errors by stage and type", ""]
     if err_rows:
         lines += _md_table(
@@ -1239,6 +1494,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", default="results")
     ap.add_argument("--n-boot", type=int, default=10_000)
     ap.add_argument("--from", dest="from_dir", help="rebuild the report from an existing results/<ts> directory")
+    ap.add_argument("--latency-note", help="the machine the run used, printed with the latency table")
     args = ap.parse_args(argv)
     try:
         run_dir = (
@@ -1246,7 +1502,7 @@ def main(argv: list[str] | None = None) -> None:
             if args.from_dir
             else run_all(args.configs, args.split, args.final, args.out, args.items, args.n_boot)
         )
-        print(build_report(run_dir, n_boot=args.n_boot))
+        print(build_report(run_dir, n_boot=args.n_boot, latency_note=args.latency_note))
     except (SplitRefused, MixedSnapshots, FixtureItemsRefused, SnapshotRequired) as e:
         raise SystemExit(f"refused: {e}") from e
 

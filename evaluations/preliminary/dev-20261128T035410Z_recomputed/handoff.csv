@@ -1,0 +1,5 @@
+config,n_rows,n_ok,n_scored,n_handoff_errors,parses_rate,ordered_rate,each_stop_once_rate,boundaries_ok_rate,no_extra_stops_rate,url_correct_rate,matches_plan_rate,endpoints_ok_rate,approved_in_audit_rate,fully_correct_passed,fully_correct_n,fully_correct_rate,audit_found,n_audit_entries,audit_ids_not_ok,saved_results_approved_or_with_urls,n_not_ok,not_ok_with_handoff,failures
+A,50,21,21,0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,21,21,1.0,True,21,,,29,,
+B,50,37,37,0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,37,37,1.0,True,37,,,13,,
+C,50,37,37,0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,37,37,1.0,True,37,,,13,,
+C-noKG,50,37,37,0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,37,37,1.0,True,37,,,13,,

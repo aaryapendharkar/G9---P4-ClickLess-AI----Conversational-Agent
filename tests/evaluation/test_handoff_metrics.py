@@ -2,7 +2,7 @@ import json
 
 from clickless.contracts import LatLon
 from clickless.handoff.maps_url import build_url
-from evaluation.metrics.handoff import CHECKS, check_urls, handoff_metrics, main
+from evaluation.metrics.handoff import CHECKS, check_urls, handoff_correctness, handoff_metrics, main, read_audit
 
 ORIGIN = LatLon(lat=33.000000, lon=-112.000000)
 STOP_ONE = LatLon(lat=34.000000, lon=-111.000000)
@@ -130,3 +130,105 @@ def test_command_line_summarizes_a_saved_run(tmp_path, capsys):
 
     report = json.loads(capsys.readouterr().out)
     assert report["config"] == "A" and report["correct"]["rate"] == 1.0
+
+
+# --------------------------------------------------------------------------- handoff_correctness (#185)
+
+
+def _planned(item_id, urls, plan=("s0",), approved=False):
+    """An ok row whose saved result recommends `plan` from ORIGIN to DESTINATION."""
+    stops = [{"station_id": sid} for sid in plan]
+    result = {
+        "status": "ok",
+        "approved": approved,
+        "handoff_urls": [],
+        "request": {"origin": {"lat": ORIGIN.lat, "lon": ORIGIN.lon},
+                    "destination": {"lat": DESTINATION.lat, "lon": DESTINATION.lon}},
+        "alternatives": [{"itinerary": {"stops": stops}}],
+    }
+    return {**_row(item_id, urls), "result": result}
+
+
+def _audit(*ids, urls=1):
+    return [{"request_id": i, "approved": True, "urls": urls} for i in ids]
+
+
+GOOD_URL = build_url(ORIGIN, DESTINATION, [STOP_ONE])
+
+
+def test_correct_handoff_passes_every_check():
+    report = handoff_correctness([_planned("good", [GOOD_URL])], _audit("good"))
+
+    assert report["fully_correct"] == {"passed": 1, "n": 1, "rate": 1.0}
+    assert all(v["rate"] == 1.0 for v in report["plan_checks"].values())
+    assert report["plan_failures"] == [] and report["approval"]["saved_results_approved_or_with_urls"] == []
+
+
+def test_stops_must_be_the_saved_recommendation():
+    report = handoff_correctness([_planned("other", [GOOD_URL], plan=("another-station",))], _audit("other"))
+
+    assert report["plan_failures"] == [{"id": "other", "failed": ["matches_plan"]}]
+    assert report["fully_correct"]["passed"] == 0
+
+
+def test_handoff_must_start_at_the_origin_and_end_at_the_destination():
+    wrong_end = build_url(ORIGIN, STOP_TWO, [STOP_ONE])
+
+    report = handoff_correctness([_planned("end", [wrong_end])], _audit("end"))
+
+    assert report["plan_failures"] == [{"id": "end", "failed": ["endpoints_ok"]}]
+
+
+def test_approval_needs_exactly_one_matching_audit_entry():
+    rows = [_planned("none", [GOOD_URL]), _planned("twice", [GOOD_URL]), _planned("count", [GOOD_URL])]
+    audit = [*_audit("twice", "twice"), *_audit("count", urls=2)]
+
+    report = handoff_correctness(rows, audit)
+
+    assert {f["id"]: f["failed"] for f in report["plan_failures"]} == {
+        "none": ["approved_in_audit"], "twice": ["approved_in_audit"], "count": ["approved_in_audit"]
+    }
+    assert report["fully_correct"]["passed"] == 0
+
+
+def test_without_an_audit_log_approval_is_not_scored():
+    report = handoff_correctness([_planned("good", [GOOD_URL])], None)
+
+    assert report["plan_checks"]["approved_in_audit"] is None and not report["approval"]["audit_found"]
+    assert report["fully_correct"]["passed"] == 1  # the other checks still hold
+
+
+def test_saved_result_must_stay_unapproved():
+    report = handoff_correctness([_planned("leak", [GOOD_URL], approved=True)], _audit("leak"))
+
+    assert report["approval"]["saved_results_approved_or_with_urls"] == ["leak"]
+
+
+def test_rejected_items_get_no_handoff():
+    rows = [
+        _planned("good", [GOOD_URL]),
+        {"id": "rejected", "status": "rejected_incomplete"},
+        {"id": "approved-anyway", "status": "infeasible"},
+        {"id": "urls-anyway", "status": "needs_clarification", "handoff_urls": [GOOD_URL]},
+    ]
+
+    report = handoff_correctness(rows, _audit("good", "approved-anyway"))
+
+    assert report["non_ok"] == {"n": 3, "with_handoff": ["approved-anyway", "urls-anyway"]}
+    assert report["approval"]["audit_ids_not_ok"] == ["approved-anyway"]
+
+
+def test_url_failures_and_handoff_errors_are_never_fully_correct():
+    rows = [_planned("extra", [build_url(ORIGIN, DESTINATION, [STOP_ONE, STOP_TWO])]),
+            {**_planned("raised", []), "handoff_error": "ValueError: boom", "expected_stops": []}]
+
+    report = handoff_correctness(rows, _audit("extra", "raised", urls=1))
+
+    assert report["fully_correct"] == {"passed": 0, "n": 2, "rate": 0.0}
+
+
+def test_read_audit(tmp_path):
+    path = tmp_path / "A_handoff_audit.jsonl"
+    assert read_audit(path) is None
+    path.write_text(json.dumps(_audit("good")[0]) + "\n\n", encoding="utf-8")
+    assert read_audit(path) == _audit("good")

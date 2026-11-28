@@ -1,0 +1,30 @@
+{
+    "split":  "test",
+    "items":  null,
+    "final":  true,
+    "limit":  null,
+    "configs":  [
+                    "A",
+                    "B",
+                    "C",
+                    "C-noKG"
+                ],
+    "snapshot_id":  {
+                        "A":  "snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",
+                        "B":  "snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",
+                        "C":  "snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)",
+                        "C-noKG":  "snapshot:96dfbabb4837 (frozen, created 2026-11-26T00:55:26.616109+00:00)"
+                    },
+    "failed":  {
+
+               },
+    "outputs":  {
+                    "A":  "A_test_20261128T103130Z.json",
+                    "B":  "B_test_20261128T112442Z.json",
+                    "C":  "C_test_20261128T121700Z.json",
+                    "C-noKG":  "C-noKG_test_20261128T130849Z.json"
+                },
+    "commit":  "e810f934b0fe853c4a44813d3f03fdaecb7c8643",
+    "git_branch":  "main",
+    "git_dirty":  false
+}

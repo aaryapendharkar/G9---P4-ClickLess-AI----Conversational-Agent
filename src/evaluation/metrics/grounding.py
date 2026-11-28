@@ -5,7 +5,9 @@
   * KG evidence coverage of the recommended plan's displayed stop facts, and the share of claims
     that cite the KG (`kg_evidence`): what separates C from the C-noKG ablation, since claim
     support is 1.0 for both by construction (template explanations, ADR 0017)
-  * provenance completeness (uses clickless.data.validate output) -- TODO
+  * provenance completeness of the displayed stop facts (#186): the supporting fact's provenance
+    has source, source_record_id and retrieved_at (clickless.data.validate requires source and
+    retrieved_at of every record); source_updated_at, optional there, is reported as a share
   * ontology adequacy: in evaluation.metrics.ontology_adequacy (#158), which counts the KG's
     competency-question inventory
 
@@ -224,10 +226,10 @@ def _same(a: Any, b: Any) -> bool:
     return a is not None and a == b
 
 
-def kg_evidence_coverage_item(result: PlanResult) -> float | None:
-    """Share of the recommended itinerary's displayed charging-stop facts that THIS result's own
-    KG evidence (`kg:` ids in `result.evidence`) supports. None when there is nothing to cover:
-    no recommended plan, or a direct trip with no charging stop.
+def displayed_stop_facts(result: PlanResult) -> list[tuple[str, list[Evidence]]] | None:
+    """The recommended itinerary's displayed charging-stop facts, each with the facts of THIS
+    result's own KG evidence (`kg:` ids in `result.evidence`) that support it. None when there is
+    nothing displayed: no recommended plan, or a direct trip with no charging stop.
 
     Displayed facts per stop (docs/TRADEOFFS.md, evidence coverage): the station name; the chosen
     connector (some KG port of the station has it); the chosen power (one KG port has both that
@@ -241,23 +243,36 @@ def kg_evidence_coverage_item(result: PlanResult) -> float | None:
     if not stops:
         return None
     kg = [e for e in result.evidence if e.evidence_id.startswith(KG_PREFIX)]
-    shown = supported = 0
+    shown: list[tuple[str, list[Evidence]]] = []
     for stop in stops:
         facts = [e for e in kg if e.subject_id == stop.station_id]
-        shown += 1
-        supported += any(e.field == "name" and _same(e.value, stop.station_name) for e in facts)
-        ports: dict[str, dict[str, Any]] = {}
+        shown.append(("name", [e for e in facts if e.field == "name" and _same(e.value, stop.station_name)]))
+        ports: dict[str, dict[str, Evidence]] = {}
         for e in facts:
             if m := _PORT_FACT.fullmatch(e.field):
-                ports.setdefault(m.group(1), {})[m.group(2)] = e.value
-        same_connector = [p for p in ports.values() if _same(p.get("connector"), stop.connector)]
-        shown += 2
-        supported += bool(same_connector)
-        supported += any(_same(p.get("power_kw"), stop.port_power_kw) for p in same_connector)
+                ports.setdefault(m.group(1), {})[m.group(2)] = e
+        same_connector = [
+            p for p in ports.values() if "connector" in p and _same(p["connector"].value, stop.connector)
+        ]
+        shown.append(("connector", [p["connector"] for p in same_connector]))
+        shown.append(
+            ("power", [p["power_kw"] for p in same_connector
+                       if "power_kw" in p and _same(p["power_kw"].value, stop.port_power_kw)])
+        )
         for amenity_id in stop.amenity_ids:
-            shown += 1
-            supported += any(e.subject_id == amenity_id and e.field in ("name", "category") for e in kg)
-    return supported / shown
+            shown.append(
+                ("amenity", [e for e in kg if e.subject_id == amenity_id and e.field in ("name", "category")])
+            )
+    return shown
+
+
+def kg_evidence_coverage_item(result: PlanResult) -> float | None:
+    """Share of the recommended itinerary's displayed charging-stop facts (displayed_stop_facts)
+    that THIS result's own KG evidence supports. None when there is nothing to cover."""
+    shown = displayed_stop_facts(result)
+    if shown is None:
+        return None
+    return sum(bool(support) for _kind, support in shown) / len(shown)
 
 
 def kg_claim_counts_item(result: PlanResult) -> tuple[int, int]:
@@ -279,6 +294,80 @@ def kg_evidence(results: Sequence[PlanResult]) -> dict[str, Any]:
         "n_claims": n_claims,
         "n_kg_claims": n_kg,
         "kg_claim_share": _rate(n_kg, n_claims),
+    }
+
+
+# --------------------------------------------------------------------------- provenance completeness (#186)
+
+# Required on the provenance of the fact that supports a displayed stop fact. source and retrieved_at
+# are what clickless.data.validate requires of every record; source_record_id makes the source
+# citable (which AFDC / OSM record). source_updated_at is optional there (None when the source does
+# not publish it, e.g. OSM) and is reported as a share, as in validate.provenance_completeness.
+PROVENANCE_REQUIRED = ("source", "source_record_id", "retrieved_at")
+PROVENANCE_OPTIONAL = ("source_updated_at",)
+VALIDATE_REQUIRED = ("source", "retrieved_at")
+
+
+def _missing_fields(prov: Provenance | None) -> list[str]:
+    if prov is None:
+        return list(PROVENANCE_REQUIRED + PROVENANCE_OPTIONAL)
+    return [f for f in PROVENANCE_REQUIRED + PROVENANCE_OPTIONAL if getattr(prov, f, None) in (None, "")]
+
+
+def provenance_completeness_item(result: PlanResult) -> dict[str, Any] | None:
+    """Provenance of one result's displayed stop facts (displayed_stop_facts); None when nothing is shown.
+
+    A displayed fact counts as complete only when a fact in THIS result's own KG evidence supports
+    it AND that fact's provenance has every PROVENANCE_REQUIRED field. A displayed fact with no
+    supporting evidence (absent or unresolvable) is never complete: it is counted under
+    `missing["evidence"]`. When several facts support it, the one with the fewest missing fields is
+    judged.
+    """
+    shown = displayed_stop_facts(result)
+    if shown is None:
+        return None
+    out: dict[str, Any] = {
+        "n_displayed": len(shown),
+        "n_with_evidence": 0,
+        "n_complete": 0,
+        "n_validate_required": 0,
+        "n_source_updated_at": 0,
+        "missing": dict.fromkeys(("evidence", *PROVENANCE_REQUIRED, *PROVENANCE_OPTIONAL), 0),
+    }
+    for _kind, support in shown:
+        if not support:
+            out["missing"]["evidence"] += 1
+            continue
+        out["n_with_evidence"] += 1
+        missing = min((_missing_fields(e.provenance) for e in support), key=len)
+        for f in missing:
+            out["missing"][f] += 1
+        out["n_complete"] += not any(f in PROVENANCE_REQUIRED for f in missing)
+        out["n_validate_required"] += not any(f in VALIDATE_REQUIRED for f in missing)
+        out["n_source_updated_at"] += "source_updated_at" not in missing
+    return out
+
+
+def provenance_completeness(results: Sequence[PlanResult]) -> dict[str, Any]:
+    """Pooled over the displayed stop facts of every result with a recommended charging plan:
+    share with complete provenance (PROVENANCE_REQUIRED), share meeting clickless.data.validate's
+    required pair, share with source_updated_at, and missing-field counts. A config without evidence
+    (A, B, C-noKG by design) gets rate 0 with its denominator, never a silent skip."""
+    items = [c for c in (provenance_completeness_item(r) for r in results) if c is not None]
+    n = sum(c["n_displayed"] for c in items)
+    keys = ("n_with_evidence", "n_complete", "n_validate_required", "n_source_updated_at")
+    totals = {k: sum(c[k] for c in items) for k in keys}
+    missing = {f: sum(c["missing"][f] for c in items) for f in items[0]["missing"]} if items else {}
+    return {
+        "n_results": len(results),
+        "n_results_with_stops": len(items),
+        "n_results_without_evidence": sum(not r.evidence for r in results),
+        "n_displayed": n,
+        **totals,
+        "provenance_completeness": _rate(totals["n_complete"], n),
+        "validate_required_share": _rate(totals["n_validate_required"], n),
+        "source_updated_at_share": _rate(totals["n_source_updated_at"], n),
+        "missing": missing,
     }
 
 

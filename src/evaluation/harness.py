@@ -567,7 +567,8 @@ def run(
         ),
         # nDCG@3 (metrics.planning.pooled_ndcg_at_k) is computed across configs once graded relevance
         # labels exist: its ideal ranking comes from the pooled plans of all configs, not one run.
-        # TODO(Ian): handoff, latency p50/p95
+        # Handoff correctness and latency p50/p95 (#185) are computed by evaluation.report from the saved
+        # rows (handoff_urls, expected_stops, latency_ms, timings_ms) and the run folder's approval log.
     }
     # Planner/oracle disagreements are findings, reported on their own (docs/EVALUATION_ORACLE.md).
     findings = metrics["planning"].pop("findings", []) if isinstance(metrics["planning"], dict) else []
