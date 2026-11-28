@@ -39,7 +39,7 @@ Orchestration: `src/clickless/pipeline.py`. Configs choose implementations:
 | parser | rules | llm | llm |
 | matcher | tfidf | sbert | sbert |
 | retriever | corridor | corridor | corridor+kg |
-| ranker | logreg | weighted | weighted+evidence |
+| ranker | weighted (logreg implemented, untrained; #79) | weighted | weighted+evidence |
 | incomplete_request | reject | reject | clarify |
 | explainer | template | template | grounded_llm (template + KG evidence) |
 | selector (trade-offs) | tradeoff | tradeoff | tradeoff |
@@ -136,6 +136,11 @@ the ranker explicitly delegates to `WeightedRanker`, and the pipeline reports th
 fallback in its notes. The synthetic ranker tests verify this lifecycle; they do
 not replace the real labeled DEV candidate plans needed to train the final model.
 Held-out TEST labels must not be used for training or tuning.
+
+For the final evaluation Config A is set to `ranker: weighted` explicitly (issue #79),
+so it ranks exactly as it did under the silent fallback and A differs from B/C only in
+parsing and matching. Every run's `run_metadata` records `ranker`, and for `logreg` also
+`ranker_model_path` and `ranker_model_sha256` (`absent` when the artifact is missing).
 
 Configuration A's verifier measurements remain deterministic geometric estimates,
 not live road reroutes. All committed A/B/C configurations still select fixture

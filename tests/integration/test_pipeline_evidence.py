@@ -227,9 +227,10 @@ def test_pipeline_uses_evidence_aware_ranking_after_enrichment(
         request_id="evidence-ranking-dispatch",
     )
 
+    # Config A ranks with the weighted ranker explicitly, so no fallback note.
     assert (
         "logreg ranker not trained yet -- fell back to weighted cost"
-        in result.notes
+        not in result.notes
     )
     assert "evidence ranking: on" in result.notes
     assert result.status == "ok"

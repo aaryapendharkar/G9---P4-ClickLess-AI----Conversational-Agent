@@ -107,22 +107,16 @@ def test_pipeline_wires_floor_policy_into_every_config_a_ranker(
 
     expected_credit_policy = cfg_a["ranking"]["tfidf_credit"]
 
-    # Config A normally uses logistic-regression ranking.
-    assert isinstance(pipe_a.ranker, LogRegRanker)
+    # Config A ranks with the weighted ranker for the final run (issue #79).
+    assert isinstance(pipe_a.ranker, WeightedRanker)
     assert pipe_a.ranker.amenity_credit_config == expected_credit_policy
 
-    # Verify the plain weighted-ranker path separately. This path may be used
-    # directly even though logistic regression is Config A's normal setting.
-    weighted_config_a = load_config("A")
-    weighted_config_a["components"]["ranker"] = "weighted"
-
-    weighted_pipe_a = build_pipeline(
-        weighted_config_a,
-        store,
-    )
-
-    assert isinstance(weighted_pipe_a.ranker, WeightedRanker)
-    assert weighted_pipe_a.ranker.amenity_credit_config == expected_credit_policy
+    # The logistic-regression path stays wired with the same policy for a DEV ablation.
+    logreg_config_a = load_config("A")
+    logreg_config_a["components"]["ranker"] = "logreg"
+    logreg_pipe_a = build_pipeline(logreg_config_a, store)
+    assert isinstance(logreg_pipe_a.ranker, LogRegRanker)
+    assert logreg_pipe_a.ranker.amenity_credit_config == expected_credit_policy
 
     # The evidence-aware weighted ranker must use the same amenity-credit scale.
     evidence_weighted_config_a = load_config("A")
