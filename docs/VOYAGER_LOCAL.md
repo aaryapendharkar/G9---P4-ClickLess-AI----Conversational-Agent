@@ -4,6 +4,14 @@ Config B and Config C use the same OpenAI-compatible chat client. The repository
 an API key or require a team deployment. The local development default uses Ollama with Qwen3 8B,
 which is small enough for a demo and can be replaced after the team compares candidate models.
 
+There are three ways to reach a model. Only the first reproduces the project's evaluation.
+
+| Access | `VOYAGER_BASE_URL` | API key | Model |
+|---|---|---|---|
+| [Local Ollama](#setup) (recommended) | `http://localhost:11434/v1` | none | pinned `qwen3:8b` |
+| [ASU Voyager](#asu-voyager) | `https://openai.rc.asu.edu/v1` | your Voyager key | an ID that Voyager lists |
+| [Another hosted provider](#another-hosted-provider) | the provider's `/v1` URL | the provider's key | an ID that provider serves |
+
 ## Setup
 
 Run every command from the repository root. Install Ollama separately; the desktop app starts the
@@ -31,11 +39,13 @@ ollama pull qwen3:8b
 ollama list
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 $env:VOYAGER_BASE_URL = "http://localhost:11434/v1"
-$env:VOYAGER_API_KEY = ""
+Remove-Item Env:VOYAGER_API_KEY -ErrorAction SilentlyContinue  # local Ollama needs no key
 ```
 
 `nlp` installs Sentence-BERT for Config B/C and `kg` installs rdflib for Config C. The `qwen3:8b`
 line of `ollama list` must show ID `500a1f067a9f`.
+
+Local Ollama must be running, through the desktop application or `ollama serve`.
 
 The app does not read `.env` by itself. In Bash, `set -a`/`source` exports its values; in
 PowerShell, set them with `$env:` as above. Neither copy command overwrites an existing `.env`.
@@ -48,9 +58,57 @@ VOYAGER_BASE_URL=http://localhost:11434/v1
 VOYAGER_API_KEY=
 ```
 
-The pinned demo model is `qwen3:8b` in both Config B and Config C, using Ollama digest `500a1f067a9f` with Q4_K_M quantization and thinking disabled. The configs set the model name, so `VOYAGER_MODEL` is not needed. A hosted OpenAI-compatible endpoint can replace the local URL, but the same model should be used for both configurations.
+The pinned demo model is `qwen3:8b` in both Config B and Config C, using Ollama digest `500a1f067a9f` with Q4_K_M quantization and thinking disabled. The configs set the model name, so `VOYAGER_MODEL` is not needed.
+
+## ASU Voyager
+
+Voyager is ASU Research Computing's OpenAI-compatible LLM gateway. Official pages:
+[API access](https://docs.rc.asu.edu/ai/api/) and
+[requesting an account](https://docs.rc.asu.edu/voyager-request-account/).
+
+1. Request an LLM API account in the [Voyager portal](https://voyager.rc.asu.edu). It needs an
+   ASURITE account. The portal requires the ASU SSLVPN (the account page says on campus too); API
+   calls themselves work without the VPN.
+2. In the portal open your profile, then **Keys**, then **Create API key**. Copy the key right
+   away: it is shown only once.
+3. Set the base URL, including `/v1`, and enter the key at a prompt so it stays out of your shell
+   history. Never commit it.
+4. List the model IDs. Do not assume Voyager's ID for a model matches Ollama's `qwen3:8b`.
+
+Bash (macOS/Linux):
+
+```bash
+export VOYAGER_BASE_URL="https://openai.rc.asu.edu/v1"
+printf "Voyager API key: "; read -rs VOYAGER_API_KEY; echo
+export VOYAGER_API_KEY
+curl -s "$VOYAGER_BASE_URL/models" -H "Authorization: Bearer $VOYAGER_API_KEY"
+```
+
+Windows PowerShell:
+
+```powershell
+$env:VOYAGER_BASE_URL = "https://openai.rc.asu.edu/v1"
+$secure = Read-Host "Voyager API key" -AsSecureString
+$env:VOYAGER_API_KEY = [System.Net.NetworkCredential]::new("", $secure).Password
+Invoke-RestMethod -Uri "$env:VOYAGER_BASE_URL/models" -Headers @{ Authorization = "Bearer $env:VOYAGER_API_KEY" }
+```
+
+## Another hosted provider
+
+`VOYAGER_API_KEY` is a generic bearer-token variable despite its name: it can hold a key from any
+OpenAI-compatible provider. The endpoint must support `/v1/chat/completions`. A non-local endpoint
+without a key is refused. Set the two variables as in the Voyager commands above.
+
+A standard OpenAI key is not a drop-in replacement. Configs B and C pin Ollama's `qwen3:8b`, so a
+provider that does not serve that ID needs `llm.model` changed in the config.
+
+**Results from Voyager or another provider are not comparable with the frozen project
+evaluation**, which uses the pinned local model. Keep any config change local, and use the same
+model for B and C. Neither hosted route has been tested with this repository's client.
 
 ## Warm up
+
+This section and the clean-up commands are for local Ollama.
 
 Check that the server answers, then load the model and keep it loaded for two hours. The first
 request after a cold start can take minutes.
