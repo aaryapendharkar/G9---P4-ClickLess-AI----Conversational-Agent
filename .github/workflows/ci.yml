@@ -17,3 +17,23 @@ jobs:
       - run: pytest -m "not network"
       - name: walking skeleton demo
         run: python -m clickless plan --no-input "From Phoenix to Flagstaff in my Spark LR, I have 65% battery, lunch stop"
+
+  portable-smoke:
+    name: portable smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e ".[dev]"
+      - name: focused CLI and pipeline tests
+        run: python -m pytest tests/test_cli.py tests/integration/test_walking_skeleton.py -p no:cacheprovider -q
+      - name: benchmark validation
+        run: python -c "from evaluation.schema import load_items; [print(split, len(load_items('benchmark/requests/' + split))) for split in ('raw', 'dev', 'test')]"
+      - name: fixture demo
+        run: python -m clickless plan --config A --no-input "From Phoenix to Flagstaff in my Spark LR, I have 65% battery and want to arrive with at least 20%, lunch stop and a wheelchair accessible restroom please"

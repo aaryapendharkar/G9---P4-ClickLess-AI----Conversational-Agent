@@ -16,7 +16,9 @@ Weak spots this script avoids on purpose:
 
 ## Setup before the demo
 
-Do this on the demo machine at least 15 minutes before starting. Commands are for PowerShell; Bash equivalents are in comments.
+Do this on the demo machine at least 15 minutes before starting. Run all commands from the
+repository root with the project virtual environment activated. Commands without a shell label work
+in both Windows PowerShell and macOS/Linux Bash.
 
 1. **Code:** `git switch main; git pull`. Record the commit used for the demo.
 2. **Snapshot unzipped and verified.** Unzip the final `snapshot-v1.zip` release into
@@ -38,25 +40,73 @@ Do this on the demo machine at least 15 minutes before starting. Commands are fo
    If the ID differs, run `ollama pull qwen3:8b`. If the ID still differs, stop: the demo and the
    evaluation must use the same model (`docs/VOYAGER_LOCAL.md`).
 5. **Environment** (the app does not read `.env` by itself):
+
+   Windows PowerShell:
+
    ```powershell
    $env:CLICKLESS_DATA_SOURCE = "snapshot"
    $env:VOYAGER_BASE_URL = "http://localhost:11434/v1"
-   $env:VOYAGER_API_KEY = ""
-   # Bash: export CLICKLESS_DATA_SOURCE=snapshot; set -a; source .env; set +a
+   Remove-Item Env:VOYAGER_API_KEY -ErrorAction SilentlyContinue  # local Ollama needs no key
    ```
+
+   macOS/Linux Bash:
+
+   ```bash
+   export CLICKLESS_DATA_SOURCE="snapshot"
+   export VOYAGER_BASE_URL="http://localhost:11434/v1"
+   unset VOYAGER_API_KEY  # local Ollama needs no key
+   ```
+
 6. **Warm up** (the first Config C request after a cold start took about 4 minutes in the Nov 21 dry run):
+
+   Windows PowerShell (`curl.exe` selects the curl executable rather than PowerShell's web-request alias):
+
    ```powershell
    # load the model and keep it loaded for 2 h
-   curl.exe http://localhost:11434/api/generate -d '{\"model\": \"qwen3:8b\", \"prompt\": \"OK\", \"keep_alive\": \"2h\", \"think\": false, \"options\": {\"num_predict\": 1}}'
+   curl.exe http://localhost:11434/api/generate `
+     -H "Content-Type: application/json" `
+     -d '{"model":"qwen3:8b","prompt":"OK","keep_alive":"2h","think":false,"options":{"num_predict":1}}'
+
    # one full request, not shown to the audience (also fills the SBERT amenity cache)
    python -m clickless plan --config C --no-input "From Downtown Los Angeles to Santa Monica in my Model 3 Long Range, I have 25% battery and want to arrive with at least 20%, and I'd like a coffee shop while I charge"
    ```
+
+   macOS/Linux Bash:
+
+   ```bash
+   # load the model and keep it loaded for 2 h
+   curl http://localhost:11434/api/generate \
+     -H "Content-Type: application/json" \
+     -d '{"model":"qwen3:8b","prompt":"OK","keep_alive":"2h","think":false,"options":{"num_predict":1}}'
+
+   # one full request, not shown to the audience (also fills the SBERT amenity cache)
+   python -m clickless plan --config C --no-input "From Downtown Los Angeles to Santa Monica in my Model 3 Long Range, I have 25% battery and want to arrive with at least 20%, and I'd like a coffee shop while I charge"
+   ```
+
    Then run scenario 1 once more. It should answer within a few seconds.
 7. **CLI flags:**
    - `python -m clickless plan --config C "<request>"` is the live form. **Don't** pass `--no-input` during the demo; without it the CLI asks clarification questions and offers the Google Maps hand-off.
    - `--json` prints the whole `PlanResult`: parsed request, notes, the full list of stations not used, and timings. Use it to debug, not on screen.
    - After a plan, the CLI asks `Approve handoff? Enter option number (1 = Recommended) or press Enter to skip:`. Type `1` once, in scenario 1, to show the Google Maps link. Press Enter in the others.
-8. **Terminal:** a large font and a wide window. Run `cls` between scenarios.
+8. **Terminal:** use a large font and a wide window. Run `Clear-Host` in PowerShell or `clear`
+   in Bash between scenarios.
+
+9. **Clean up after the demo.** Remove the shell variables so later fixture runs do not
+   accidentally keep using the snapshot or local model endpoint.
+
+   Windows PowerShell:
+
+   ```powershell
+   Remove-Item Env:CLICKLESS_DATA_SOURCE -ErrorAction SilentlyContinue
+   Remove-Item Env:VOYAGER_BASE_URL -ErrorAction SilentlyContinue
+   Remove-Item Env:VOYAGER_API_KEY -ErrorAction SilentlyContinue
+   ```
+
+   macOS/Linux Bash:
+
+   ```bash
+   unset CLICKLESS_DATA_SOURCE VOYAGER_BASE_URL VOYAGER_API_KEY
+   ```
 
 ## Implemented demo safeguards
 

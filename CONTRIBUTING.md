@@ -1,13 +1,49 @@
 # Contributing
 
 ## Setup
+
+Run these commands from the repository root. Direct Python commands are canonical; GNU Make is optional.
+
+### Windows PowerShell
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev,nlp,kg]"
+
+# Only needed for Configs B/C (Voyager) or live AFDC/OSRM settings.
+Copy-Item .env.example .env
+
+python -m pytest
+python -m clickless plan --config A --no-input "From Phoenix to Flagstaff in my Spark LR, I have 65% battery and want to arrive with at least 20%, lunch stop and a wheelchair accessible restroom please"
+```
+
+If activation is blocked, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned`
+and activate again. This changes policy only for the current PowerShell process.
+
+### macOS and Linux
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
-make setup            # pip install -e ".[dev]"
-pip install -e ".[nlp]"  # only for B/C Sentence-BERT matching; first use downloads the pinned model (~90 MB)
-pip install -e ".[kg]"   # only for C KG enrichment and the competency queries (rdflib, pure Python; CI installs it)
-cp .env.example .env  # only needed for B/C (Voyager) and live AFDC/OSRM
-make test && make demo
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev,nlp,kg]"
+
+# Only needed for Configs B/C (Voyager) or live AFDC/OSRM settings.
+cp .env.example .env
+
+python -m pytest
+python -m clickless plan --config A --no-input "From Phoenix to Flagstaff in my Spark LR, I have 65% battery and want to arrive with at least 20%, lunch stop and a wheelchair accessible restroom please"
+```
+
+The `nlp` extra installs the pinned Sentence-BERT dependency used by Configs B/C; the `kg` extra
+installs rdflib for Config C and the competency queries. Where GNU Make is installed, `make setup`,
+`make test` and `make demo` remain optional aliases. Windows contributors do not need Make.
+
+After downloading the frozen snapshot, verify it directly with
+`python -m clickless.data.snapshot_report --verify-only`. Validate the benchmark files with:
+
+```text
+python -c "from evaluation.schema import load_items; [print(split, len(load_items('benchmark/requests/' + split))) for split in ('raw', 'dev', 'test')]"
 ```
 
 ## How we avoid merge conflicts
